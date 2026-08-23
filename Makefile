@@ -26,6 +26,10 @@ fmt:  ## autofix what can be autofixed
 bench:  ## regenerate corpus, train, and benchmark against all baselines
 	$(PY) cmd/benchmark.py
 
+.PHONY: mcp
+mcp:  ## run the MCP server over stdio
+	$(PY) cmd/mcp_server.py
+
 .PHONY: check
 check: install lint test bench  ## everything CI runs
 
