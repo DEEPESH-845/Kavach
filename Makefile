@@ -22,8 +22,12 @@ lint:  ## static checks
 fmt:  ## autofix what can be autofixed
 	$(VENV)/bin/ruff check --fix pkg/ tests/ cmd/
 
+.PHONY: bench
+bench:  ## regenerate corpus, train, and benchmark against all baselines
+	$(PY) cmd/benchmark.py
+
 .PHONY: check
-check: install lint test  ## everything CI runs
+check: install lint test bench  ## everything CI runs
 
 .PHONY: clean
 clean:  ## remove build and run artefacts, keep the corpus

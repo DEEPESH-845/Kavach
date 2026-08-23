@@ -1,0 +1,104 @@
+{
+  "review_budget": 0.2,
+  "threshold": 0.5132468693487481,
+  "exposure_minor": 22531100,
+  "recall_ceiling": 1.0,
+  "prevented_minor": 21105400,
+  "duplicate_rate_assumption": 0.12,
+  "results": [
+    {
+      "name": "B0 escalate everything",
+      "precision": 0.16648648648648648,
+      "recall": 1.0,
+      "f1": 0.28544949026876737,
+      "ap": 0.16648648648648648,
+      "leaked_minor": 0,
+      "reviews": 925,
+      "review_rate": 1.0,
+      "within_budget": false,
+      "tunable": false
+    },
+    {
+      "name": "B1 exact text match",
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "ap": 0.16648648648648648,
+      "leaked_minor": 22531100,
+      "reviews": 0,
+      "review_rate": 0.0,
+      "within_budget": true,
+      "tunable": false
+    },
+    {
+      "name": "B2 rule: amt+open+24h",
+      "precision": 0.18681318681318682,
+      "recall": 0.22077922077922077,
+      "f1": 0.20238095238095238,
+      "ap": 0.17097419954562812,
+      "leaked_minor": 18463600,
+      "reviews": 182,
+      "review_rate": 0.19675675675675675,
+      "within_budget": true,
+      "tunable": false
+    },
+    {
+      "name": "B3 learned, no text",
+      "precision": 0.6593406593406593,
+      "recall": 0.7792207792207793,
+      "f1": 0.7142857142857143,
+      "ap": 0.8320512261760364,
+      "leaked_minor": 6110500,
+      "reviews": 182,
+      "review_rate": 0.19675675675675675,
+      "within_budget": true,
+      "tunable": true
+    },
+    {
+      "name": "B4 learned + reads text",
+      "precision": 0.8131868131868132,
+      "recall": 0.961038961038961,
+      "f1": 0.8809523809523809,
+      "ap": 0.980343235239409,
+      "leaked_minor": 1425700,
+      "reviews": 182,
+      "review_rate": 0.19675675675675675,
+      "within_budget": true,
+      "tunable": true
+    }
+  ],
+  "budget_sweep": [
+    {
+      "budget": 0.05,
+      "escalated": 0.04108108108108108,
+      "recall": 0.24675324675324675,
+      "precision": 1.0,
+      "leaked_minor": 19522000,
+      "prevented_minor": 3009100
+    },
+    {
+      "budget": 0.1,
+      "escalated": 0.08540540540540541,
+      "recall": 0.512987012987013,
+      "precision": 1.0,
+      "leaked_minor": 12319500,
+      "prevented_minor": 10211600
+    },
+    {
+      "budget": 0.2,
+      "escalated": 0.19675675675675675,
+      "recall": 0.961038961038961,
+      "precision": 0.8131868131868132,
+      "leaked_minor": 1425700,
+      "prevented_minor": 21105400
+    },
+    {
+      "budget": 0.3,
+      "escalated": 0.28216216216216217,
+      "recall": 0.987012987012987,
+      "precision": 0.5823754789272031,
+      "leaked_minor": 539600,
+      "prevented_minor": 21991500
+    }
+  ]
+}
