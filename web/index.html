@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kavach — the seam between what a rail says and what is owed</title>
+<meta name="description" content="Kavach is the merchant-side trust layer for agentic commerce: verify agents coming in, govern agents acting out, and prove every decision either way.">
+<meta name="color-scheme" content="dark">
+<link rel="stylesheet" href="kavach.css">
+</head>
+<body>
+<a class="skip" href="#counter">Skip to content</a>
+
+<!-- ─── THE SPINE ─────────────────────────────────────────────────────────────
+     The append-only event log, at page scale. Every fact this page states cites
+     the events behind it; the spine is where those ticks accumulate as you read. -->
+<div class="spine" aria-hidden="true">
+  <div class="spine__rule"></div>
+  <div class="spine__head"></div>
+  <div class="spine__ticks"></div>
+</div>
+
+<header class="nav">
+  <a class="nav__mark" href="#counter">
+    <span class="nav__deva">कवच</span><span class="nav__name">KAVACH</span>
+  </a>
+  <p class="nav__pos" aria-live="off"><span data-nav-num>01</span> <span class="nav__slash">/</span> 08 <span class="nav__sec" data-nav-sec>THE COUNTER</span></p>
+</header>
+
+<main>
+
+<!-- ══ 01 · THE COUNTER ═══════════════════════════════════════════════════════ -->
+<section class="sec hero" id="counter" data-sec="01" data-name="THE COUNTER">
+  <div class="hero__field" aria-hidden="true"></div>
+  <div class="wrap hero__body">
+    <p class="eyebrow">Merchant-side trust layer · agentic commerce</p>
+    <h1 class="display">Agents now stand on <em>both sides</em> of the counter.</h1>
+    <p class="lede">
+      One walks up to checkout holding a mandate you cannot verify. One sits inside your
+      dashboard moving your money out. Razorpay shipped how an agent <em>pays</em>. Kavach is
+      the other half: how a merchant decides whether to <em>accept</em> one — and how to stop
+      its own agents from paying twice.
+    </p>
+
+    <figure class="hero__cell" data-cell>
+      <figcaption class="cell__caption">refund <span class="mono">rfnd_Hx9pQ2</span> · one entity, two truths</figcaption>
+      <div class="cell" data-hero-cell>
+        <div class="cell__half cell__half--l">
+          <p class="cell__label">rail state</p>
+          <p class="cell__value mono" data-steel>PROCESSING</p>
+          <p class="cell__note">the gateway accepted it and dispatched it</p>
+        </div>
+        <div class="cell__seam"><span class="cell__seam-line"></span></div>
+        <div class="cell__half cell__half--r">
+          <p class="cell__label">obligation state</p>
+          <p class="cell__value mono" data-amber>OPEN · ₹5,000</p>
+          <p class="cell__note">no event states the customer was credited</p>
+        </div>
+      </div>
+    </figure>
+
+    <div class="hero__acts">
+      <a class="btn btn--primary" href="#divergence"><span>Follow the ₹5,000</span></a>
+      <a class="btn" href="#proof"><span>See the proof plane</span></a>
+    </div>
+  </div>
+  <p class="hero__cue" aria-hidden="true">scroll</p>
+</section>
+
+<!-- ══ 02 · DIVERGENCE ════════════════════════════════════════════════════════ -->
+<section class="sec" id="divergence" data-sec="02" data-name="DIVERGENCE">
+  <div class="wrap">
+    <p class="eyebrow" data-reveal>02 — where the money goes missing</p>
+    <h2 class="h2" data-reveal>Tool acknowledgement is not financial truth.</h2>
+
+    <div class="transcript" data-reveal>
+      <p class="transcript__line"><span class="who who--agent">agent</span><span class="mono">create_refund(pay_Nx3f9K2, 500000)</span></p>
+      <p class="transcript__line"><span class="who who--api">api</span><span class="mono">200 OK &nbsp;{"id":"rfnd_Hx9pQ2", "status":"processed"}</span></p>
+      <p class="transcript__line"><span class="who who--agent">agent</span><span class="mono said">“Done — I’ve refunded ₹5,000.”</span></p>
+      <p class="transcript__line transcript__line--truth"><span class="who who--truth">truth</span><span class="mono">the customer has not been credited, and may not be for days</span></p>
+    </div>
+
+    <figure class="quote" data-reveal>
+      <blockquote>Usually, Razorpay moves a refund to the <span class="mono">processed</span> state before receiving the ARN/RRN from the Gateway.</blockquote>
+      <figcaption>Razorpay refund documentation</figcaption>
+    </figure>
+
+    <div class="split-claim" data-reveal>
+      <div class="split-claim__side">
+        <p class="cell__label">what <span class="mono">processed</span> means</p>
+        <p class="claim mono" data-steel>the rail dispatched it</p>
+        <p class="cell__note">observable, signature-verified, certain</p>
+      </div>
+      <p class="split-claim__verdict">One field cannot carry both.</p>
+      <div class="split-claim__side">
+        <p class="cell__label">what the agent read</p>
+        <p class="claim mono" data-oxide>the customer has the money</p>
+        <p class="cell__note">unobservable from here — and false for hours</p>
+      </div>
+    </div>
+
+    <p class="body" data-reveal>
+      So the customer complains again. The agent does not <em>retry</em> — it forms a
+      <em>new intent</em>: <span class="mono">“the refund didn’t work, issue another.”</span>
+      Different words, different session, different key. Financially, the same obligation,
+      paid twice.
+    </p>
+  </div>
+</section>
+
+<!-- ══ 03–05 · THE STAGE ══════════════════════════════════════════════════════
+     Pressure → Refusal → Gradient share one canvas, so the visual state persists
+     across all three: the same tiles that pile up are the tiles that reorganise. -->
+<section class="stage" id="stage" data-sec="03" data-name="PRESSURE">
+  <div class="stage__sticky">
+    <canvas class="stage__canvas" data-stage-canvas></canvas>
+
+    <div class="stage__layer" data-phase="pressure">
+      <div class="wrap stage__copy">
+        <p class="eyebrow">03 — the controls that exist</p>
+        <h2 class="h2">Every one of them bounds the wrong thing.</h2>
+        <ul class="controls" data-controls>
+          <li data-ctrl="0"><span class="ctrl__name mono">idempotency key</span><span class="ctrl__what">bounds a <em>replayed</em> request</span><span class="ctrl__fail">the agent minted a new key</span></li>
+          <li data-ctrl="1"><span class="ctrl__name mono">AP2 mandate</span><span class="ctrl__what">bounds <em>authorisation</em></span><span class="ctrl__fail">the human did authorise. Twice.</span></li>
+          <li data-ctrl="2"><span class="ctrl__name mono">issuing spend cap</span><span class="ctrl__what">bounds the <em>amount</em></span><span class="ctrl__fail">₹5,000 again, inside a ₹50,000 cap</span></li>
+          <li data-ctrl="3"><span class="ctrl__name mono">MCP --read-only</span><span class="ctrl__what">bounds <em>which tools</em> exist</span><span class="ctrl__fail">it legitimately needs create_refund</span></li>
+          <li data-ctrl="4"><span class="ctrl__name mono">Thirdwatch</span><span class="ctrl__what">bounds <em>human</em> fraud signals</span><span class="ctrl__fail">a good agent looks like a good agent</span></li>
+        </ul>
+        <p class="counter-row">
+          <span class="counter"><span class="counter__n mono" data-count-intents>0</span><span class="counter__l">intents in flight</span></span>
+          <span class="counter"><span class="counter__n mono" data-count-exposure data-oxide>₹0</span><span class="counter__l">unverified exposure</span></span>
+        </p>
+      </div>
+    </div>
+
+    <div class="stage__layer stage__layer--center" data-phase="refusal" data-sec-name="REFUSAL">
+      <div class="refusal">
+        <p class="refusal__line">An idempotency key protects a <em>retried</em> request.</p>
+        <p class="refusal__line refusal__line--2">Nothing protects a <em>re-decided</em> one.</p>
+        <p class="refusal__sub">The question no control asks: is this new intent financially the same obligation as something already in flight?</p>
+      </div>
+    </div>
+
+    <div class="stage__layer" data-phase="gradient" data-sec-name="THE GRADIENT">
+      <div class="wrap stage__copy stage__copy--top">
+        <p class="eyebrow">05 — the shape of the fix</p>
+        <h2 class="h2">Order the system by how much of it can be proven.</h2>
+        <p class="body body--tight">Cryptography and integer arithmetic at the entrance. Accounting invariants at the exit. The learned parts sit in the middle, where the ambiguity actually is — and they may only ever move a decision toward <em>more</em> caution.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ 05b · THE PLANES ═══════════════════════════════════════════════════════ -->
+<section class="sec sec--planes" id="gradient" data-sec="05" data-name="THE GRADIENT">
+  <div class="wrap">
+    <p class="legend" data-reveal>
+      <span class="legend__k"><i data-swatch="steel"></i>deterministic — no model, ever</span>
+      <span class="legend__k"><i data-swatch="amber"></i>learned — advisory only</span>
+      <span class="legend__k"><i data-swatch="bone"></i>policy — chooses the action</span>
+    </p>
+    <ol class="planes" data-planes></ol>
+    <p class="note" data-reveal>Nothing below a layer imports anything above it. That ordering is also the determinism gradient.</p>
+  </div>
+</section>
+
+<!-- ══ 06 · AUTHORITY ═════════════════════════════════════════════════════════ -->
+<section class="sec" id="authority" data-sec="06" data-name="AUTHORITY">
+  <div class="wrap">
+    <p class="eyebrow" data-reveal>06 — what the model is allowed to do</p>
+    <h2 class="h2" data-reveal>A wrong model may only widen caution.</h2>
+    <p class="body" data-reveal>
+      The duplicate-risk model returns a number between 0 and 1. Drag it. It can raise the
+      decision toward a human, and it can do nothing else — no score unlocks a cap, an
+      invariant, or a permission tier.
+    </p>
+
+    <div class="rig" data-reveal>
+      <div class="rig__controls">
+        <label class="ctl">
+          <span class="ctl__label">model score <span class="mono ctl__val" data-out="score">0.00</span></span>
+          <input type="range" min="0" max="1" step="0.01" value="0" data-in="score">
+        </label>
+        <fieldset class="ctl ctl__set">
+          <legend class="ctl__label">state of the world</legend>
+          <label class="chk"><input type="checkbox" data-in="captured" checked> payment is captured</label>
+          <label class="chk"><input type="checkbox" data-in="within"  checked> refund stays within the captured amount</label>
+          <label class="chk"><input type="checkbox" data-in="write"   checked> agent holds a write tier</label>
+          <label class="chk"><input type="checkbox" data-in="unknown"> an open obligation is <span class="mono">AMBIGUOUS</span></label>
+        </fieldset>
+      </div>
+
+      <div class="rig__out">
+        <ol class="ladder" data-ladder>
+          <li data-rung="0"><span class="rung__n mono">1</span><span class="rung__t">accounting invariants</span><span class="rung__s mono">—</span></li>
+          <li data-rung="1"><span class="rung__n mono">2</span><span class="rung__t">permission tier</span><span class="rung__s mono">—</span></li>
+          <li data-rung="2"><span class="rung__n mono">3</span><span class="rung__t">truth confidence</span><span class="rung__s mono">—</span></li>
+          <li data-rung="3"><span class="rung__n mono">4</span><span class="rung__t">duplicate-risk model</span><span class="rung__s mono">—</span></li>
+          <li data-rung="4"><span class="rung__n mono">5</span><span class="rung__t">exposure caps</span><span class="rung__s mono">—</span></li>
+        </ol>
+        <output class="verdict" data-verdict>
+          <span class="verdict__k">verdict</span>
+          <span class="verdict__v mono" data-verdict-v>ALLOW</span>
+          <span class="verdict__why" data-verdict-why>Nothing objects. The refund executes under a derived idempotency key.</span>
+        </output>
+      </div>
+    </div>
+
+    <hr class="rule" data-reveal>
+
+    <p class="eyebrow" data-reveal>and how the deterministic half chooses</p>
+    <h3 class="h3" data-reveal>Four verdicts, one argmin.</h3>
+    <p class="body" data-reveal>
+      Gate picks the admission verdict by minimising expected loss over costs the
+      <em>merchant</em> supplies — not by thresholding a score. Move the risk and the cart
+      value and watch the winner change.
+    </p>
+
+    <div class="rig rig--el" data-reveal>
+      <div class="rig__controls">
+        <label class="ctl">
+          <span class="ctl__label">entailment risk <span class="mono ctl__val" data-out="p">0.06</span></span>
+          <input type="range" min="0" max="1" step="0.01" value="0.06" data-in="p">
+        </label>
+        <label class="ctl">
+          <span class="ctl__label">cart value <span class="mono ctl__val" data-out="L">₹2,000</span></span>
+          <input type="range" min="200" max="50000" step="100" value="2000" data-in="L">
+        </label>
+      </div>
+      <div class="rig__out">
+        <ol class="bars" data-bars>
+          <li data-bar="ALLOW"><span class="bar__k mono">ALLOW</span><span class="bar__t"><i></i></span><span class="bar__v mono">—</span></li>
+          <li data-bar="STEP_UP"><span class="bar__k mono">STEP_UP</span><span class="bar__t"><i></i></span><span class="bar__v mono">—</span></li>
+          <li data-bar="HOLD"><span class="bar__k mono">HOLD</span><span class="bar__t"><i></i></span><span class="bar__v mono">—</span></li>
+          <li data-bar="DENY"><span class="bar__k mono">DENY</span><span class="bar__t"><i></i></span><span class="bar__v mono">—</span></li>
+        </ol>
+        <p class="formula mono">EL(step_up) = c_step + p · (1 − r_step) · L</p>
+      </div>
+        <p class="assume">
+          <span class="mono">c_step ₹45</span> — message, plus the checkout it interrupts<br>
+          <span class="mono">c_hold ₹140</span> — review minutes, plus a delayed order<br>
+          <span class="mono">r_step 0.70</span> · <span class="mono">r_hold 0.95</span> — share of bad carts each actually catches<br>
+          <span class="mono">margin 18% of cart</span> — lost when a good cart is refused<br><br>
+          Stated assumptions with no public source, recorded as assumptions — not measurements.
+        </p>
+    </div>
+  </div>
+</section>
+
+<!-- ══ 07 · EVIDENCE ══════════════════════════════════════════════════════════ -->
+<section class="sec" id="evidence" data-sec="07" data-name="EVIDENCE">
+  <div class="wrap">
+    <p class="eyebrow" data-reveal>07 — measured, on a held-out split</p>
+    <h2 class="h2" data-reveal>Same human cost. Thirteen times less money out the door.</h2>
+    <p class="body" data-reveal>
+      Every system below escalates the identical share of intents, because “escalate
+      everything” is otherwise optimal and operationally useless. Hold the friction fixed,
+      then count the rupees that leaked.
+    </p>
+
+    <table class="results" data-results>
+      <caption class="sr">Duplicate-obligation detection on 925 held-out intents at a fixed review budget</caption>
+      <thead>
+        <tr><th scope="col">system</th><th scope="col">precision</th><th scope="col">recall</th><th scope="col">escalated</th><th scope="col">leaked</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <p class="punch" data-reveal>
+      <span class="mono" data-steel>B2</span> and <span class="mono" data-bone>B4</span> escalate the
+      <em>same 19.7%</em> — identical human cost. The rule leaks
+      <span class="mono" data-oxide>₹1,84,636</span>. The model leaks
+      <span class="mono" data-bone>₹14,257</span>.
+    </p>
+
+    <div class="sweep" data-reveal>
+      <p class="eyebrow">how much friction you are willing to buy</p>
+      <div class="sweep__ctl" role="group" aria-label="Review budget" data-sweep-btns></div>
+      <dl class="sweep__out" data-sweep-out></dl>
+    </div>
+
+    <div class="limits" data-reveal>
+      <h3 class="h3">What these numbers are not.</h3>
+      <ul>
+        <li>Both corpora are <em>synthetic</em>. Built to be hard — paraphrased duplicates, identical-amount hard negatives, held-out attack families — but not production traffic.</li>
+        <li>The 12% duplicate base rate is a <em>stated assumption</em>. No public figure exists; the sensitivity sweep above is why it is stated rather than hidden.</li>
+        <li>Precision 0.813 means roughly <em>one in five escalations delays a legitimate refund</em>. That cost is real, and it is why the system escalates rather than denies.</li>
+        <li><span class="mono">B1</span> scoring exactly zero is the corpus working as designed: duplicates are paraphrases, so string equality is worthless and no model is credited for beating a strawman.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ══ 08 · PROOF ═════════════════════════════════════════════════════════════ -->
+<section class="sec sec--proof" id="proof" data-sec="08" data-name="PROOF">
+  <div class="wrap">
+    <p class="eyebrow" data-reveal>08 — the shared spine</p>
+    <h2 class="h2" data-reveal>Every fact cites the events behind it.</h2>
+    <p class="body" data-reveal>
+      Facts are derived from an append-only log, never asserted. A decision replayed against
+      the same events and the same clock returns the same verdict months later — which is
+      what a chargeback on an agent-initiated order actually requires.
+    </p>
+
+    <figure class="chain" data-reveal>
+      <figcaption class="cell__caption">the evidence behind the refund this page opened with</figcaption>
+      <ol class="chain__log">
+        <li data-cited><span class="chain__seq mono">seq 12</span><span class="chain__src mono">webhook · refund.created</span><span class="chain__says">rail → <span class="mono" data-steel>ACCEPTED</span></span><span class="chain__trust mono">HMAC verified</span></li>
+        <li data-cited><span class="chain__seq mono">seq 17</span><span class="chain__src mono">webhook · refund.processed</span><span class="chain__says">rail → <span class="mono" data-steel>PROCESSING</span></span><span class="chain__trust mono">HMAC verified</span></li>
+        <li><span class="chain__seq mono">seq 23</span><span class="chain__src mono">api · fetch refund</span><span class="chain__says">no ARN present</span><span class="chain__trust mono" data-amber>unverified source</span></li>
+        <li data-absent><span class="chain__seq mono">—</span><span class="chain__src mono">nothing</span><span class="chain__says">no event states the customer was credited</span><span class="chain__trust mono">&nbsp;</span></li>
+      </ol>
+      <p class="chain__fact mono">FinancialFact(rfnd_Hx9pQ2) · rail <span data-steel>PROCESSING</span> · obligation <span data-amber>OPEN</span> · <span data-bone>DERIVED_CERTAIN</span> · evidence [12, 17]</p>
+    </figure>
+
+    <p class="body" data-reveal>
+      The obligation is open because <em>no event closes it</em> — not because a model guessed.
+      Replay those events against the same clock in six months and the verdict is identical,
+      which is the only form a dispute can actually use.
+    </p>
+
+    <dl class="facts" data-reveal>
+      <div><dt class="mono">DERIVED_CERTAIN</dt><dd>a signature-verified event states this directly</dd></div>
+      <div><dt class="mono">DERIVED_PROBABLE</dt><dd>inferred, or from an unverified source</dd></div>
+      <div><dt class="mono">UNKNOWN</dt><dd>contradicted, or stale past tolerance — never “unchanged”</dd></div>
+    </dl>
+
+    <div class="swap" data-reveal>
+      <p class="eyebrow">the deployment vector</p>
+      <p class="body body--tight">Kavach ships as an MCP server with Razorpay-compatible tool names. Swapping is one config line — same tools, same arguments. They return financial facts, and they can refuse.</p>
+<pre class="code mono"><code>{ "mcpServers": { "kavach": { "command": "kavach-mcp-server" } } }</code></pre>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap foot__in">
+    <p class="foot__mark"><span class="nav__deva">कवच</span> — proof.</p>
+    <p class="foot__meta mono">test mode only · <span data-tree></span> · Razorpay AI Buildathon 2026</p>
+  </div>
+</footer>
+
+<script src="kavach.js"></script>
+</body>
+</html>
