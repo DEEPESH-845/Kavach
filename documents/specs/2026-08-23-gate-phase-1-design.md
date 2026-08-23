@@ -104,8 +104,13 @@ it to an explicit dependency because the code imports it directly.
     admissible(conn, env: Envelope, cart: Cart, *, now: int) -> list[Violation]
 
 All arithmetic in integer minor units — no floats touch money, anywhere. Checks: merchant in
-allowlist, every line's category within mandate scope, currency match, cart total within
-per-transaction cap, and cumulative spend plus this cart within the cumulative cap.
+allowlist, every line's category within mandate scope, cart total within per-transaction cap,
+and cumulative spend plus this cart within the cumulative cap.
+
+Phase 1 is **INR only**. The `Envelope` carries no currency field and no currency check is
+performed, because a check against a field that does not exist is theatre. Multi-currency
+mandates need a currency on the envelope, per-currency caps and a rate source; none of that
+is in scope, and adding a comparison now would only look like it was.
 
 Cumulative spend is **recomputed from the event log** on each call rather than kept in a
 counter column. `ledger.open_against_payment` already takes this position for the same
@@ -224,10 +229,21 @@ treatment the Rail benchmark already gets, for the same reason.
 
 ## 8 · Small refactor carried by this phase
 
-`intelligence/model.py` currently hardcodes its artefact path and reads feature names from
-`features.FEATURES`. Entailment needs the identical `Model` shape with different feature
-names, so rather than copy forty lines, `Model` gains a `names` field and `save`/`load` take
-a path argument. Two estimators, one persistence path, no abstraction invented for it.
+`intelligence/model.py` currently hardcodes three things that are specific to duplicate
+risk: its artefact path, its feature names (read from `features.FEATURES`), and the
+`design()` function that `score()` and `explain()` call by name. Entailment needs the
+identical `Model` shape with different features, so rather than copy forty lines:
+
+- `Model` gains `names: tuple[str, ...]` — the feature labels `explain()` attributes over.
+- `Model` gains `design_fn: Callable | None = None`, and `score()`/`explain()` call
+  `(self.design_fn or design)(...)` instead of the module-level `design` directly. Without
+  this the tuple is portable but its two methods still build duplicate-risk feature
+  matrices, which is the coupling that matters — an entailment model would load fine and
+  then score the wrong thing.
+- `save()`/`load()` take a path argument, defaulting to today's `MODEL_PATH`.
+
+The `None` default keeps every existing call site working unchanged. Two estimators, one
+persistence path, one attribution path, no abstraction invented for it.
 
 Deliberately **not** done: extracting a base estimator class. Two implementations do not
 justify one. If a third arrives, revisit.
