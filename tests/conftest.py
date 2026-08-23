@@ -14,6 +14,18 @@ from kavach.eventlog import append, connect
 T = 1_700_000_000
 
 
+@pytest.fixture(autouse=True)
+def _no_ambient_credentials(monkeypatch):
+    """No test may depend on what happens to be in the shell.
+
+    Without this the suite passes bare and fails under `make check` with .env sourced, or
+    worse, passes for the wrong reason.
+    """
+    for var in ("RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET", "RAZORPAY_WEBHOOK_SECRET",
+                "KAVACH_MODE", "KAVACH_DB"):
+        monkeypatch.delenv(var, raising=False)
+
+
 @pytest.fixture
 def conn():
     c = connect(":memory:")
