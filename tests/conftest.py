@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 from kavach import ledger
 from kavach.eventlog import append, connect
+from kavach.gate import envelope
 
 T = 1_700_000_000
 
@@ -30,6 +31,7 @@ def _no_ambient_credentials(monkeypatch):
 def conn():
     c = connect(":memory:")
     ledger.init(c)
+    envelope.init(c)
     yield c
     c.close()
 

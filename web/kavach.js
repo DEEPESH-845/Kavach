@@ -29,7 +29,7 @@ const REPORT = {
     { budget: 0.30, escalated: 0.28216216216216217, recall: 0.987012987012987,    precision: 0.5823754789272031, leaked_minor: 539600,   prevented_minor: 21991500 },
   ],
 };
-const TREE = { lines: 1573, tests: 52 };
+const TREE = { lines: 1759, tests: 77 };
 
 /* ── the eight planes, ordered by how much of each can be proven ─────────── */
 const PLANES = [
