@@ -43,18 +43,20 @@
     </p>
 
     <figure class="hero__cell" data-cell>
-      <figcaption class="cell__caption">refund <span class="mono">rfnd_Hx9pQ2</span> · one entity, two truths</figcaption>
+      <figcaption class="cell__caption">refund <span class="mono">rfnd_Hx9pQ2</span> · one entity, two truths · the clock runs from the last event</figcaption>
       <div class="cell" data-hero-cell>
         <div class="cell__half cell__half--l">
           <p class="cell__label">rail state</p>
           <p class="cell__value mono" data-steel>PROCESSING</p>
           <p class="cell__note">the gateway accepted it and dispatched it</p>
+          <p class="cell__clock mono">settled by <span data-steel>seq 17</span> · webhook, HMAC verified</p>
         </div>
         <div class="cell__seam"><span class="cell__seam-line"></span></div>
         <div class="cell__half cell__half--r">
           <p class="cell__label">obligation state</p>
           <p class="cell__value mono" data-amber>OPEN · ₹5,000</p>
           <p class="cell__note">no event states the customer was credited</p>
+          <p class="cell__clock mono">open for <span data-amber data-unresolved>00:00:00</span> · staleness tolerance 06:00:00</p>
         </div>
       </div>
     </figure>
@@ -158,9 +160,19 @@
       <span class="legend__k"><i data-swatch="steel"></i>deterministic — no model, ever</span>
       <span class="legend__k"><i data-swatch="amber"></i>learned — advisory only</span>
       <span class="legend__k"><i data-swatch="bone"></i>policy — chooses the action</span>
+      <span class="legend__k legend__hint">open a plane for what it cannot do</span>
     </p>
     <ol class="planes" data-planes></ol>
-    <p class="note" data-reveal>Nothing below a layer imports anything above it. That ordering is also the determinism gradient.</p>
+    <p class="note" data-reveal>
+      Nothing below a layer imports anything above it. That ordering is also the determinism
+      gradient.
+    </p>
+    <p class="note" data-reveal>
+      <em>State, stated.</em> ⑤⑥⑦⑧ are built and under test. ①–④ are specified and being
+      built — the design is in <span class="mono">documents/specs/</span>. The latencies are
+      per-plane <em>budgets</em>, not measurements; the only measured numbers on this page are
+      in <a class="link" href="#evidence">Evidence</a>.
+    </p>
   </div>
 </section>
 
@@ -204,6 +216,20 @@
           <span class="verdict__why" data-verdict-why>Nothing objects. The refund executes under a derived idempotency key.</span>
         </output>
       </div>
+    </div>
+
+    <div class="stream" data-stream data-reveal>
+      <div class="stream__head">
+        <p class="eyebrow">the same ladder, at volume</p>
+        <p class="stream__src mono">replay · seeded synthetic corpus · not production traffic</p>
+      </div>
+      <ol class="stream__rows" data-stream-rows></ol>
+      <dl class="stream__tally" data-stream-tally></dl>
+      <p class="stream__note">
+        The reason text and obligation kinds are the corpus’s own, the threshold is the frozen
+        <span class="mono">0.51</span> from the report, and the ladder is the one above. A seam
+        travels while a decision is open, and closes when the verdict lands.
+      </p>
     </div>
 
     <hr class="rule" data-reveal>

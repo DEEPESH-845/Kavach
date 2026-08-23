@@ -320,7 +320,12 @@ Same tool names, same arguments. The tools return financial facts, and they can 
 cp .env.example .env      # add rzp_test_ keys
 make bench                # regenerate corpus, train, benchmark against all baselines
 make mcp                  # run the MCP server over stdio
+make site                 # open the landing page — no server, no build step
 ```
+
+The page states numbers. `tests/test_site.py` fails the build if any of them stops
+matching `evals/risk_report.json` or the tree, because ADR-007 does not stop at the
+edge of the repository.
 
 ---
 
@@ -338,6 +343,7 @@ pkg/kavach/
   proof/                 hash chain · replay · dispute pack
   razorpay/client.py     REST client, live | replay                  I/O
   mcp/server.py          the tool surface an agent sees              I/O
+web/                     the landing page: one html, one css, one js, zero deps
 tests/                   pytest, one file per module
 documents/               design docs and ADRs
 evals/                   benchmark output

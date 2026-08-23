@@ -33,14 +33,38 @@ const TREE = { lines: 1573, tests: 52 };
 
 /* ── the eight planes, ordered by how much of each can be proven ─────────── */
 const PLANES = [
-  { half: 'GATE · inbound',  n: '①', t: 'Credential',        m: 'Ed25519 envelope, nonce replay, cap arithmetic, scope',       k: 'steel', ai: 'no — deliberately', ms: '~3 ms'   },
-  { half: 'GATE · inbound',  n: '②', t: 'Intent',            m: 'does the cart entail the mandate’s stated purpose?',          k: 'amber', ai: 'learned',           ms: '~120 ms' },
-  { half: 'GATE · inbound',  n: '③', t: 'Provenance',        m: 'goal drift correlated to ingesting untrusted text',           k: 'amber', ai: 'learned',           ms: '~140 ms' },
-  { half: 'GATE · inbound',  n: '④', t: 'Population',        m: 'rings, velocity, inhuman regularity over an identity graph',  k: 'amber', ai: 'classical ML',      ms: '~8 ms'   },
-  { half: 'RAIL · outbound', n: '⑤', t: 'Truth',             m: 'events → FinancialFact. rail state ≠ obligation state',       k: 'steel', ai: 'no — deliberately', ms: '<1 ms'   },
-  { half: 'RAIL · outbound', n: '⑥', t: 'Obligation ledger', m: 'what money is in flight, including intents with no webhook',  k: 'steel', ai: 'no',                ms: '<1 ms'   },
-  { half: 'RAIL · outbound', n: '⑦', t: 'Duplicate risk',    m: 'relational features + the intent’s reason text',              k: 'amber', ai: 'learned, advisory', ms: '~2 ms'   },
-  { half: 'RAIL · outbound', n: '⑧', t: 'Governor',          m: 'invariants → tiers → confidence → model → caps',              k: 'bone',  ai: 'policy',            ms: '<1 ms'   },
+  { half: 'GATE · inbound',  n: '①', t: 'Credential',        m: 'Ed25519 envelope, nonce replay, cap arithmetic, scope',       k: 'steel', ai: 'no — deliberately', ms: '~3 ms',
+    catches: 'Forged, expired, revoked, replayed and out-of-scope mandates. Cap arithmetic in integer minor units, against a spend ledger recomputed from the log.',
+    cannot: 'Tell you whether the cart matches the purpose. A valid signature answers <em>who</em>, never <em>what</em>.',
+    boundary: 'The envelope is untrusted — it arrives with the agent. The signature is verified over the raw bytes before anything is parsed.' },
+  { half: 'GATE · inbound',  n: '②', t: 'Intent',            m: 'does the cart entail the mandate’s stated purpose?',          k: 'amber', ai: 'learned',           ms: '~120 ms',
+    catches: '₹1,800 of gift cards satisfying “weekly groceries under ₹2,000” arithmetically, and an ₹18,000 chair satisfying “office supplies”.',
+    cannot: 'Judge a cart that is genuinely in scope but wrong for reasons the mandate never mentions.',
+    boundary: 'The cart is merchant-supplied, so category and liquidity flags are trusted. If the agent could set them the check would be self-certified and worthless.' },
+  { half: 'GATE · inbound',  n: '③', t: 'Provenance',        m: 'goal drift correlated to ingesting untrusted text',           k: 'amber', ai: 'learned',           ms: '~140 ms',
+    catches: 'An objective that mutated immediately after the agent read a product review, and the span of hostile text that moved it.',
+    cannot: 'An agent that was hostile before the session began. There is no drift to measure against.',
+    boundary: 'Page text, cart text and traces enter our own prompts as tagged untrusted data, never as instructions. A test asserts the verifier refuses an embedded “return ALLOW”.' },
+  { half: 'GATE · inbound',  n: '④', t: 'Population',        m: 'rings, velocity, inhuman regularity over an identity graph',  k: 'amber', ai: 'classical ML',      ms: '~8 ms',
+    catches: 'Mandate-farming rings sharing devices, addresses or tokens; timing too regular to be a person.',
+    cannot: 'A patient single actor with clean infrastructure. Population signal needs a population.',
+    boundary: 'Split by principal and by ring, never by row — a ring straddling train and test would score itself.' },
+  { half: 'RAIL · outbound', n: '⑤', t: 'Truth',             m: 'events → FinancialFact. rail state ≠ obligation state',       k: 'steel', ai: 'no — deliberately', ms: '<1 ms',
+    catches: '<span class="mono">processed</span> read as <em>credited</em>. Contradictions, and silence past the staleness tolerance.',
+    cannot: 'Observe anything NPCI-side. Those conditions are returned as <span class="mono">AMBIGUOUS</span> with a stated reason, never invented.',
+    boundary: 'An unverified webhook never becomes <span class="mono">DERIVED_CERTAIN</span> evidence. HMAC is checked over the raw body, constant-time.' },
+  { half: 'RAIL · outbound', n: '⑥', t: 'Obligation ledger', m: 'what money is in flight, including intents with no webhook',  k: 'steel', ai: 'no',                ms: '<1 ms',
+    catches: 'Money already in flight whose webhook has not landed — the window every duplicate is born in.',
+    cannot: 'See obligations created outside this merchant’s surface.',
+    boundary: 'Exposure is recomputed from the event log on every call. A second copy of a derived number is a number that drifts, silently.' },
+  { half: 'RAIL · outbound', n: '⑦', t: 'Duplicate risk',    m: 'relational features + the intent’s reason text',              k: 'amber', ai: 'learned, advisory', ms: '~2 ms',
+    catches: '“The refund didn’t work, issue another” against an obligation already open. The same string scores 0.951 in one context and 0.042 in another.',
+    cannot: 'Authorise anything. It may raise a decision toward a human and do nothing else.',
+    boundary: 'Precision 0.813 — roughly one in five escalations delays a legitimate refund. That cost is why it escalates rather than denies.' },
+  { half: 'RAIL · outbound', n: '⑧', t: 'Governor',          m: 'invariants → tiers → confidence → model → caps',              k: 'bone',  ai: 'policy',            ms: '<1 ms',
+    catches: 'Everything the model is not allowed to authorise, in a fixed order, strongest first.',
+    cannot: 'Be talked past. No score, and no human, waves through an accounting invariant.',
+    boundary: 'Degradation only ever raises the floor. There is no failure path in this system that ends somewhere more permissive than the healthy one.' },
 ];
 
 /* ── utils ───────────────────────────────────────────────────────────────── */
@@ -155,8 +179,45 @@ function hero() {
     };
   }
 
+  // The headline arrives a word at a time from behind a mask. Words, not letters:
+  // letter-by-letter turns a sentence into an effect, and this sentence is the thesis.
+  const h1 = $('.display');
+  (function split(node) {
+    [...node.childNodes].forEach(n => {
+      if (n.nodeType === 3) {
+        const frag = document.createDocumentFragment();
+        n.textContent.split(/(\s+)/).forEach(tok => {
+          if (!tok.trim()) return void frag.append(tok);
+          const w = document.createElement('span'); w.className = 'w';
+          const inner = document.createElement('i'); inner.textContent = tok;
+          w.append(inner); frag.append(w);
+        });
+        n.replaceWith(frag);
+      } else if (n.nodeType === 1) split(n);
+    });
+  })(h1);
+  $$('.w > i', h1).forEach((w, i) => w.style.setProperty('--wd', (i * 0.045).toFixed(3) + 's'));
+  requestAnimationFrame(() => document.body.setAttribute('data-lit', ''));
+
+  // the fill starts where the pointer entered: the seam you opened yourself
+  $$('.btn').forEach(btn => btn.addEventListener('pointerenter', e => {
+    const r = btn.getBoundingClientRect();
+    btn.style.setProperty('--ox', (((e.clientX - r.left) / r.width) * 100).toFixed(1) + '%');
+  }));
+
   // the page's first statement: one entity, and the seam that proves it is two.
   setTimeout(() => cell.setAttribute('data-open', ''), still.matches ? 0 : 1100);
+
+  // An obligation nobody closed gets older while you read. `unresolved_for` is a
+  // real field on FinancialFact; here it is the only thing on the page that moves
+  // without you, because that is the whole complaint.
+  const clock = $('[data-unresolved]');
+  const t0 = Date.now() - 4 * 3600e3 - 12 * 60e3;   // the demo refund, four hours in
+  const hhmmss = ms => [ms / 3600e3, ms / 60e3 % 60, ms / 1e3 % 60]
+    .map(v => String(Math.floor(v)).padStart(2, '0')).join(':');
+  const tickClock = () => { clock.textContent = hhmmss(Date.now() - t0); };
+  tickClock();
+  setInterval(tickClock, 1000);
 }
 
 /* ═════════════════════════════════════════════════════════════════════════
@@ -234,7 +295,9 @@ function stage() {
     const collapse= smooth(range(p, 0.32, 0.44));         // everything falls quiet
     const rebuild = smooth(range(p, narrow.matches ? 0.68 : 0.52, 0.88));
     const visible = Math.max(4, Math.round(4 + ramp ** 1.7 * (N - 4)));
-    const divRate = ramp * 0.45;                          // how many stop agreeing
+    // Scrolling faster is pushing the system harder, so more of it stops agreeing.
+    // Velocity earns its place here because it means something; it is not parallax.
+    const divRate = ramp * (0.42 + smooth(strain * 26) * 0.34);
 
     // the ladder the tiles resolve into
     const labelW = narrow.matches ? 26 : 196;
@@ -293,9 +356,12 @@ function stage() {
     host.dataset.sec = p < .36 ? '03' : p < .58 ? '04' : '05';
   };
 
+  let strain = 0, prev = 0;
   const measure = () => {
     const r = host.getBoundingClientRect();
     phase = clamp(-r.top / Math.max(1, r.height - innerHeight));
+    strain = lerp(strain, Math.abs(phase - prev), .18);   // damped, so it decays visibly
+    prev = phase;
   };
 
   const loop = () => {
@@ -339,13 +405,27 @@ function planes() {
       h.textContent = half;
       ol.appendChild(h);
     }
+    // native <details>: keyboard, screen readers and height interpolation for free
     const li = document.createElement('li');
     li.className = 'plane'; li.dataset.k = p.k;
-    li.innerHTML = `<span class="plane__n">${p.n}</span>
-      <span class="plane__t">${p.t}</span>
-      <span class="plane__m">${p.m}</span>
-      <span class="plane__ai">${p.ai}</span>
-      <span class="plane__ms">${p.ms}</span>`;
+    li.innerHTML = `<details class="plane__d">
+      <summary class="plane__row">
+        <span class="plane__n">${p.n}</span>
+        <span class="plane__t">${p.t}</span>
+        <span class="plane__m">${p.m}</span>
+        <span class="plane__ai">${p.ai}</span>
+        <span class="plane__ms">${p.ms}</span>
+        <span class="plane__x" aria-hidden="true"></span>
+      </summary>
+      <dl class="plane__body">
+        <div><dt>what it catches</dt><dd>${p.catches}</dd></div>
+        <div><dt>what it cannot</dt><dd>${p.cannot}</dd></div>
+        <div><dt>trust boundary</dt><dd>${p.boundary}</dd></div>
+      </dl>
+    </details>`;
+    // the row's open state drives the li, so the accent bar and background follow
+    const d = li.firstElementChild;
+    d.addEventListener('toggle', () => li.toggleAttribute('open', d.open));
     ol.appendChild(li);
   });
 }
@@ -409,6 +489,141 @@ function authority() {
 }
 
 /* ═════════════════════════════════════════════════════════════════════════
+   THE STREAM — the same authority ladder, at volume.
+
+   Seeded from the corpus's own seed, over the corpus's own obligation kinds and
+   reason strings, at the report's stated 12% duplicate base rate and its frozen
+   threshold. It is a replay, it says so on the tin, and it is reproducible: the
+   same seed gives the same stream every time this page loads.
+   ═════════════════════════════════════════════════════════════════════════ */
+const KINDS = [
+  { k: 'duplicate_charge', share: [1, 1], texts: ['customer was charged twice for this order', 'duplicate debit reported by the buyer', 'double charge on the same order, please reverse one', 'buyer says he paid twice, refund the extra one'] },
+  { k: 'item_damaged',     share: [.6, 1], texts: ['item arrived damaged', 'product was broken on delivery', 'customer received a cracked unit', 'packaging crushed, item unusable'] },
+  { k: 'shipping_fee',     share: [.02, .08], texts: ['refund the shipping charge only', 'waive the delivery fee for this order', 'refund delivery charges, keep the item amount'] },
+  { k: 'not_delivered',    share: [1, 1], texts: ['order never arrived', 'package not delivered to the customer', 'courier marked delivered but customer denies receipt'] },
+  { k: 'size_return',      share: [.4, .9], texts: ['wrong size, customer returned it', 'size mismatch return', 'returned - size too small'] },
+  { k: 'price_match',      share: [.05, .2], texts: ['price dropped after purchase, refund the difference', 'customer found a lower price, adjusting'] },
+  { k: 'late_delivery',    share: [.05, .15], texts: ['delivered late, goodwill refund', 'sla breach on delivery, partial refund'] },
+];
+
+function stream() {
+  const host = $('[data-stream]'), rows = $('[data-stream-rows]'), tally = $('[data-stream-tally]');
+  const THRESH = REPORT.threshold, MAX = 8;
+
+  // mulberry32, seeded with the corpus seed
+  let seed = 7;
+  const rnd = () => {
+    seed = seed + 0x6D2B79F5 | 0;
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+  const pick = a => a[(rnd() * a.length) | 0];
+
+  // A faithful port of corpus.generate(): a payment carries 1-3 distinct obligations
+  // whose amounts are drawn to fit inside it, and 12% of intents re-decide one that
+  // has already been acted on -- paraphrased, never copied. The duplicate is the
+  // thing that trips either the invariant or the model, which is the entire point.
+  let minted = 0;
+  const mint = () => {
+    const amount = pick([49900, 129900, 249900, 500000, 1250000]);
+    const kinds = [], n = pick([1, 1, 2, 2, 3]);
+    while (kinds.length < n) { const k = pick(KINDS); if (!kinds.includes(k)) kinds.push(k); }
+    let shares = kinds.map(k => k.share[0] + rnd() * (k.share[1] - k.share[0]));
+    const sum = shares.reduce((a, b) => a + b, 0), cap = .45 + rnd() * .53;
+    // Obligations fit inside the payment, and usually leave headroom. That headroom is
+    // what makes the duplicate interesting: with none, every re-decision is caught by
+    // arithmetic and the model never gets asked. With some, the model has to earn it.
+    if (sum > cap) shares = shares.map(v => v * cap / sum);
+    return {
+      id: 'pay_' + (10237 + (minted++ * 613) % 8900),
+      amount, captured: rnd() > .04, exposure: 0, done: [],
+      queue: kinds.map((k, i) => ({ kind: k, amount: Math.max(100, Math.round(amount * shares[i] / 100) * 100) })),
+    };
+  };
+  const pays = Array.from({ length: 9 }, mint);
+
+  const count = { ALLOW: 0, ESCALATE: 0, DENY: 0 };
+
+  const decide = () => {
+    let idx = (rnd() * pays.length) | 0, p = pays[idx];
+    // The duplicate rate is the report's stated 12%, applied where a duplicate is even
+    // possible (ADR-014). Everything else takes the next obligation the merchant owes;
+    // a payment with nothing left retires and a fresh one takes its slot.
+    const dup = p.done.length > 0 && rnd() < REPORT.duplicate_rate_assumption;
+    if (!dup && !p.queue.length) { pays[idx] = mint(); p = pays[idx]; }
+    const ob = dup ? pick(p.done) : p.queue.shift();
+    const risk = p.done.length === 0 ? null : dup ? .58 + rnd() * .41 : rnd() * .44;
+
+    let v;
+    if (!p.captured) v = 'DENY';                              // 1. accounting invariant
+    else if (p.exposure + ob.amount > p.amount) v = 'DENY';   // 1. accounting invariant
+    else if (rnd() < .05) v = 'ESCALATE';                     // 3. truth confidence UNKNOWN
+    else if (risk !== null && risk >= THRESH) v = 'ESCALATE'; // 4. duplicate risk, escalate only
+    else { v = 'ALLOW'; p.exposure += ob.amount; p.done.push(ob); }
+
+    if (!p.captured) pays[idx] = mint();   // nobody keeps refunding an uncaptured payment
+
+    return {
+      id: p.id,
+      what: inr(ob.amount / 100) + ' \u00b7 \u201C' + pick(ob.kind.texts) + '\u201D',
+      risk, v, ms: (1 + Math.floor(rnd() * 3)) + ' ms',
+    };
+  };
+
+  const paint = () => {
+    tally.innerHTML = `<div><dt>allowed</dt><dd data-steel>${count.ALLOW}</dd></div>
+      <div><dt>escalated</dt><dd data-amber>${count.ESCALATE}</dd></div>
+      <div><dt>denied</dt><dd data-oxide>${count.DENY}</dd></div>
+      <div><dt>decided in this replay</dt><dd>${count.ALLOW + count.ESCALATE + count.DENY}</dd></div>`;
+  };
+
+  const add = (instant) => {
+    const d = decide();
+    const li = document.createElement('li');
+    li.innerHTML = `${instant ? '' : '<i class="s__scan"></i>'}
+      <span class="s__id mono">${d.id}</span>
+      <span class="s__what">${d.what}</span>
+      <span class="s__risk mono">${d.risk === null ? '—' : d.risk.toFixed(2)}</span>
+      <span class="s__v mono">${instant ? d.v : 'deciding'}</span>
+      <span class="s__ms mono">${instant ? d.ms : ''}</span>`;
+    rows.prepend(li);
+    while (rows.children.length > MAX) rows.lastElementChild.remove();
+
+    const land = () => {
+      li.dataset.v = d.v;
+      li.querySelector('.s__scan')?.remove();
+      li.querySelector('.s__v').textContent = d.v;
+      li.querySelector('.s__ms').textContent = d.ms;
+      count[d.v]++; paint();
+    };
+    if (instant) { li.dataset.v = d.v; count[d.v]++; paint(); }
+    else setTimeout(land, 340);
+  };
+
+  // Warm the population first: with nothing open, no intent can be a duplicate, so
+  // a cold stream is a wall of ALLOWs that misrepresents the system. The replay
+  // joins a merchant already mid-day, which is the only honest steady state.
+  for (let i = 0; i < 18; i++) decide();
+  count.ALLOW = count.ESCALATE = count.DENY = 0;   // the tally counts what you can see
+
+  // A still page gets a still stream, so the eight visible rows are just the tail of
+  // a longer run and the tally carries the actual mix. Picking eight rows that happen
+  // to contain one of each would be a nicer screenshot and a worse claim.
+  if (still.matches) {
+    for (let i = 0; i < 52; i++) { const d = decide(); count[d.v]++; }
+    for (let i = 0; i < MAX; i++) add(true);
+    return;
+  }
+
+  let timer = 0;
+  new IntersectionObserver(es => es.forEach(e => {
+    if (e.isIntersecting && !timer) { add(); timer = setInterval(add, 700); }
+    else if (!e.isIntersecting && timer) { clearInterval(timer); timer = 0; }
+  }), { rootMargin: '0px 0px -10% 0px' }).observe(host);
+}
+
+/* ═════════════════════════════════════════════════════════════════════════
    EXPECTED LOSS — gate/admission.decide(). argmin over merchant-supplied costs.
    ═════════════════════════════════════════════════════════════════════════ */
 function expectedLoss() {
@@ -449,6 +664,17 @@ function expectedLoss() {
 /* ═════════════════════════════════════════════════════════════════════════
    EVIDENCE — the measured table, and the friction the merchant chooses to buy.
    ═════════════════════════════════════════════════════════════════════════ */
+const countTo = (el, to, fmt, ms = 950) => {
+  if (still.matches) return void (el.textContent = fmt(to));
+  const start = performance.now();
+  const step = now => {
+    const k = clamp((now - start) / ms);
+    el.textContent = fmt(to * (1 - (1 - k) ** 3));
+    if (k < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+};
+
 function evidence() {
   const tb = $('[data-results] tbody');
   REPORT.results.forEach(r => {
@@ -462,14 +688,26 @@ function evidence() {
     tb.appendChild(tr);
   });
 
+  // only the payoff column counts. Four counters per row would be a slot machine.
+  new IntersectionObserver((es, io) => es.forEach(e => {
+    if (!e.isIntersecting) return;
+    io.disconnect();
+    $$('td:last-child', tb).forEach((td, i) => countTo(td, REPORT.results[i].leaked_minor / 100, inr));
+  }), { rootMargin: '0px 0px -20% 0px' }).observe(tb);
+
   const btns = $('[data-sweep-btns]'), out = $('[data-sweep-out]');
   const show = i => {
     const s = REPORT.budget_sweep[i];
     out.innerHTML = `
-      <div><dt>escalated</dt><dd>${pct(s.escalated)}</dd></div>
-      <div><dt>recall</dt><dd>${s.recall.toFixed(3)}</dd></div>
-      <div><dt>precision</dt><dd>${s.precision.toFixed(3)}</dd></div>
-      <div><dt>still leaked</dt><dd>${inr(s.leaked_minor / 100)}</dd></div>`;
+      <div><dt>escalated</dt><dd></dd></div>
+      <div><dt>recall</dt><dd></dd></div>
+      <div><dt>precision</dt><dd></dd></div>
+      <div><dt>still leaked</dt><dd></dd></div>`;
+    const dd = $$('dd', out);
+    countTo(dd[0], s.escalated, pct);
+    countTo(dd[1], s.recall, v => v.toFixed(3));
+    countTo(dd[2], s.precision, v => v.toFixed(3));
+    countTo(dd[3], s.leaked_minor / 100, inr);
     $$('.sweep__btn', btns).forEach((b, j) => b.setAttribute('aria-pressed', String(i === j)));
   };
   REPORT.budget_sweep.forEach((s, i) => {
@@ -490,4 +728,5 @@ function proof() {
 }
 
 /* ── go ──────────────────────────────────────────────────────────────────── */
-spine(); reveals(); hero(); planes(); stage(); authority(); expectedLoss(); evidence(); proof();
+spine(); reveals(); hero(); planes(); stage();
+authority(); stream(); expectedLoss(); evidence(); proof();

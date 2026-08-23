@@ -30,6 +30,10 @@ bench:  ## regenerate corpus, train, and benchmark against all baselines
 mcp:  ## run the MCP server over stdio
 	$(PY) cmd/mcp_server.py
 
+.PHONY: site
+site:  ## open the landing page (no server, no build step)
+	$(PY) -c "import webbrowser,pathlib;webbrowser.open(pathlib.Path('web/index.html').resolve().as_uri())"
+
 .PHONY: check
 check: install lint test bench  ## everything CI runs
 
