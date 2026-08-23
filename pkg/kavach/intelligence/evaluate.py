@@ -153,7 +153,7 @@ def main() -> None:
           f"Rs{(rel['leaked_minor'] - full['leaked_minor'])/100:+,.0f} leaked, "
           f"recall {full['recall'] - rel['recall']:+.3f}")
 
-    names = FEATURES + [f"word:{w}" for w in model.vec.get_feature_names_out()]
+    names = list(model.names) + [f"word:{w}" for w in model.vec.get_feature_names_out()]
     coefs = zip(names, np.asarray(model.clf.coef_)[0], strict=True)
     top = sorted(coefs, key=lambda t: -abs(t[1]))[:8]
     print("  top coefficients: " + ", ".join(f"{n}={c:+.2f}" for n, c in top))
