@@ -1,6 +1,6 @@
 <div align="center">
 
-# कवच · Kavach
+# Kavach
 
 **The merchant-side trust layer for agentic commerce.**
 
@@ -320,12 +320,14 @@ Same tool names, same arguments. The tools return financial facts, and they can 
 cp .env.example .env      # add rzp_test_ keys
 make bench                # regenerate corpus, train, benchmark against all baselines
 make mcp                  # run the MCP server over stdio
-make site                 # open the landing page — no server, no build step
+make site                 # build the landing page and serve it on :4173
 ```
 
-The page states numbers. `tests/test_site.py` fails the build if any of them stops
-matching `evals/risk_report.json` or the tree, because ADR-007 does not stop at the
-edge of the repository.
+The page states numbers, policy constants, state names and tool names.
+`tests/test_site.py` parses `governor.py`, `truth.py` and `mcp/server.py` and fails the
+build if any of them drifts from what the page claims — including whether a plane is
+marked built before its module exists. ADR-007 does not stop at the edge of the
+repository. That test is pure Python and needs no Node, so CI stays as it was.
 
 ---
 
@@ -343,7 +345,7 @@ pkg/kavach/
   proof/                 hash chain · replay · dispute pack
   razorpay/client.py     REST client, live | replay                  I/O
   mcp/server.py          the tool surface an agent sees              I/O
-web/                     the landing page: one html, one css, one js, zero deps
+web/                     the landing page: Next.js static export, GSAP + Motion
 tests/                   pytest, one file per module
 documents/               design docs and ADRs
 evals/                   benchmark output
@@ -459,6 +461,6 @@ Time-to-terminal survival model with calibrated P50/P80/P95 replacing the fixed 
 
 **Test mode only.** See [SECURITY.md](SECURITY.md) · [CONTRIBUTING.md](CONTRIBUTING.md) · [CHANGELOG.md](CHANGELOG.md)
 
-*कवच — proof.*
+*Kavach — proof.*
 
 </div>

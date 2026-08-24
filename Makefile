@@ -35,8 +35,10 @@ mcp:  ## run the MCP server over stdio
 	$(PY) cmd/mcp_server.py
 
 .PHONY: site
-site:  ## open the landing page (no server, no build step)
-	$(PY) -c "import webbrowser,pathlib;webbrowser.open(pathlib.Path('web/index.html').resolve().as_uri())"
+site:  ## build the landing page and serve it on :4173
+	cd web && npm install --no-audit --no-fund --silent && npm run build
+	@echo "  http://localhost:4173"
+	$(PY) -m http.server 4173 -d web/out
 
 .PHONY: check
 check: install lint test bench gate-bench  ## everything CI runs

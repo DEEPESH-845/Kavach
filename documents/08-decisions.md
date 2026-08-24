@@ -169,3 +169,18 @@ Recording this matters because the alternative is a history that quietly implies
 order that did not happen. A curated history is normal practice and a better artefact to read
 than one squashed commit; presenting it as a transcript would not be. Everything from
 commit seventeen onward is written in the order it appears.
+
+## ADR-019  The landing page is a Next.js app; ADR-013's "no React" clause is narrowed
+ADR-013 rejected React because it "was only wanted for one page" and because a judge cloning
+the repo at 11pm should not need a daemon. The first half no longer holds: the page now
+carries the governor's authority ladder, the expected-loss argmin, a seeded replay of the
+corpus and a per-plane inspector, and those are components with state rather than one page.
+The second half is conceded rather than argued away. `web/` is a Next.js static export, so
+`make site` needs Node and a build, and `out/index.html` no longer opens straight off disk --
+Next serves its chunks as ES modules and `file://` blocks them. What survives is that the
+build is static: no server-side runtime, no database, nothing to deploy but a directory.
+The Python tree is untouched by this. `make check` and CI still run on Python alone, and
+`tests/test_site.py` reads the TypeScript as text, so the drift guard costs CI no Node.
+Scope of the narrowing: React is admitted for `web/` and nowhere else. Nothing in `pkg/`
+gains a JavaScript dependency, and the MCP server remains the product surface.
+
