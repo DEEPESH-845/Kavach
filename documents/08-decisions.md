@@ -127,3 +127,45 @@ reviewer who opened the tree, which is the opposite of the intent.
 The layering rule is enforced socially in CONTRIBUTING.md rather than mechanically: eventlog
 -> truth -> ledger -> intelligence -> governor -> mcp, no upward imports. The same ordering
 is the determinism gradient, which is why it is worth keeping legible.
+
+## ADR-016  Gate reuses the event log as its evidence spine rather than owning a store
+Inbound admission could have kept its own tables for mandates and spend. It does not. Every
+admission is appended to the same append-only log the truth plane derives from, and
+cumulative spend is RECOMPUTED from that log on every cap decision rather than kept in a
+counter column.
+Two things are bought. One evidence chain: a cap decision cites the exact event sequence
+numbers it counted, the same way a FinancialFact cites the events behind it, so the proof
+plane later wraps one log instead of reconciling two. And no drift: a counter is a second
+copy of a derived number, and when it disagrees with the log the cap is enforcing a figure
+nobody can reconstruct. ledger.py already takes this position for open obligations.
+Ceiling, stated rather than hidden: this is a scan per decision. At demo scale it is free;
+above it, the counter becomes correct and the recompute becomes a nightly reconciliation
+instead. The trade is deliberate and it is the wrong one at production volume.
+
+## ADR-017  Entailment ships without an LLM, and a missing model raises the floor
+The obvious implementation of "does this cart match the stated purpose" is an LLM. Kavach
+ships TF-IDF over relational features instead, for the reason ADR-013 already gave: on
+strings this short, character and word n-grams are competitive, and the evaluation must run
+on a judge's laptop with no API key and no network.
+It is a real choice, not a placeholder, and it is measured: reading the cart is worth
+AP +0.351 over the same model blinded to text, and the system beats every rule baseline
+including the best hand-written one. The LLM path stays open as a sibling module behind a
+one-line selector, and Part B of the evaluation names exactly what it would buy -- purpose
+drift is caught 0.550 of the time, and lexical similarity cannot bridge "single malt" to
+"whisky". That is an evidence-backed argument for the upgrade rather than an aspirational one.
+The degradation rule is unchanged from ADR-006 and is enforced structurally: with no model
+loaded there is no ALLOW at all. Admission floors at STEP_UP, because the deterministic layer
+cannot tell whether an in-scope, in-budget cart is what the principal asked for -- which is
+the entire reason the plane exists. A missing model raises the floor; it never opens the gate.
+
+## ADR-018  The initial sixteen commits are a curated history, and say so
+This repository's first sixteen commits were authored in one sitting from an existing tree
+and then ordered by dependency: scaffold, event log, truth, ledger, client, intelligence,
+governor, MCP, documents, CI. They are not a transcript of the editing sequence.
+What IS true of them, and was verified rather than asserted: each commit was exported to a
+clean tree and its own tests run there, so every one builds and passes standing alone, and
+each third-party dependency is introduced by the commit that first imports it.
+Recording this matters because the alternative is a history that quietly implies a working
+order that did not happen. A curated history is normal practice and a better artefact to read
+than one squashed commit; presenting it as a transcript would not be. Everything from
+commit seventeen onward is written in the order it appears.
