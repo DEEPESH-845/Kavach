@@ -79,6 +79,10 @@ class Admission:
     evidence: list[int] = field(default_factory=list)
     expected_loss: dict[str, float] = field(default_factory=dict)
     mandate_id: str | None = None
+    # Present whenever the ENVELOPE verified, even if the cart was then refused. Carried so
+    # a caller can charge the mandate without verifying twice -- the nonce is already spent
+    # by then, so a second verify() would fail.
+    envelope: Envelope | None = None
 
     def to_dict(self) -> dict:
         return {"verdict": self.verdict.value, "reasons": self.reasons,
@@ -123,7 +127,7 @@ def decide(conn: sqlite3.Connection, raw: bytes, signature: bytes, cart: Cart, *
                          reasons=[f"delegation envelope rejected: "
                                   f"{', '.join(f.value for f in failures)}"])
 
-    result = Admission(Verdict.ALLOW, mandate_id=env.mandate_id)
+    result = Admission(Verdict.ALLOW, mandate_id=env.mandate_id, envelope=env)
     result.evidence = [e.seq for e in mandate.prior_admissions(conn, env.mandate_id)]
 
     violations = mandate.admissible(conn, env, cart, now=now)
@@ -151,6 +155,23 @@ def decide(conn: sqlite3.Connection, raw: bytes, signature: bytes, cart: Cart, *
         f"{cart.total_minor / 100:,.2f}; {result.verdict.value} carries the lowest expected "
         f"loss at {losses[result.verdict] / 100:,.2f}",
         f"purpose: {env.purpose!r}"]
+    return result
+
+
+def admit(conn: sqlite3.Connection, raw: bytes, signature: bytes, cart: Cart, *,
+          key_id: str, now: int, expected_principal: str | None = None,
+          costs: Costs = DEFAULT_COSTS, model: Model | None = None) -> Admission:
+    """decide(), and on ALLOW charge the mandate. The call a tool surface should make.
+
+    decide() stays free of ledger side effects so the ladder can be tested without one, the
+    same split governor.decide and governor.execute already use. This wrapper exists so the
+    charging step lives where tests can reach it rather than inside the MCP module, which
+    opens its database at import and is therefore transport, not logic.
+    """
+    result = decide(conn, raw, signature, cart, key_id=key_id, now=now,
+                    expected_principal=expected_principal, costs=costs, model=model)
+    if result.verdict is Verdict.ALLOW and result.envelope is not None:
+        mandate.record_admission(conn, result.envelope, cart, now=now)
     return result
 
 

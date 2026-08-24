@@ -13,6 +13,8 @@ tells it a refund for the same obligation went out nine minutes ago.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import os
 import time
 
@@ -21,6 +23,8 @@ from mcp.types import ToolAnnotations
 
 from .. import governor, ledger
 from ..eventlog import append, connect, for_entity
+from ..gate import admission, envelope, mandate
+from ..intelligence import entailment
 from ..intelligence import model as risk
 from ..razorpay.client import Razorpay
 from ..truth import derive
@@ -42,6 +46,7 @@ _WRITE = ToolAnnotations(read_only_hint=False, destructive_hint=True, idempotent
 _DB = os.environ.get("KAVACH_DB", "kavach.db")
 _conn = connect(_DB)
 ledger.init(_conn)
+envelope.init(_conn)
 _client = Razorpay()
 _policy = governor.Policy()
 
@@ -49,6 +54,9 @@ _model = None
 if risk.MODEL_PATH.exists():
     _model = risk.load()
     _policy = governor.Policy(risk_threshold=_model.threshold)
+
+# Absent, admission floors every cart at STEP_UP rather than admitting it (ADR-006).
+_entailment = entailment.load() if entailment.MODEL_PATH.exists() else None
 
 
 def _now() -> int:
@@ -190,6 +198,76 @@ def audit_trail(payment_id: str) -> dict:
                          "amount": i.amount_minor / 100, "reason": i.reason_text,
                          "status": i.status, "refund_id": i.result_id, "at": i.created_at}
                         for i in ledger.prior_intents(_conn, "payment", payment_id)]}
+
+
+@mcp.tool(annotations=_READ)
+def verify_agent(envelope_b64: str, signature_b64: str, key_id: str,
+                 expected_principal: str = "") -> dict:
+    """Inspect a delegated mandate without spending it: is it real, and what does it permit?
+
+    Signature, validity window, principal binding and revocation are all checked. The nonce
+    is deliberately NOT claimed, so asking the question does not consume the mandate and
+    admit_cart can still be called with it. That also means this answer carries no replay
+    protection and must never be used to gate money on its own.
+    """
+    try:
+        raw, sig = base64.b64decode(envelope_b64), base64.b64decode(signature_b64)
+    except (binascii.Error, ValueError):
+        return {"valid": False, "failures": ["MALFORMED"],
+                "because": "envelope and signature must be base64"}
+
+    env, failures = envelope.verify(_conn, raw, sig, key_id=key_id, now=_now(),
+                                    expected_principal=expected_principal or None,
+                                    claim_nonce=False)
+    if env is None:
+        return {"valid": False, "failures": [f.value for f in failures],
+                "because": "this mandate cannot be relied on; every reason is listed"}
+
+    already = mandate.spent(_conn, env.mandate_id)
+    return {"valid": True, "mandate_id": env.mandate_id, "principal": env.principal_id,
+            "agent": env.agent_id, "purpose": env.purpose,
+            "merchants": list(env.merchant_allowlist), "categories": list(env.categories),
+            "per_transaction_cap": env.per_txn_cap_minor / 100,
+            "cumulative_cap": env.cumulative_cap_minor / 100,
+            "already_spent": already / 100,
+            "remaining": max(0, env.cumulative_cap_minor - already) / 100,
+            "valid_until": env.not_after,
+            "note": ("purpose is enforced by an entailment model, not by the category list; "
+                     "a cart can sit inside every cap and still be refused")}
+
+
+@mcp.tool(annotations=_READ)
+def admit_cart(envelope_b64: str, signature_b64: str, key_id: str, merchant_id: str,
+               cart_id: str, lines: list[dict], expected_principal: str = "") -> dict:
+    """Decide whether this cart may be admitted under this mandate, and why.
+
+    Each line is {sku, description, category, amount, quantity, liquid}, with amount in
+    rupees per unit. `category` and `liquid` come from the MERCHANT'S catalogue, not from
+    the agent -- they are relied on precisely because the agent does not set them.
+
+    Consumes the mandate's nonce, so it may be called once per envelope. On ALLOW the cart
+    is charged against the cumulative cap; on any other verdict nothing is charged.
+    """
+    try:
+        raw, sig = base64.b64decode(envelope_b64), base64.b64decode(signature_b64)
+    except (binascii.Error, ValueError):
+        return {"verdict": "DENY", "envelope_failures": ["MALFORMED"],
+                "reasons": ["envelope and signature must be base64"]}
+
+    cart = mandate.Cart(
+        cart_id=cart_id, merchant_id=merchant_id,
+        lines=tuple(mandate.CartLine(
+            sku=str(line.get("sku", "")), description=str(line.get("description", "")),
+            category=str(line.get("category", "")),
+            unit_amount_minor=int(round(float(line.get("amount", 0)) * 100)),
+            quantity=int(line.get("quantity", 1)), liquid=bool(line.get("liquid", False)))
+            for line in lines))
+
+    result = admission.admit(_conn, raw, sig, cart, key_id=key_id, now=_now(),
+                             expected_principal=expected_principal or None,
+                             model=_entailment)
+    return {**result.to_dict(), "cart_total": cart.total_minor / 100,
+            "charged_to_mandate": result.verdict is admission.Verdict.ALLOW}
 
 
 def main() -> None:

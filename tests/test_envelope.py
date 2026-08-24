@@ -179,3 +179,36 @@ def test_a_rejected_envelope_is_never_returned(conn, issuer):
     for kwargs in ({"now": T + 7200}, {"principal": "usr_wrong"}):
         env, failures = check(conn, *signed(issuer), **kwargs)
         assert env is None and failures
+
+
+# ─────────────────────────────────────────────────────────── inspection mode
+
+def test_inspection_does_not_consume_the_mandate(conn, issuer):
+    """An agent asking 'is my mandate good?' must not spend it answering.
+
+    Without this the introspection tool and the admission tool cannot both exist: the
+    first call would burn the nonce and the second would fail as a replay.
+    """
+    raw, sig = signed(issuer)
+    env, failures = verify(conn, raw, sig, key_id=KEY_ID, now=T, claim_nonce=False)
+    assert env is not None and failures == []
+    assert check(conn, raw, sig)[1] == [], "inspection consumed the nonce"
+
+
+@pytest.mark.parametrize("kwargs,expected", [
+    ({"now": T + 7200}, Failure.EXPIRED),
+    ({"now": T - 600}, Failure.NOT_YET_VALID),
+    ({"expected_principal": "usr_wrong"}, Failure.PRINCIPAL_MISMATCH),
+])
+def test_inspection_still_enforces_every_other_check(conn, issuer, kwargs, expected):
+    """Only replay protection is relaxed. Everything else still refuses."""
+    raw, sig = signed(issuer)
+    kwargs.setdefault("now", T)
+    env, failures = verify(conn, raw, sig, key_id=KEY_ID, claim_nonce=False, **kwargs)
+    assert env is None and expected in failures
+
+
+def test_inspection_cannot_be_used_to_launder_a_bad_signature(conn, issuer):
+    raw, _ = signed(issuer)
+    assert verify(conn, raw, b"forged", key_id=KEY_ID, now=T, claim_nonce=False) == (
+        None, [Failure.BAD_SIGNATURE])

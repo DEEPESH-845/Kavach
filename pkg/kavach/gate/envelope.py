@@ -105,13 +105,20 @@ def is_revoked(conn: sqlite3.Connection, mandate_id: str) -> bool:
 
 
 def verify(conn: sqlite3.Connection, raw: bytes, signature: bytes, *, key_id: str,
-           now: int, expected_principal: str | None = None
+           now: int, expected_principal: str | None = None, claim_nonce: bool = True
            ) -> tuple[Envelope | None, list[Failure]]:
     """Verify a delegation envelope. Returns (envelope, []) or (None, failures).
 
     The envelope is returned only when nothing failed. A caller holding a rejected envelope
     is one refactor away from using it, and the failure list already carries everything an
     audit trail or a merchant-facing message needs.
+
+    claim_nonce=False makes this an INSPECTION rather than an admission: the signature,
+    window, principal binding and revocation are all still checked, but the nonce is left
+    unclaimed so the mandate can still be used. It therefore provides NO replay protection
+    and must never gate money. It exists so an agent can ask "is my mandate good and what
+    does it permit?" without spending it -- a question that would otherwise cost the very
+    envelope it is asking about.
     """
     row = conn.execute("SELECT public_key FROM gate_issuers WHERE key_id=?",
                        (key_id,)).fetchone()
@@ -141,7 +148,7 @@ def verify(conn: sqlite3.Connection, raw: bytes, signature: bytes, *, key_id: st
     if failures:
         return None, failures
 
-    if not _claim_nonce(conn, env, now):
+    if claim_nonce and not _claim_nonce(conn, env, now):
         return None, [Failure.REPLAYED_NONCE]
     return env, []
 

@@ -16,6 +16,7 @@ from kavach.gate.admission import (
     DEFAULT_COSTS,
     Costs,
     Verdict,
+    admit,
     decide,
     expected_losses,
 )
@@ -211,3 +212,49 @@ def test_the_serialised_form_carries_every_reason_and_no_raw_minor_units(conn, i
     assert out["verdict"] in {v.value for v in Verdict}
     assert out["reasons"] and out["risk_factors"]
     assert all(isinstance(v, float) for v in out["expected_loss_rupees"].values())
+
+
+# ──────────────────────────────── admit(): the one call a tool surface makes
+
+def test_admit_charges_the_mandate_only_when_the_cart_is_allowed(conn, issuer):
+    raw, sig = signed(issuer)
+    result = admit(conn, raw, sig, cart(70000), key_id=KEY_ID, now=T, model=StubModel(0.0))
+    assert result.verdict is Verdict.ALLOW
+    assert spent(conn, "mnd_1") == 70000
+
+
+@pytest.mark.parametrize("case", ["denied", "stepped_up"])
+def test_admit_charges_nothing_when_the_cart_is_not_allowed(conn, issuer, case):
+    raw, sig = signed(issuer)
+    model = None if case == "stepped_up" else StubModel(0.0)
+    bad = cart(CAP + 1) if case == "denied" else cart(70000)
+    result = admit(conn, raw, sig, bad, key_id=KEY_ID, now=T, model=model)
+    assert result.verdict is not Verdict.ALLOW
+    assert spent(conn, "mnd_1") == 0, "a refused cart was charged against the mandate"
+
+
+def test_admitted_carts_accumulate_toward_the_cumulative_cap(conn, issuer):
+    """Four carts at the per-transaction cap exactly exhaust a cumulative cap of 4x it.
+    The fifth breaches by one paisa. This is the loop the mandate plane exists to close --
+    and it only closes because admit() charges what it allows."""
+    for i in range(4):
+        raw, sig = signed(issuer, nonce=f"n{i}")
+        assert admit(conn, raw, sig, cart(CAP, cart_id=f"c{i}"), key_id=KEY_ID, now=T,
+                     model=StubModel(0.0)).verdict is Verdict.ALLOW
+    assert spent(conn, "mnd_1") == CAP * 4
+    raw, sig = signed(issuer, nonce="n_last")
+    last = admit(conn, raw, sig, cart(1, cart_id="c_last"), key_id=KEY_ID, now=T,
+                 model=StubModel(0.0))
+    assert last.verdict is Verdict.DENY
+    assert last.violations == [Violation.CUMULATIVE_CAP_EXCEEDED]
+
+
+def test_the_envelope_is_carried_when_the_cart_is_refused_but_the_mandate_was_good(
+        conn, issuer):
+    """A valid mandate whose cart breaches a cap: the envelope verified, so it is available
+    for the audit trail. An envelope that never verified is never handed back."""
+    raw, sig = signed(issuer)
+    refused = decide(conn, raw, sig, cart(CAP + 1), key_id=KEY_ID, now=T, model=StubModel(0.0))
+    assert refused.envelope is not None and refused.envelope.mandate_id == "mnd_1"
+    forged = decide(conn, raw, b"x" * 64, cart(), key_id=KEY_ID, now=T, model=StubModel(0.0))
+    assert forged.envelope is None
