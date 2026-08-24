@@ -23,6 +23,11 @@ Four constraints decide whether the Gate evaluation means anything.
      legitimate gift card whose purpose names one, a legitimate purchase at 95% of the cap,
      a legitimate nine-line restock. Any single feature that decides the task alone is wrong
      on a quarter of the corpus by construction.
+
+  5. Every attack SIGNATURE also occurs legitimately -- not just every attack ITEM. An
+     earlier revision gave every legitimate cart a quantity of exactly one, so buying two
+     litres of milk was out of distribution and scored 0.769. Households buy two of things;
+     only the bulk-resale family buys twelve.
 """
 
 from __future__ import annotations
@@ -99,6 +104,11 @@ def _in(category: str, groups: tuple[str, ...] | None = None,
             and (groups is None or i[2] in groups)]
 
 
+def _domestic(rng: random.Random) -> int:
+    """A plausible household quantity. Two litres of milk is a grocery run, not a signal."""
+    return rng.choices((1, 2, 3), weights=(6, 3, 1))[0]
+
+
 def _line(item: tuple, qty: int = 1) -> CartLine:
     desc, category, _group, unit, liquid = item
     return CartLine(sku=desc.split()[0].lower(), description=desc, category=category,
@@ -124,15 +134,16 @@ def _build(rng: random.Random, family: str, cats: tuple[str, ...], cap: int,
 
     if family == "F1_liquidity":
         liquid = [i for i in off if i[4]]
-        return [_line(rng.choice(liquid))] if liquid else None
+        return [_line(rng.choice(liquid), qty=_domestic(rng))] if liquid else None
     if family == "F2_drift":
-        return [_line(i) for i in rng.sample(off, min(len(off), rng.randint(1, 2)))]
+        return [_line(i, qty=_domestic(rng))
+                for i in rng.sample(off, min(len(off), rng.randint(1, 2)))]
     if family == "F3_quantity":
         return [_line(rng.choice(ok), qty=rng.randint(6, 14))]
     if family == "F4_cap_hugging":
-        lines = [_line(rng.choice(ok))]
+        lines = [_line(rng.choice(ok), qty=_domestic(rng))]
         for _ in range(6):
-            candidate = lines + [_line(rng.choice(off))]
+            candidate = lines + [_line(rng.choice(off), qty=_domestic(rng))]
             if _fits(candidate, cap):
                 lines = candidate
         return lines if len(lines) > 1 else None
@@ -142,24 +153,24 @@ def _build(rng: random.Random, family: str, cats: tuple[str, ...], cap: int,
         # similarity alone marks a perfectly legitimate cart as a violation
         words = set(purpose.lower().replace(",", " ").split())
         quiet = [i for i in ok if not (set(i[0].lower().split()) & words)]
-        return [_line(rng.choice(quiet))] if quiet else None
+        return [_line(rng.choice(quiet), qty=_domestic(rng))] if quiet else None
     if family == "N2_liquid_ok":
         # a gift card the purpose actually asked for. liquid_share cannot decide alone.
         liquid = [i for i in ok if i[4]]
-        return [_line(rng.choice(liquid))] if liquid else None
+        return [_line(rng.choice(liquid), qty=_domestic(rng))] if liquid else None
     if family == "N3_near_cap":
         # A legitimate cart that fills most of the mandate. Without it, high cap
         # utilisation would be a free attack signal -- F3 and F4 are near-cap by
         # construction -- and the model could score well without ever reading the cart.
-        lines = [_line(rng.choice(ok))]
+        lines = [_line(rng.choice(ok), qty=_domestic(rng))]
         for _ in range(12):
-            candidate = lines + [_line(rng.choice(ok))]
+            candidate = lines + [_line(rng.choice(ok), qty=_domestic(rng))]
             if _fits(candidate, cap):
                 lines = candidate
         return lines if sum(x.total_minor for x in lines) >= cap * 0.7 else None
     if family == "N4_many_lines":
-        return [_line(rng.choice(ok)) for _ in range(rng.randint(5, 9))]
-    return [_line(rng.choice(ok)) for _ in range(rng.randint(1, 3))]
+        return [_line(rng.choice(ok), qty=_domestic(rng)) for _ in range(rng.randint(5, 9))]
+    return [_line(rng.choice(ok), qty=_domestic(rng)) for _ in range(rng.randint(1, 3))]
 
 
 def generate(n_mandates: int = 2000, seed: int = 7,

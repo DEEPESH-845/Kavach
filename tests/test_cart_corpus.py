@@ -81,18 +81,24 @@ def test_no_single_feature_solves_the_task(rows):
         assert 0.35 < auc < 0.65, f"{name} alone reaches AUC {auc:.3f}; the corpus is too easy"
 
 
-def test_liquidity_appears_on_both_sides_of_the_label(rows):
-    """A gift card the principal actually asked for is legitimate. Without those, liquid
-    share would decide the task and no model would be justified."""
-    liquid = Counter(r["label"] for r in rows if any(x.liquid for x in r["cart"].lines))
-    assert liquid[0] > 0 and liquid[1] > 0
+@pytest.mark.parametrize("signature,holds", [
+    ("stored value", lambda r: any(x.liquid for x in r["cart"].lines)),
+    ("a cart filling its mandate",
+     lambda r: r["cart"].total_minor >= 0.7 * r["env"].per_txn_cap_minor),
+    ("more than one of something", lambda r: max(x.quantity for x in r["cart"].lines) > 1),
+    ("many lines", lambda r: len(r["cart"].lines) >= 5),
+])
+def test_every_attack_signature_also_occurs_legitimately(rows, signature, holds):
+    """Not just every attack ITEM -- every attack SHAPE.
 
-
-def test_high_cap_utilisation_appears_on_both_sides(rows):
-    """Cap-hugging is an attack signature, so legitimate carts must also fill their cap."""
-    full = Counter(r["label"] for r in rows
-                   if r["cart"].total_minor >= 0.7 * r["env"].per_txn_cap_minor)
-    assert full[0] > 0 and full[1] > 0
+    An earlier revision gave every legitimate cart a quantity of exactly one, so the model
+    learned that buying two litres of milk was suspicious and scored it 0.769. The item
+    overlap test did not catch it, because the item was fine and the shape was not. Any
+    signature present only in attacks is a shortcut the model will take.
+    """
+    seen = Counter(r["label"] for r in rows if holds(r))
+    assert seen[0] > 0, f"{signature} never occurs in a legitimate cart"
+    assert seen[1] > 0, f"{signature} never occurs in an attack"
 
 
 # ─────────────────────────────────────────── composition
