@@ -26,6 +26,10 @@ fmt:  ## autofix what can be autofixed
 bench:  ## regenerate corpus, train, and benchmark against all baselines
 	$(PY) cmd/benchmark.py
 
+.PHONY: gate-bench
+gate-bench:  ## regenerate the cart corpus, train entailment, benchmark against the rules
+	$(PY) cmd/gate_benchmark.py
+
 .PHONY: mcp
 mcp:  ## run the MCP server over stdio
 	$(PY) cmd/mcp_server.py
@@ -35,7 +39,7 @@ site:  ## open the landing page (no server, no build step)
 	$(PY) -c "import webbrowser,pathlib;webbrowser.open(pathlib.Path('web/index.html').resolve().as_uri())"
 
 .PHONY: check
-check: install lint test bench  ## everything CI runs
+check: install lint test bench gate-bench  ## everything CI runs
 
 .PHONY: clean
 clean:  ## remove build and run artefacts, keep the corpus

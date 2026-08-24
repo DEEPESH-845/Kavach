@@ -6,6 +6,7 @@ __pycache__/
 *.db-wal
 *.db-shm
 data/risk_model.pkl
+data/entailment_model.pkl
 .DS_Store
 .pytest_cache/
 .ruff_cache/

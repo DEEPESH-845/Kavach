@@ -1,0 +1,116 @@
+{
+  "step_up_budget": 0.2,
+  "threshold": 0.5478829406211179,
+  "exposure_minor": 21796100,
+  "violation_rate_assumption": 0.15,
+  "results": [
+    {
+      "name": "G0 step up everything",
+      "precision": 0.13338856669428334,
+      "recall": 1.0,
+      "ap": 0.13338856669428334,
+      "step_up_rate": 1.0,
+      "leaked_minor": 0,
+      "within_budget": false,
+      "tunable": false
+    },
+    {
+      "name": "G1 lexical overlap",
+      "precision": 0.1446229913473424,
+      "recall": 0.7267080745341615,
+      "ap": 0.1469497027638003,
+      "step_up_rate": 0.6702568351284176,
+      "leaked_minor": 7390100,
+      "within_budget": false,
+      "tunable": true
+    },
+    {
+      "name": "G2 category + cap rule",
+      "precision": 0.0,
+      "recall": 0.0,
+      "ap": 0.13338856669428334,
+      "step_up_rate": 0.0,
+      "leaked_minor": 21796100,
+      "within_budget": true,
+      "tunable": false
+    },
+    {
+      "name": "G3 hand-written red flags",
+      "precision": 0.1486810551558753,
+      "recall": 0.38509316770186336,
+      "ap": 0.1888771445138453,
+      "step_up_rate": 0.34548467274233635,
+      "leaked_minor": 12662400,
+      "within_budget": false,
+      "tunable": true
+    },
+    {
+      "name": "G4 learned, no text",
+      "precision": 0.2801556420233463,
+      "recall": 0.4472049689440994,
+      "ap": 0.3821147300720524,
+      "step_up_rate": 0.21292460646230324,
+      "leaked_minor": 10738400,
+      "within_budget": false,
+      "tunable": true
+    },
+    {
+      "name": "G5 learned + reads cart",
+      "precision": 0.5129310344827587,
+      "recall": 0.7391304347826086,
+      "ap": 0.8261920313761658,
+      "step_up_rate": 0.19221209610604806,
+      "leaked_minor": 3459900,
+      "within_budget": true,
+      "tunable": true
+    }
+  ],
+  "per_family_recall": {
+    "F1_liquidity": {
+      "n": 15,
+      "recall": 1.0
+    },
+    "F2_drift": {
+      "n": 56,
+      "recall": 0.48214285714285715
+    },
+    "F3_quantity": {
+      "n": 28,
+      "recall": 1.0
+    },
+    "F4_cap_hugging": {
+      "n": 62,
+      "recall": 0.7903225806451613
+    }
+  },
+  "budget_sweep": [
+    {
+      "budget": 0.05,
+      "stepped": 0.0463960231980116,
+      "recall": 0.34782608695652173,
+      "leaked_minor": 12663900,
+      "prevented_minor": 9132200
+    },
+    {
+      "budget": 0.1,
+      "stepped": 0.0820215410107705,
+      "recall": 0.5900621118012422,
+      "leaked_minor": 6797100,
+      "prevented_minor": 14999000
+    },
+    {
+      "budget": 0.2,
+      "stepped": 0.19221209610604806,
+      "recall": 0.7391304347826086,
+      "leaked_minor": 3459900,
+      "prevented_minor": 18336200
+    },
+    {
+      "budget": 0.3,
+      "stepped": 0.28334714167357083,
+      "recall": 0.937888198757764,
+      "leaked_minor": 569700,
+      "prevented_minor": 21226400
+    }
+  ]
+}
