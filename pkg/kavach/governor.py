@@ -131,15 +131,8 @@ def _day_spend(conn: sqlite3.Connection, now: int) -> int:
     return int(r["s"])
 
 
-def execute(conn: sqlite3.Connection, client: Razorpay, intent: ledger.Intent,
-            decision: Decision) -> dict:
-    """Bounded execution. Write-ahead, then act, then settle.
-
-    The intent is durable BEFORE the API call. If the process dies mid-flight the record
-    survives as APPROVED with no result_id, which is exactly the state a reconciler needs to
-    find. The alternative -- act first, record after -- loses the evidence in the one window
-    where it matters.
-    """
+def reserve(conn: sqlite3.Connection, intent: ledger.Intent, decision: Decision) -> dict:
+    """Bounded execution reservation. Must be called inside a BEGIN EXCLUSIVE transaction."""
     if decision.action is not Action.ALLOW:
         ledger.record(conn, intent, decision.to_dict())
         ledger.settle(conn, intent.intent_id, decision.action.value)
@@ -147,14 +140,23 @@ def execute(conn: sqlite3.Connection, client: Razorpay, intent: ledger.Intent,
 
     ledger.record(conn, intent, decision.to_dict())
     ledger.settle(conn, intent.intent_id, "APPROVED")
+    return {"executed": False, "reserved": True, **decision.to_dict()}
+
+
+def execute_provider(conn: sqlite3.Connection, client: Razorpay, intent: ledger.Intent,
+                     decision: Decision) -> dict:
+    """The external provider call, separated so the DB lock can be released first."""
     try:
-        # Idempotency key derived from the intent id, so a transport-level retry of THIS
-        # intent is safe. A new intent gets a new key -- deliberately. See ADR-008.
         out = client.create_refund(intent.target_id, intent.amount_minor,
                                    idempotency_key=f"kavach-{intent.intent_id}",
                                    notes={"intent_id": intent.intent_id})
     except RazorpayError as e:
         ledger.settle(conn, intent.intent_id, "FAILED" if not e.retriable else "APPROVED")
+        raise
+    except Exception:
+        # A network timeout, standard Exception, or anything else should not leak an obligation.
+        # Mark it FAILED so the intent isn't stuck OPEN, and raise.
+        ledger.settle(conn, intent.intent_id, "FAILED")
         raise
     ledger.settle(conn, intent.intent_id, "EXECUTED", result_id=out.get("id"))
     return {"executed": True, "refund_id": out.get("id"), **decision.to_dict()}
