@@ -21,11 +21,12 @@ import time
 from mcp.server import MCPServer
 from mcp.types import ToolAnnotations
 
-from .. import governor, ledger
+from .. import governor, ledger, proof
 from ..eventlog import append, connect, for_entity
 from ..gate import admission, envelope, mandate
 from ..intelligence import entailment
 from ..intelligence import model as risk
+from ..money import parse_inr
 from ..razorpay.client import Razorpay
 from ..truth import derive
 
@@ -69,8 +70,9 @@ def _ingest(entity_type: str, entity: dict, source: str = "api_response") -> Non
     eid = entity.get("id")
     if not eid:
         return
+    parent_id = entity.get("payment_id") if entity_type == "refund" else None
     append(_conn, source=source, external_id=f"{source}:{eid}:{entity.get('status')}",
-           entity_type=entity_type, entity_id=eid,
+           entity_type=entity_type, entity_id=eid, parent_entity_id=parent_id,
            event_type=f"api.{entity_type}.{entity.get('status')}", payload=entity,
            occurred_at=int(entity.get("created_at") or _now()), received_at=_now(),
            sig_verified=False)
@@ -134,7 +136,7 @@ def list_open_obligations(payment_id: str) -> dict:
 
 
 @mcp.tool(annotations=_READ)
-def check_refund(payment_id: str, amount: float, reason: str,
+def check_refund(payment_id: str, amount: float | str, reason: str,
                  session_id: str = "default", agent_id: str = "mcp_client") -> dict:
     """Dry run. Returns the decision this refund WOULD get, without moving any money.
 
@@ -142,7 +144,7 @@ def check_refund(payment_id: str, amount: float, reason: str,
     guess -- which is the behaviour the raw API cannot offer, because there is no way to ask
     Razorpay "would this be a duplicate?".
     """
-    intent = governor.new_intent(agent_id, session_id, payment_id, int(round(amount * 100)),
+    intent = governor.new_intent(agent_id, session_id, payment_id, parse_inr(amount),
                                reason, _now())
     score, expl = _risk(intent)
     fact = ledger.fact_for(_conn, "payment", payment_id, _now())
@@ -154,7 +156,7 @@ def check_refund(payment_id: str, amount: float, reason: str,
 
 
 @mcp.tool(annotations=_WRITE)
-def create_refund(payment_id: str, amount: float, reason: str,
+def create_refund(payment_id: str, amount: float | str, reason: str,
                   session_id: str = "default", agent_id: str = "mcp_client") -> dict:
     """Create a refund, subject to governance.
 
@@ -165,18 +167,28 @@ def create_refund(payment_id: str, amount: float, reason: str,
     if fact is None:
         entity = _client.fetch_payment(payment_id)
         _ingest("payment", entity)
-        fact = ledger.fact_for(_conn, "payment", payment_id, _now())
 
-    intent = governor.new_intent(agent_id, session_id, payment_id, int(round(amount * 100)),
-                               reason, _now())
-    score, expl = _risk(intent)
-    d = governor.decide(_conn, intent=intent,
-                      payment_amount_minor=fact.amount_minor if fact else 0,
-                      payment_captured=bool(fact and fact.rail_state.value == "CONFIRMED"),
-                      now=_now(), policy=_policy, risk_score=score, risk_explain=expl)
-    out = governor.execute(_conn, _client, intent, d)
-    if out.get("refund_id"):
-        _ingest("refund", _client.fetch_refund(out["refund_id"]))
+    _conn.execute("BEGIN EXCLUSIVE")
+    try:
+        fact = ledger.fact_for(_conn, "payment", payment_id, _now())
+        intent = governor.new_intent(agent_id, session_id, payment_id, parse_inr(amount),
+                                   reason, _now())
+        score, expl = _risk(intent)
+        d = governor.decide(_conn, intent=intent,
+                          payment_amount_minor=fact.amount_minor if fact else 0,
+                          payment_captured=bool(fact and fact.rail_state.value == "CONFIRMED"),
+                          now=_now(), policy=_policy, risk_score=score, risk_explain=expl)
+        out = governor.reserve(_conn, intent, d)
+        _conn.commit()
+    except Exception:
+        _conn.rollback()
+        raise
+
+    if d.action == governor.Action.ALLOW:
+        out = governor.execute_provider(_conn, _client, intent, d)
+        if out.get("refund_id"):
+            _ingest("refund", _client.fetch_refund(out["refund_id"]))
+
     out["intent_id"] = intent.intent_id
     return out
 
@@ -198,6 +210,17 @@ def audit_trail(payment_id: str) -> dict:
                          "amount": i.amount_minor / 100, "reason": i.reason_text,
                          "status": i.status, "refund_id": i.result_id, "at": i.created_at}
                         for i in ledger.prior_intents(_conn, "payment", payment_id)]}
+
+
+@mcp.tool(annotations=_READ)
+def verify_audit_trail() -> dict:
+    """Cryptographically verify the integrity of the event log.
+    
+    Returns the verification result of the hash chain, proving whether 
+    financial events have been tampered with or deleted.
+    """
+    valid, msg = proof.verify_event_chain(_conn)
+    return {"valid": valid, "message": msg}
 
 
 @mcp.tool(annotations=_READ)
@@ -238,7 +261,8 @@ def verify_agent(envelope_b64: str, signature_b64: str, key_id: str,
 
 @mcp.tool(annotations=_READ)
 def admit_cart(envelope_b64: str, signature_b64: str, key_id: str, merchant_id: str,
-               cart_id: str, lines: list[dict], expected_principal: str = "") -> dict:
+               cart_id: str, lines: list[dict], expected_principal: str = "",
+               untrusted_context: str = "") -> dict:
     """Decide whether this cart may be admitted under this mandate, and why.
 
     Each line is {sku, description, category, amount, quantity, liquid}, with amount in
@@ -259,12 +283,13 @@ def admit_cart(envelope_b64: str, signature_b64: str, key_id: str, merchant_id: 
         lines=tuple(mandate.CartLine(
             sku=str(line.get("sku", "")), description=str(line.get("description", "")),
             category=str(line.get("category", "")),
-            unit_amount_minor=int(round(float(line.get("amount", 0)) * 100)),
+            unit_amount_minor=parse_inr(line.get("amount", 0)),
             quantity=int(line.get("quantity", 1)), liquid=bool(line.get("liquid", False)))
             for line in lines))
 
     result = admission.admit(_conn, raw, sig, cart, key_id=key_id, now=_now(),
                              expected_principal=expected_principal or None,
+                             untrusted_context=untrusted_context,
                              model=_entailment)
     return {**result.to_dict(), "cart_total": cart.total_minor / 100,
             "charged_to_mandate": result.verdict is admission.Verdict.ALLOW}

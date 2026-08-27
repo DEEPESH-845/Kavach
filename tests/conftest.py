@@ -48,5 +48,6 @@ def refund_event(conn):
                       entity_type="refund", entity_id=refund_id,
                       event_type=f"refund.{status}",
                       payload={"payload": {"refund": {"entity": body}}},
-                      occurred_at=at, received_at=at, sig_verified=verified)
+                      occurred_at=at, received_at=at, sig_verified=verified,
+                      parent_entity_id=payment_id)
     return _add

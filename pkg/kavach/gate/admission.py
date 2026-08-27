@@ -29,8 +29,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from ..intelligence.model import Model
-from . import mandate
-from .envelope import Envelope, Failure, verify
+from . import mandate, population, provenance
+from .envelope import Envelope, Failure, claim_nonce_for_env, verify
 from .mandate import Cart, Violation
 
 
@@ -95,7 +95,7 @@ class Admission:
                 "mandate_id": self.mandate_id}
 
 
-def expected_losses(risk: float, cart_total_minor: int, costs: Costs) -> dict[Verdict, float]:
+def expected_losses(risk: float, cart_total_minor: int, costs: Costs) -> dict[Verdict, int]:
     """Expected loss in minor units for each verdict, given the probability the cart is bad.
 
     Allowing a bad cart loses its value. Intervening costs something whether or not the cart
@@ -104,15 +104,18 @@ def expected_losses(risk: float, cart_total_minor: int, costs: Costs) -> dict[Ve
     """
     at_risk = cart_total_minor * costs.fraud_loss_share
     return {
-        Verdict.ALLOW: risk * at_risk,
-        Verdict.STEP_UP: costs.step_up_minor + risk * (1 - costs.step_up_catch_rate) * at_risk,
-        Verdict.HOLD: costs.hold_minor + risk * (1 - costs.hold_catch_rate) * at_risk,
-        Verdict.DENY: (1 - risk) * cart_total_minor * costs.margin_share,
+        Verdict.ALLOW: int(round(risk * at_risk)),
+        Verdict.STEP_UP: int(round(costs.step_up_minor + 
+                                   risk * (1 - costs.step_up_catch_rate) * at_risk)),
+        Verdict.HOLD: int(round(costs.hold_minor + 
+                                risk * (1 - costs.hold_catch_rate) * at_risk)),
+        Verdict.DENY: int(round((1 - risk) * cart_total_minor * costs.margin_share)),
     }
 
 
 def decide(conn: sqlite3.Connection, raw: bytes, signature: bytes, cart: Cart, *,
            key_id: str, now: int, expected_principal: str | None = None,
+           untrusted_context: str = "",
            costs: Costs = DEFAULT_COSTS, model: Model | None = None) -> Admission:
     """Admit, step up, hold or refuse this cart. See the module docstring on single use.
 
@@ -147,6 +150,20 @@ def decide(conn: sqlite3.Connection, raw: bytes, signature: bytes, cart: Cart, *
     row = {"env": env, "cart": cart}
     result.risk = model.score(row)
     result.risk_factors = model.explain(row)
+    
+    # Plane 3: Provenance (Goal Drift)
+    cart_text = " ".join(line.description for line in cart.lines)
+    drift = provenance.score_drift(env.purpose, cart_text, untrusted_context)
+    if drift > 0.0:
+        # Heavily penalise the risk score if goal drift is detected
+        result.risk = min(1.0, result.risk + drift)
+        result.risk_factors.extend(provenance.explain_drift(drift))
+
+    # Plane 4: Population (Ring/Velocity detection)
+    vel_risk = population.check_velocity(conn, env.agent_id, env.principal_id, now=now)
+    if vel_risk.score > 0.0:
+        result.risk = min(1.0, result.risk + vel_risk.score * 0.5)
+        result.risk_factors.extend(vel_risk.reasons)
     losses = expected_losses(result.risk, cart.total_minor, costs)
     result.expected_loss = {v.value: loss for v, loss in losses.items()}
     result.verdict = min(losses, key=lambda v: (losses[v], -_CAUTION[v]))
@@ -160,6 +177,7 @@ def decide(conn: sqlite3.Connection, raw: bytes, signature: bytes, cart: Cart, *
 
 def admit(conn: sqlite3.Connection, raw: bytes, signature: bytes, cart: Cart, *,
           key_id: str, now: int, expected_principal: str | None = None,
+          untrusted_context: str = "",
           costs: Costs = DEFAULT_COSTS, model: Model | None = None) -> Admission:
     """decide(), and on ALLOW charge the mandate. The call a tool surface should make.
 
@@ -169,8 +187,12 @@ def admit(conn: sqlite3.Connection, raw: bytes, signature: bytes, cart: Cart, *,
     opens its database at import and is therefore transport, not logic.
     """
     result = decide(conn, raw, signature, cart, key_id=key_id, now=now,
-                    expected_principal=expected_principal, costs=costs, model=model)
+                    expected_principal=expected_principal, 
+                    untrusted_context=untrusted_context, costs=costs, model=model)
     if result.verdict is Verdict.ALLOW and result.envelope is not None:
+        if not claim_nonce_for_env(conn, result.envelope, now):
+            return Admission(Verdict.DENY, failures=[Failure.REPLAYED_NONCE],
+                             reasons=["mandate nonce claimed concurrently"])
         mandate.record_admission(conn, result.envelope, cart, now=now)
     return result
 

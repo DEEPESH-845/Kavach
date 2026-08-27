@@ -191,8 +191,8 @@ def test_deciding_does_not_charge_the_mandate(conn, issuer):
 
 def test_an_envelope_is_single_use(conn, issuer):
     raw, sig = signed(issuer)
-    first = decide(conn, raw, sig, cart(), key_id=KEY_ID, now=T, model=StubModel(0.0))
-    second = decide(conn, raw, sig, cart(), key_id=KEY_ID, now=T, model=StubModel(0.0))
+    first = admit(conn, raw, sig, cart(), key_id=KEY_ID, now=T, model=StubModel(0.0))
+    second = admit(conn, raw, sig, cart(), key_id=KEY_ID, now=T, model=StubModel(0.0))
     assert first.verdict is Verdict.ALLOW
     assert second.verdict is Verdict.DENY
     assert second.failures == [Failure.REPLAYED_NONCE]
