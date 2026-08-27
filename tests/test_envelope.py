@@ -41,8 +41,9 @@ def signed(key, **overrides) -> tuple[bytes, bytes]:
     return raw, key.sign(raw)
 
 
-def check(conn, raw, sig, *, now=T, principal=None):
-    return verify(conn, raw, sig, key_id=KEY_ID, now=now, expected_principal=principal)
+def check(conn, raw, sig, *, now=T, principal=None, claim_nonce=False):
+    return verify(conn, raw, sig, key_id=KEY_ID, now=now, 
+                  expected_principal=principal, claim_nonce=claim_nonce)
 
 
 # ─────────────────────────────────────────────────────────── the one valid case
@@ -130,8 +131,8 @@ def test_revocation_is_read_at_decision_time_not_cached(conn, issuer):
 
 def test_a_nonce_cannot_be_claimed_twice(conn, issuer):
     raw, sig = signed(issuer)
-    assert check(conn, raw, sig)[1] == []
-    assert check(conn, raw, sig) == (None, [Failure.REPLAYED_NONCE])
+    assert check(conn, raw, sig, claim_nonce=True)[1] == []
+    assert check(conn, raw, sig, claim_nonce=True) == (None, [Failure.REPLAYED_NONCE])
 
 
 def test_a_rejected_envelope_does_not_burn_its_nonce(conn, issuer):
