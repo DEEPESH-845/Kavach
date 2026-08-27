@@ -105,7 +105,7 @@ def is_revoked(conn: sqlite3.Connection, mandate_id: str) -> bool:
 
 
 def verify(conn: sqlite3.Connection, raw: bytes, signature: bytes, *, key_id: str,
-           now: int, expected_principal: str | None = None, claim_nonce: bool = True
+           now: int, expected_principal: str | None = None, claim_nonce: bool = False
            ) -> tuple[Envelope | None, list[Failure]]:
     """Verify a delegation envelope. Returns (envelope, []) or (None, failures).
 
@@ -148,12 +148,12 @@ def verify(conn: sqlite3.Connection, raw: bytes, signature: bytes, *, key_id: st
     if failures:
         return None, failures
 
-    if claim_nonce and not _claim_nonce(conn, env, now):
+    if claim_nonce and not claim_nonce_for_env(conn, env, now):
         return None, [Failure.REPLAYED_NONCE]
     return env, []
 
 
-def _claim_nonce(conn: sqlite3.Connection, env: Envelope, now: int) -> bool:
+def claim_nonce_for_env(conn: sqlite3.Connection, env: Envelope, now: int) -> bool:
     """INSERT OR IGNORE and read rowcount -- the idiom eventlog.append already uses for
     idempotent ingestion. One established pattern, used twice, beats two inventions."""
     cur = conn.execute("INSERT OR IGNORE INTO gate_nonces (nonce, mandate_id, claimed_at) "
