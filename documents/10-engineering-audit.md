@@ -77,7 +77,7 @@ Test coverage is mostly present for core deterministic components (`truth`, `led
 | Inbound Gate | IMPLEMENTED (has bugs) |
 | MCP | IMPLEMENTED (has bugs) |
 | Proof / Hash Chain | PLANNED / MISSING |
-| Web Experience | PARTIALLY IMPLEMENTED |
+| Web Experience | IMPLEMENTED (Static UI aligned with ADR-019) |
 
 ---
 
@@ -158,6 +158,6 @@ Test coverage is mostly present for core deterministic components (`truth`, `led
 - **Recommended Fix**: Implement a reconciler worker.
 
 ## Lower Priority Issues (P2)
-- **P2-1**: Frontend uses mock data and static exports. Needs to be wired to the backend API/DB.
+- **P2-1 (WONTFIX)**: ~Frontend uses mock data and static exports. Needs to be wired to the backend API/DB.~ *Per ADR-019, the Next.js UI is meant to be a static documentation asset that verifies benchmark numbers at build time. No DB connection is intended.*
 - **P2-2**: SQLite `kavach.db` hardcoded or uses CWD. Need robust environment variable configuration `KAVACH_DB`.
 - **P2-3**: Needs robust application lifecycle (startup/shutdown).
