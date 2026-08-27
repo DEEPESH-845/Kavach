@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from kavach import ledger
-from kavach.governor import Action, Decision, Policy, decide, execute, new_intent
-from kavach.razorpay.client import Razorpay
+from kavach.governor import Action, Decision, Policy, decide, new_intent, reserve
 
 T = 1_700_000_000
 POLICY = Policy()
@@ -88,8 +87,7 @@ def test_a_blocked_intent_is_still_durable(conn):
     """Refusing to act is itself an auditable event. If blocked intents were not written we
     would have no record that an agent tried."""
     i = intent(2_000_00)
-    out = execute(conn, Razorpay(mode="replay", cassette="/nonexistent"), i,
-                  Decision(Action.ESCALATE, ["over limit"]))
+    out = reserve(conn, i, Decision(Action.ESCALATE, ["over limit"]))
 
     assert out["executed"] is False
     assert ledger.prior_intents(conn, "payment", "pay_X")[0].status == "ESCALATE"
