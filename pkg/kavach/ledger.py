@@ -63,14 +63,17 @@ def record(conn: sqlite3.Connection, i: Intent, decision: dict | None = None) ->
     If we crash between here and the API call, recovery can see an intent with no result
     and reconcile it, instead of the agent silently retrying into a duplicate.
     """
-    conn.execute(
-        "INSERT OR REPLACE INTO intents (intent_id, agent_id, session_id, tool, target_type,"
-        " target_id, amount_minor, reason_text, created_at, status, decision, result_id)"
-        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-        (i.intent_id, i.agent_id, i.session_id, i.tool, i.target_type, i.target_id,
-         i.amount_minor, i.reason_text, i.created_at, i.status,
-         json.dumps(decision or {}, sort_keys=True), i.result_id),
-    )
+    try:
+        conn.execute(
+            "INSERT INTO intents (intent_id, agent_id, session_id, tool, target_type,"
+            " target_id, amount_minor, reason_text, created_at, status, decision, result_id)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (i.intent_id, i.agent_id, i.session_id, i.tool, i.target_type, i.target_id,
+             i.amount_minor, i.reason_text, i.created_at, i.status,
+             json.dumps(decision or {}, sort_keys=True), i.result_id),
+        )
+    except sqlite3.IntegrityError as e:
+        raise ValueError(f"Intent {i.intent_id} already exists; history is immutable.") from e
 
 
 def settle(conn: sqlite3.Connection, intent_id: str, status: str,
@@ -125,7 +128,7 @@ def open_against_payment(conn: sqlite3.Connection, payment_id: str,
     """
     rows = conn.execute(
         "SELECT DISTINCT entity_id FROM events WHERE entity_type='refund'"
-        " AND payload LIKE ?", (f'%"{payment_id}"%',)).fetchall()
+        " AND parent_entity_id=?", (payment_id,)).fetchall()
     out = []
     for r in rows:
         f = fact_for(conn, "refund", r["entity_id"], now)
@@ -144,8 +147,8 @@ def exposure(conn: sqlite3.Connection, payment_id: str, now: int) -> int:
     # Every refund we hold ANY event for -- open or closed. If an intent produced one of
     # these, its state is already accounted for above and adding it again double-counts.
     observed = {r["entity_id"] for r in conn.execute(
-        "SELECT DISTINCT entity_id FROM events WHERE entity_type='refund' AND payload LIKE ?",
-        (f'%"{payment_id}"%',)).fetchall()}
+        "SELECT DISTINCT entity_id FROM events WHERE entity_type='refund' "
+        "AND parent_entity_id=?", (payment_id,)).fetchall()}
     for i in prior_intents(conn, "payment", payment_id):
         if i.status == "EXECUTED" and i.result_id not in observed:
             total += i.amount_minor
