@@ -13,8 +13,8 @@ def ev(seq, status, at, *, verified=True, arn=None, etype="refund", eid="rfnd_A"
     body = {"id": eid, "status": status, "amount": 500000, "currency": "INR"}
     if arn:
         body["acquirer_data"] = {"arn": arn}
-    return Event(seq, "webhook", f"evt_{seq}", etype, eid, f"{etype}.{status}",
-                 {"payload": {etype: {"entity": body}}}, at, at, verified)
+    return Event(seq, "webhook", f"evt_{seq}", etype, eid, None, f"{etype}.{status}",
+                 {"payload": {etype: {"entity": body}}}, at, at, verified, None, "fake_hash")
 
 
 def test_processed_without_arn_leaves_the_obligation_open():

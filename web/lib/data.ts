@@ -32,7 +32,7 @@ export const REPORT = {
 
 /* A line count changes on every commit and catches nothing; the test count is the
    one that means something, so it is the one the page states and the build guards. */
-export const TREE = { tests: 149 };
+export const TREE = { tests: 171 };
 
 /* Policy defaults, verbatim from pkg/kavach/governor.py. The governor compares against its
    own risk_threshold, not the benchmark's frozen threshold — different numbers for different
@@ -54,6 +54,7 @@ export const TOOLS = [
   { n: 'create_refund',         w: true,  d: 'bounded, write-ahead, idempotency key from the intent id' },
   { n: 'approval_queue',        w: false, d: 'what is waiting on a human' },
   { n: 'audit_trail',           w: false, d: 'the events behind every decision' },
+  { n: 'verify_audit_trail',    w: false, d: 'cryptographically verify the event log integrity' },
   { n: 'verify_agent',          w: false, d: 'the delegation envelope, checked over the raw bytes' },
   { n: 'admit_cart',            w: false, d: 'does this cart entail the mandate it arrived under?' },
 ];
@@ -77,11 +78,11 @@ export const PLANES: Plane[] = [
     catches: '₹1,800 of gift cards satisfying “weekly groceries under ₹2,000” arithmetically, and an ₹18,000 chair satisfying “office supplies”.',
     cannot: 'Judge a cart that is genuinely in scope but wrong for reasons the mandate never mentions.',
     boundary: 'The cart is merchant-supplied, so category and liquidity flags are trusted. If the agent could set them the check would be self-certified and worthless.' },
-  { half: 'GATE · inbound',  n: '③', src: 'gate/provenance.py', built: false, t: 'Provenance',        m: 'goal drift correlated to ingesting untrusted text',           k: 'amber', ai: 'learned',           ms: '~140 ms',
+  { half: 'GATE · inbound',  n: '③', src: 'gate/provenance.py', built: true, t: 'Provenance',        m: 'goal drift correlated to ingesting untrusted text',           k: 'amber', ai: 'learned',           ms: '~140 ms',
     catches: 'An objective that mutated immediately after the agent read a product review, and the span of hostile text that moved it.',
     cannot: 'An agent that was hostile before the session began. There is no drift to measure against.',
     boundary: 'Page text, cart text and traces enter our own prompts as tagged untrusted data, never as instructions. A test asserts the verifier refuses an embedded “return ALLOW”.' },
-  { half: 'GATE · inbound',  n: '④', src: 'gate/population.py', built: false, t: 'Population',        m: 'rings, velocity, inhuman regularity over an identity graph',  k: 'amber', ai: 'classical ML',      ms: '~8 ms',
+  { half: 'GATE · inbound',  n: '④', src: 'gate/population.py', built: true, t: 'Population',        m: 'rings, velocity, inhuman regularity over an identity graph',  k: 'amber', ai: 'classical ML',      ms: '~8 ms',
     catches: 'Mandate-farming rings sharing devices, addresses or tokens; timing too regular to be a person.',
     cannot: 'A patient single actor with clean infrastructure. Population signal needs a population.',
     boundary: 'Split by principal and by ring, never by row — a ring straddling train and test would score itself.' },
