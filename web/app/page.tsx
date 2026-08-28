@@ -40,6 +40,19 @@ export default function Page() {
         </section>
         <Evidence />
         <Proof />
+        <div style={{ textAlign: 'center', padding: '64px 0', borderTop: '1px solid var(--border-subtle)', marginTop: '64px' }}>
+          <a href="/dashboard" style={{
+            display: 'inline-block',
+            padding: '16px 32px',
+            backgroundColor: 'var(--accent-blue)',
+            color: 'white',
+            textDecoration: 'none',
+            borderRadius: '6px',
+            fontWeight: 600,
+            fontSize: '16px',
+            letterSpacing: '0.05em'
+          }}>ENTER KAVACH DASHBOARD →</a>
+        </div>
       </main>
       <Foot />
     </>
