@@ -33,10 +33,20 @@ export class ApiError extends Error {
     this.reference = extra.reference as string | undefined;
   }
 
-  /** What the operator should do about it, in one sentence. */
+  /** What the operator should do about it, in one sentence.
+   *
+   * The unreachable case names the exact URL that failed and the command for the setup
+   * they are actually in. "Start the API with `make demo`" is wrong advice while someone
+   * is running `next dev`, because demo rebuilds the UI and serves it on the API's port. */
   get remedy(): string {
-    if (this.status === 0)
-      return 'Start the Kavach API with `make demo`, then retry.';
+    if (this.status === 0) {
+      const where = API_BASE || 'this origin';
+      return typeof window !== 'undefined' && window.location.port === '3000'
+        ? `Nothing answered at ${where}. Run \`make dev\` to start the API alongside the `
+          + 'dev server, or `make api` in another terminal, then retry.'
+        : `Nothing answered at ${where}. Run \`make demo\` to seed, build and serve the `
+          + 'whole product, then retry.';
+    }
     if (this.status === 404) return 'Check the identifier, or return to the command centre.';
     if (this.status === 409) return 'Reload — this item has already moved on.';
     if (this.status === 422) return 'Correct the highlighted fields and submit again.';

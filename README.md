@@ -331,6 +331,16 @@ make demo                 # seed the ledger, build the UI, serve everything on :
 One process, one port. The API mounts the built UI at `/`, so there is no second server and
 no CORS.
 
+For development, the console needs the backend up alongside the Next dev server — it reads
+live state and invents nothing when the API is missing:
+
+```bash
+make dev                  # API on :8000 + Next dev server on :3000, in one process group
+```
+
+`next dev` on its own renders the console's honest error state, because there is nothing
+for it to read.
+
 | | |
 |---|---|
 | `/` | the argument: what the seam is and why it matters |
