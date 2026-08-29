@@ -704,6 +704,12 @@ html[data-file] .offline {
 
 /* The footer states what is checked. Three counts, each guarded by tests/test_site.py,
    set as a definition list because that is what they are — a label and its value. */
+/* The brand mark, set as the header nav and the console sidebar set it, so the page is
+   bookended by the same word in the same treatment rather than signed off with a slogan. */
+.foot__name {
+  font-family: var(--mono); font-size: 12px; letter-spacing: .22em; color: var(--bone);
+}
+
 .foot__stats {
   display: flex; flex-wrap: wrap; gap: 6px 28px; margin: 0;
   flex: 1 1 auto; justify-content: center;
@@ -717,5 +723,11 @@ html[data-file] .offline {
 
 @media (max-width: 760px) {
   .foot__in { flex-direction: column; align-items: flex-start; gap: 18px; }
-  .foot__stats { justify-content: flex-start; gap: 6px 20px; }
+  /* The brand mark, set as the header nav and the console sidebar set it, so the page is
+   bookended by the same word in the same treatment rather than signed off with a slogan. */
+.foot__name {
+  font-family: var(--mono); font-size: 12px; letter-spacing: .22em; color: var(--bone);
+}
+
+.foot__stats { justify-content: flex-start; gap: 6px 20px; }
 }

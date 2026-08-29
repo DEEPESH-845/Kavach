@@ -130,11 +130,18 @@ def test_the_scenario_count_the_footer_states_is_the_real_one():
         f"site says {quoted} scenarios, the lab registers {len(scenarios.catalogue())}")
 
 
-def test_the_footer_does_not_reuse_a_plane_name_as_a_slogan():
-    """`proof` names the hash-chain plane and section 08. Using it as the footer's sign-off
-    repeated the section and widened the word into a general claim of confidence. The mark
-    states what is checked instead."""
-    mark = re.search(r'className="foot__mark">.*?</p>', PAGE, re.S)
+def test_the_footer_mark_is_the_project_name_not_a_slogan():
+    """The footer signs the page with the product's name, the same word the header nav and
+    the console sidebar use.
+
+    It read `proof.`, which is worse than a stray slogan: `proof` names the hash-chain plane
+    and section 08, so the sign-off both repeated that section and widened the word from
+    "the chain verifies" into a general claim of confidence.
+    """
+    mark = re.search(r'className="foot__mark">(.*?)</p>', PAGE, re.S)
     assert mark, "the footer no longer has a mark"
-    assert "proof" not in mark.group(0).lower(), (
-        "the footer mark claims 'proof'; it should name what is actually checked")
+    body = mark.group(1)
+    assert "KAVACH" in body, "the footer mark should be the project name"
+    for slogan in ("proof", "coverage"):
+        assert slogan not in body.lower(), (
+            f"the footer mark says {slogan!r}; it should be the project name")
