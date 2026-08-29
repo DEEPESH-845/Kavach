@@ -78,3 +78,59 @@ def test_concurrent_refunds_do_not_exceed_cap(conn):
     intents = ledger.prior_intents(conn, "payment", "pay_1")
     approved_amount = sum(i.amount_minor for i in intents if i.status == "EXECUTED")
     assert approved_amount <= 100_00
+
+
+def test_a_connection_can_be_closed_from_another_thread_when_asked():
+    """Regression guard for the HTTP API.
+
+    FastAPI runs a synchronous dependency's body in one threadpool worker and its teardown
+    in another, so the connection is opened and queried on one thread and closed on a
+    different one. With sqlite3's default thread affinity that raises ProgrammingError and
+    every endpoint returns 500 -- which is exactly what happened, and which a sequential
+    curl could not reproduce because it kept landing on the same worker.
+    """
+    import threading
+
+    from kavach.eventlog import connect
+
+    conn = connect(":memory:", same_thread=False)
+    conn.execute("SELECT COUNT(*) FROM events").fetchone()
+
+    failure: list[BaseException] = []
+
+    def close_elsewhere():
+        try:
+            conn.execute("SELECT COUNT(*) FROM events").fetchone()
+            conn.close()
+        except BaseException as e:      # noqa: BLE001 - the assertion is that none escapes
+            failure.append(e)
+
+    t = threading.Thread(target=close_elsewhere)
+    t.start()
+    t.join()
+
+    assert not failure, f"cross-thread use raised {failure[0]!r}"
+
+
+def test_thread_affinity_is_still_the_default():
+    """The relaxation must be opt-in. A caller that shares one connection between threads
+    running at the same time is still wrong, and the default guard is what says so."""
+    import threading
+
+    from kavach.eventlog import connect
+
+    conn = connect(":memory:")
+    raised: list[BaseException] = []
+
+    def touch():
+        try:
+            conn.execute("SELECT 1").fetchone()
+        except BaseException as e:      # noqa: BLE001
+            raised.append(e)
+
+    t = threading.Thread(target=touch)
+    t.start()
+    t.join()
+    conn.close()
+
+    assert raised and isinstance(raised[0], sqlite3.ProgrammingError)

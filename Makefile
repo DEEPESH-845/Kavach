@@ -16,27 +16,51 @@ test:  ## run the test suite
 
 .PHONY: lint
 lint:  ## static checks
-	$(VENV)/bin/ruff check pkg/ tests/ cmd/
+	$(VENV)/bin/ruff check pkg/ tests/ apps/
 
 .PHONY: fmt
 fmt:  ## autofix what can be autofixed
-	$(VENV)/bin/ruff check --fix pkg/ tests/ cmd/
+	$(VENV)/bin/ruff check --fix pkg/ tests/ apps/
 
 .PHONY: bench
 bench:  ## regenerate corpus, train, and benchmark against all baselines
-	$(PY) cmd/benchmark.py
+	$(PY) apps/benchmark.py
 
 .PHONY: gate-bench
 gate-bench:  ## regenerate the cart corpus, train entailment, benchmark against the rules
-	$(PY) cmd/gate_benchmark.py
+	$(PY) apps/gate_benchmark.py
 
 .PHONY: mcp
 mcp:  ## run the MCP server over stdio
-	$(PY) cmd/mcp_server.py
+	$(PY) apps/mcp_server.py
+
+.PHONY: seed
+seed:  ## rebuild the demo ledger by running the real decision pipeline
+	$(PY) apps/demo_data.py
+
+.PHONY: ui
+ui:  ## build the web UI into web/out
+	cd web && npm install --no-audit --no-fund --silent && npm run build
+
+.PHONY: api
+api:  ## run the API alone against the current database
+	$(PY) apps/api_server.py
+
+.PHONY: demo
+demo: seed ui  ## THE ONE COMMAND: seed, build, and serve the whole product on :8000
+	@echo ""
+	@echo "  Kavach  ->  http://127.0.0.1:8000"
+	@echo "  landing    /            console    /dashboard"
+	@echo "  attacks    /dashboard/adversary    proof      /dashboard/proof"
+	@echo ""
+	$(PY) apps/api_server.py
+
+.PHONY: scenarios
+scenarios:  ## run every adversary scenario headless and print the verdicts
+	$(PY) -m kavach.services.scenarios
 
 .PHONY: site
-site:  ## build the landing page and serve it on :4173
-	cd web && npm install --no-audit --no-fund --silent && npm run build
+site: ui  ## build the landing page and serve it on :4173 (static only, no API)
 	@echo "  http://localhost:4173"
 	$(PY) -m http.server 4173 -d web/out
 
@@ -51,4 +75,4 @@ clean:  ## remove build and run artefacts, keep the corpus
 
 .PHONY: help
 help:
-	@grep -hE '^[a-z.]+:.*?##' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-10s\033[0m %s\n",$$1,$$2}'
+	@grep -hE '^[a-z.-]+:.*?##' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-12s\033[0m %s\n",$$1,$$2}'

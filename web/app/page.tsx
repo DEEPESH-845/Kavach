@@ -9,6 +9,7 @@ import { Stream } from '@/components/Stream';
 import { ExpectedLoss } from '@/components/ExpectedLoss';
 import { Evidence } from '@/components/Evidence';
 import { Proof, Foot } from '@/components/Proof';
+import { Handoff } from '@/components/Handoff';
 
 /* WORLD → PROBLEM → PRESSURE → REALISATION → SYSTEM → AUTHORITY → OUTCOME → PROOF.
    Sections 03-05 live inside one sticky stage so the visual state persists across them. */
@@ -40,19 +41,7 @@ export default function Page() {
         </section>
         <Evidence />
         <Proof />
-        <div style={{ textAlign: 'center', padding: '64px 0', borderTop: '1px solid var(--border-subtle)', marginTop: '64px' }}>
-          <a href="/dashboard" style={{
-            display: 'inline-block',
-            padding: '16px 32px',
-            backgroundColor: 'var(--accent-blue)',
-            color: 'white',
-            textDecoration: 'none',
-            borderRadius: '6px',
-            fontWeight: 600,
-            fontSize: '16px',
-            letterSpacing: '0.05em'
-          }}>ENTER KAVACH DASHBOARD →</a>
-        </div>
+        <Handoff />
       </main>
       <Foot />
     </>

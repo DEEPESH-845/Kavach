@@ -1,88 +1,174 @@
-import React from 'react';
-import { getProofs } from '@/lib/api';
-import Link from 'next/link';
-import { Search, Fingerprint, Activity, TerminalSquare, ArrowRight } from 'lucide-react';
+'use client';
 
-export default async function ProofsPage() {
-  const proofs = await getProofs();
+/* Proof & Audit.
+ *
+ * The most important thing on this page is the paragraph stating what the chain does NOT
+ * prove. A hash chain is tamper-EVIDENT, not tamper-proof; it says nothing about who wrote
+ * an event; and an attacker with write access could rewrite it from the point of an edit
+ * forward. Those limits come from the backend in every response rather than being written
+ * here, so the UI cannot overstate the claim by forgetting to mention them.
+ *
+ * `sig_verified` is shown as a separate column for the same reason. The chain says the row
+ * has not changed. The HMAC says Razorpay actually sent it. Merging them into one green
+ * tick would overstate both.
+ */
+
+import { useCallback, useState } from 'react';
+import { Link2, RefreshCw, ShieldCheck, ShieldX } from 'lucide-react';
+import { api } from '@/lib/api';
+import type { EventRow } from '@/lib/api';
+import { useApi } from '@/lib/useApi';
+import { count, hash, stamp } from '@/lib/format';
+import {
+  Async, Badge, Card, Empty, GoLink, KV, PageHead, Section, Skeleton, Stat,
+} from '@/components/console/ui';
+
+export default function ProofPage() {
+  const [limit, setLimit] = useState(60);
+  const chain = useApi(() => api.chain(limit), [limit]);
+  const reload = useCallback(() => chain.reload(), [chain.reload]);
 
   return (
-    <div className="proofs-page" style={{ animation: 'reveal 0.6s cubic-bezier(0.16, 1, 0.3, 1) both' }}>
-      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-            <h1 className="page-title" style={{ margin: 0 }}>Proof Explorer</h1>
-            <span className="status-badge" style={{ background: 'var(--glass-2)', border: '1px solid var(--border-subtle)', color: 'var(--text-secondary)' }}>
-              <TerminalSquare size={12} /> Forensic Mode
-            </span>
-          </div>
-          <p className="page-subtitle">Cryptographically verifiable evidence of Kavach governance.</p>
+    <>
+      <PageHead
+        title="Proof & Audit"
+        sub="Every event carries a SHA-256 over its own immutable fields and its predecessor's hash. Verification recomputes the whole chain — it does not read a stored flag."
+        actions={
+          <button className="btn btn--sm" onClick={reload} disabled={chain.loading}>
+            <RefreshCw size={12} /> Re-verify
+          </button>
+        }
+      />
+
+      <Async state={chain} skeleton={<Skeleton rows={8} />}>
+        {(c) => (
+          <>
+            <div className="grid grid--stats">
+              <Card>
+                <div className="stat">
+                  <span className="stat__label">
+                    {c.status.ok ? <ShieldCheck size={13} /> : <ShieldX size={13} />}
+                    Chain integrity
+                  </span>
+                  <span className={`stat__value stat__value--${c.status.ok ? 'steel' : 'oxide'}`}
+                    style={{ fontSize: 20 }}>
+                    {c.status.ok ? 'VERIFIED' : 'BROKEN'}
+                  </span>
+                  <span className="stat__note">
+                    {c.status.ok
+                      ? 'every event reproduces its stored hash'
+                      : c.status.detail}
+                  </span>
+                </div>
+              </Card>
+              <Stat label="Events checked" value={count(c.status.checked)}
+                note={`of ${count(c.status.events)} in the log`} />
+              <Stat label="Broken links" value={c.status.ok ? '0' : '1+'}
+                tone={c.status.ok ? 'bone' : 'oxide'}
+                note={c.status.ok ? 'the sequence is unaltered' : `first break at seq ${c.status.broken_at}`} />
+              <Card>
+                <div className="stat">
+                  <span className="stat__label"><Link2 size={13} /> Head</span>
+                  <span className="stat__value" style={{ fontSize: 14 }}>
+                    {hash(c.status.head, 12, 8)}
+                  </span>
+                  <span className="stat__note">the tip of the chain right now</span>
+                </div>
+              </Card>
+            </div>
+
+            <Section title="What this proves — and what it does not"
+              note="shipped with every proof response, so it cannot be dropped from the UI">
+              <Card>
+                <KV rows={[
+                  ['Proves', c.claims.proves],
+                  ['Does not prove', c.claims.does_not_prove],
+                  ['Known limit', c.claims.limit],
+                  ['Algorithm', <code className="mono" key="a">{c.claims.algorithm}</code>],
+                ]} />
+              </Card>
+            </Section>
+
+            <Section
+              title="The chain"
+              note="newest first — each event's hash covers the one before it"
+              actions={
+                <div className="chipbar">
+                  {[60, 150, 200].map((n) => (
+                    <button key={n} className="chip" aria-pressed={limit === n}
+                      onClick={() => setLimit(n)}>
+                      {n}
+                    </button>
+                  ))}
+                </div>
+              }
+            >
+              <Card flush>
+                {c.items.length === 0 ? (
+                  <Empty
+                    title="The log is empty"
+                    body="Kavach derives everything it believes from this log. With no events there are no facts, and none are invented to fill the gap."
+                    action={<GoLink href="/dashboard/adversary">Produce some</GoLink>}
+                  />
+                ) : (
+                  <div className="chain">
+                    {c.items.map((e) => <ChainLink key={e.seq} event={e} />)}
+                  </div>
+                )}
+              </Card>
+              {c.next_before ? (
+                <p className="section__note" style={{ marginTop: 12 }}>
+                  Showing the newest {count(c.items.length)} of {count(c.status.events)} events.
+                </p>
+              ) : null}
+            </Section>
+          </>
+        )}
+      </Async>
+    </>
+  );
+}
+
+function ChainLink({ event: e }: { event: EventRow }) {
+  return (
+    <div className="link">
+      <div className="link__seq">
+        {e.seq}
+        <div style={{ marginTop: 4 }}>
+          <Badge tone={e.verified ? 'info' : 'deny'} bare>
+            {e.verified ? 'ok' : 'break'}
+          </Badge>
         </div>
       </div>
-
-      <div className="premium-table-container" style={{ animation: 'reveal 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.2s both' }}>
-        <table className="premium-table">
-          <thead>
-            <tr>
-              <th>Intent ID</th>
-              <th>Timestamp</th>
-              <th>Status</th>
-              <th>Signer Key</th>
-              <th>Signature Trunc.</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {proofs.map((proof: any, i: number) => (
-              <tr key={proof.intent_id} style={{ animation: `reveal 0.4s cubic-bezier(0.16, 1, 0.3, 1) ${0.2 + i * 0.05}s both` }}>
-                <td style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Fingerprint size={14} style={{ color: 'var(--text-tertiary)' }} />
-                  {proof.intent_id.substring(0, 16)}...
-                </td>
-                <td style={{ fontSize: '13px', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
-                  {new Date(proof.created_at * 1000).toLocaleString()}
-                </td>
-                <td>
-                  <span className={`status-badge status-${proof.status.toLowerCase()}`}>
-                    {proof.status}
-                  </span>
-                </td>
-                <td style={{ fontSize: '13px', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
-                  {proof.signed_by}
-                </td>
-                <td style={{ fontSize: '13px', fontFamily: 'var(--font-mono)', color: 'var(--text-tertiary)' }}>
-                  {proof.signature.substring(0, 16)}...
-                </td>
-                <td style={{ textAlign: 'right' }}>
-                  <Link href={`/dashboard/proof/${proof.intent_id}`} style={{ 
-                    display: 'inline-flex', alignItems: 'center', gap: '6px', 
-                    fontSize: '12px', color: 'var(--accent-blue)', textDecoration: 'none', 
-                    fontWeight: 500, padding: '4px 12px', background: 'var(--accent-blue-bg)',
-                    borderRadius: '4px', border: '1px solid rgba(56, 139, 253, 0.2)'
-                  }}>
-                    Verify <ArrowRight size={14} />
-                  </Link>
-                </td>
-              </tr>
-            ))}
-            {proofs.length === 0 && (
-              <tr>
-                <td colSpan={6} style={{ padding: '48px 0', textAlign: 'center', color: 'var(--text-tertiary)' }}>
-                  <Search size={24} style={{ margin: '0 auto 12px', opacity: 0.5 }} />
-                  <div>No signed decisions found in the ledger.</div>
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ display: 'flex', gap: 9, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span className="link__type">{e.event_type}</span>
+          <Badge tone="mute" bare>{e.source}</Badge>
+          <Badge
+            tone={e.sig_verified ? 'info' : 'mute'}
+            title={e.sig_verified
+              ? 'HMAC-SHA256 verified over the raw webhook body: the rail actually sent this'
+              : 'not a signature-verified webhook, so it can never yield DERIVED_CERTAIN'}
+          >
+            {e.sig_verified ? 'HMAC verified' : 'unsigned source'}
+          </Badge>
+          <a
+            className="cell__id"
+            href={`/dashboard/${e.entity_type === 'intent' ? 'decisions' : `${e.entity_type}s`}?id=${encodeURIComponent(e.entity_id)}`}
+            style={{ color: 'var(--steel)', textDecoration: 'none' }}
+          >
+            {e.entity_type}:{e.entity_id}
+          </a>
+          <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--fog2)' }} className="mono">
+            {stamp(e.occurred_at)}
+          </span>
+        </div>
+        <div className="link__hash">
+          prev <b>{hash(e.previous_event_hash, 10, 6)}</b>
+          {'  →  '}
+          this <b>{hash(e.event_hash, 10, 6)}</b>
+        </div>
       </div>
-
-      <style dangerouslySetInnerHTML={{__html: `
-        @keyframes reveal {
-          from { opacity: 0; transform: translateY(12px); filter: blur(2px); }
-          to { opacity: 1; transform: translateY(0); filter: blur(0); }
-        }
-      `}} />
     </div>
   );
 }

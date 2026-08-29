@@ -320,21 +320,52 @@ Same tool names, same arguments. The tools return financial facts, and they can 
 cp .env.example .env      # add rzp_test_ keys
 make bench                # regenerate corpus, train, benchmark against all baselines
 make mcp                  # run the MCP server over stdio
-make site                 # build the landing page and serve it on :4173
 ```
 
-The page states numbers, policy constants, state names and tool names.
+### The console
+
+```bash
+make demo                 # seed the ledger, build the UI, serve everything on :8000
+```
+
+One process, one port. The API mounts the built UI at `/`, so there is no second server and
+no CORS.
+
+| | |
+|---|---|
+| `/` | the argument: what the seam is and why it matters |
+| `/dashboard` | command centre — what is happening right now |
+| `/dashboard/stream` | every decision, newest first |
+| `/dashboard/truth` | watch a fact being derived, one event at a time |
+| `/dashboard/obligations` | what money is in flight and for how long |
+| `/dashboard/gate` | edit a mandate, present a cart, watch admission run |
+| `/dashboard/review` | what Kavach stopped, and why |
+| `/dashboard/adversary` | eleven attacks against the real decision code |
+| `/dashboard/proof` | recompute the hash chain, and read its limits |
+
+Every number on those screens is a query result. There is no seeded metric, no fallback
+zero, and no page that renders a plausible value when the API is unreachable — an
+unreachable API produces an error state that says so.
+
+`make seed` rebuilds the demo ledger by running the real pipeline: truth, exposure, the
+trained estimator, `governor.decide`. Nothing sets a verdict directly, and the seeder
+refuses to stage an execution the governor did not allow. A screenshot of the dashboard is
+therefore a screenshot of the system's behaviour.
+
+### Numbers the build guards
+
+The landing page states benchmark results, policy constants, state names and tool names.
 `tests/test_site.py` parses `governor.py`, `truth.py` and `mcp/server.py` and fails the
 build if any of them drifts from what the page claims — including whether a plane is
-marked built before its module exists. ADR-007 does not stop at the edge of the
-repository. That test is pure Python and needs no Node, so CI stays as it was.
+marked built before its module exists, and how many tests the footer says exist. ADR-007
+does not stop at the edge of the repository. That test is pure Python and needs no Node.
 
 ---
 
 ## Repository layout
 
 ```
-cmd/                     entrypoints, one per runnable
+apps/                     entrypoints, one per runnable
 pkg/kavach/
   eventlog.py            append-only log, idempotent ingestion       deterministic
   truth.py               events → FinancialFact                      deterministic
@@ -342,10 +373,16 @@ pkg/kavach/
   gate/                  credential · intent · provenance · population · fusion
   intelligence/          corpus · features · model · evaluate        learned, advisory
   governor.py            invariants, tiers, caps, bounded execute    policy
-  proof/                 hash chain · replay · dispute pack
+  proof.py               hash chain verification, and its stated limits
+  services/              one decision path, shared by MCP, HTTP and the seed
+    decisions.py           intent → truth → risk → governor → recorded event
+    gate.py                inbound admission over HTTP
+    scenarios.py           the adversary lab: real code, isolated sandbox
+    dispute.py             evidence export for one decision
+    review.py              human approve / reject, as auditable events
   razorpay/client.py     REST client, live | replay                  I/O
-  mcp/server.py          the tool surface an agent sees              I/O
-web/                     the landing page: Next.js static export, GSAP + Motion
+  mcp/server.py          the tool surface an agent sees               I/O
+web/                     landing page + operator console, Next.js static export
 tests/                   pytest, one file per module
 documents/               design docs and ADRs
 evals/                   benchmark output

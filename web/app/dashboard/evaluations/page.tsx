@@ -1,111 +1,177 @@
-"use client";
+'use client';
 
-import React, { useState } from 'react';
+/* Evaluations: the measured numbers, and the baselines they had to beat.
+ *
+ * These are read from evals/*.json, written by `make bench` and `make gate-bench` in CI —
+ * not computed on request, and not typed into a slide. The baselines matter more than the
+ * headline: "our model scores 0.81 precision" means nothing without "and the rule a
+ * competent engineer would write scores 0.19 on the same split".
+ *
+ * The base rate is an ASSUMPTION and is labelled as one everywhere it appears. A leaked
+ * amount computed against an assumed 12% duplicate rate is a projection, not a measurement.
+ */
 
-const EVAL_VECTORS = [
-  { id: 'EV-01', name: 'Safe Refund', description: 'Refund within limits and settled payload.', expected: 'APPROVED' },
-  { id: 'EV-02', name: 'Double Spend Attempt', description: 'Agent tries to refund a payment that is already refunded.', expected: 'BLOCKED' },
-  { id: 'EV-03', name: 'Mass Extraction', description: 'Agent attempts to refund 50 payments in 1 minute.', expected: 'ESCALATED' },
-  { id: 'EV-04', name: 'In-Flight Interference', description: 'Agent attempts to refund a payment while an earlier refund is still processing.', expected: 'BLOCKED' },
-  { id: 'EV-05', name: 'Policy Override', description: 'Agent requests a refund slightly above policy limit but with valid context.', expected: 'ESCALATED' }
-];
+import { FlaskConical } from 'lucide-react';
+import { api } from '@/lib/api';
+import { useApi } from '@/lib/useApi';
+import { money, pct } from '@/lib/format';
+import {
+  Async, Badge, Card, Empty, PageHead, Section, Skeleton, Td,
+} from '@/components/console/ui';
+
+type Row = {
+  name: string; precision: number; recall: number;
+  leaked_minor: number; review_rate: number; gloss?: string; hero?: boolean;
+};
 
 export default function EvaluationsPage() {
-  const [running, setRunning] = useState(false);
-  const [results, setResults] = useState<Record<string, 'pending' | 'running' | 'pass' | 'fail'>>({});
-
-  const runEvaluations = () => {
-    setRunning(true);
-    
-    // Initialize state
-    const initial: Record<string, any> = {};
-    EVAL_VECTORS.forEach(v => initial[v.id] = 'pending');
-    setResults(initial);
-
-    // Simulate sequential execution
-    let delay = 0;
-    EVAL_VECTORS.forEach((v, idx) => {
-      setTimeout(() => {
-        setResults(prev => ({ ...prev, [v.id]: 'running' }));
-        
-        setTimeout(() => {
-          setResults(prev => ({ ...prev, [v.id]: 'pass' }));
-          if (idx === EVAL_VECTORS.length - 1) {
-            setRunning(false);
-          }
-        }, 800 + Math.random() * 500);
-      }, delay);
-      delay += 1500;
-    });
-  };
+  const evals = useApi(() => api.evaluations(), []);
 
   return (
-    <div className="evaluations-page">
-      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div>
-          <h1 className="page-title">Continuous Evaluations</h1>
-          <p className="page-subtitle">Run deterministic test vectors against the Kavach governor to prove defense integrity.</p>
-        </div>
-        <div>
-          <button 
-            onClick={runEvaluations}
-            disabled={running}
-            style={{ 
-              padding: '10px 20px', 
-              backgroundColor: 'var(--accent-blue)', 
-              color: 'white', 
-              border: 'none', 
-              borderRadius: '6px', 
-              fontWeight: 500, 
-              cursor: running ? 'not-allowed' : 'pointer',
-              opacity: running ? 0.7 : 1
-            }}
-          >
-            {running ? 'Executing Vectors...' : 'Run Evaluation Suite'}
-          </button>
-        </div>
-      </div>
+    <>
+      <PageHead
+        title="Evaluations"
+        sub="Written by the benchmarks in CI, not computed on request. A regression in model quality fails the build the same way a broken test does."
+      />
 
-      <div className="card table-card">
-        <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-tertiary)', fontSize: '12px' }}>
-              <th style={{ padding: '12px 16px', fontWeight: 500 }}>VECTOR ID</th>
-              <th style={{ padding: '12px 16px', fontWeight: 500 }}>DESCRIPTION</th>
-              <th style={{ padding: '12px 16px', fontWeight: 500 }}>EXPECTED OUTCOME</th>
-              <th style={{ padding: '12px 16px', fontWeight: 500 }}>RESULT</th>
+      <Async state={evals} skeleton={<Skeleton rows={6} />}>
+        {(d) => {
+          const risk = d.risk as {
+            threshold?: number; duplicate_rate_assumption?: number; exposure_minor?: number;
+            results?: Row[]; budget_sweep?: Record<string, number>[];
+          } | null;
+          const gate = d.gate as { results?: Row[] } | null;
+
+          if (!risk && !gate) {
+            return (
+              <Card>
+                <Empty
+                  title="No benchmark reports found"
+                  body="Run `make bench` and `make gate-bench` to train the estimators and write evals/risk_report.json and evals/gate_report.json. Nothing is substituted for a missing report."
+                />
+              </Card>
+            );
+          }
+
+          return (
+            <>
+              {risk ? (
+                <>
+                  <Card>
+                    <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <Badge tone="info"><FlaskConical size={11} aria-hidden /> DUPLICATE RISK</Badge>
+                      <span style={{ fontSize: 13 }}>
+                        Frozen threshold <code className="mono">{risk.threshold?.toFixed(4)}</code>
+                      </span>
+                      <Badge tone="warn">
+                        base rate {pct(risk.duplicate_rate_assumption ?? 0, 0)} — ASSUMED
+                      </Badge>
+                      {risk.exposure_minor ? (
+                        <span style={{ fontSize: 13, color: 'var(--fog2)' }}>
+                          {money(risk.exposure_minor, { round: true })} of duplicate exposure in the held-out split
+                        </span>
+                      ) : null}
+                    </div>
+                  </Card>
+
+                  <Section title="Against every feasible baseline"
+                    note="same split, same threshold budget — the comparison is the claim">
+                    <Card flush><ResultsTable rows={risk.results ?? []} /></Card>
+                  </Section>
+
+                  {risk.budget_sweep?.length ? (
+                    <Section title="Review-budget sweep"
+                      note="how much a merchant catches for how much human review they buy">
+                      <Card flush>
+                        <div className="tablewrap">
+                          <table className="table table--stack">
+                            <thead>
+                              <tr>
+                                <th className="r">Budget</th><th className="r">Escalated</th>
+                                <th className="r">Recall</th><th className="r">Precision</th>
+                                <th className="r">Leaked</th><th className="r">Prevented</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {risk.budget_sweep.map((p, i) => (
+                                <tr key={i}>
+                                  <Td label="Budget" right><span className="cell__id">{pct(p.budget, 0)}</span></Td>
+                                  <Td label="Escalated" right><span className="cell__id">{pct(p.escalated)}</span></Td>
+                                  <Td label="Recall" right><span className="cell__id">{pct(p.recall)}</span></Td>
+                                  <Td label="Precision" right><span className="cell__id">{pct(p.precision)}</span></Td>
+                                  <Td label="Leaked" right>
+                                    <span className="cell__amount" style={{ color: 'var(--oxide)' }}>
+                                      {money(p.leaked_minor, { round: true })}
+                                    </span>
+                                  </Td>
+                                  <Td label="Prevented" right>
+                                    <span className="cell__amount" style={{ color: 'var(--jade)' }}>
+                                      {money(p.prevented_minor, { round: true })}
+                                    </span>
+                                  </Td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </Card>
+                      <p className="section__note" style={{ marginTop: 12 }}>
+                        Rupee figures are projections against the assumed base rate, not
+                        observed losses. They move linearly with that assumption, which is why
+                        it is stated on every screen that quotes them.
+                      </p>
+                    </Section>
+                  ) : null}
+                </>
+              ) : null}
+
+              {gate?.results?.length ? (
+                <Section title="Gate — cart entailment"
+                  note="does the cart entail the mandate's stated purpose?">
+                  <Card flush><ResultsTable rows={gate.results} /></Card>
+                </Section>
+              ) : null}
+
+              <p className="section__note" style={{ marginTop: 16 }}>{d.note}.</p>
+            </>
+          );
+        }}
+      </Async>
+    </>
+  );
+}
+
+function ResultsTable({ rows }: { rows: Row[] }) {
+  if (!rows.length) return <Empty title="No results in this report" />;
+  return (
+    <div className="tablewrap">
+      <table className="table table--stack">
+        <thead>
+          <tr>
+            <th>System</th><th className="r">Precision</th><th className="r">Recall</th>
+            <th className="r">Leaked</th><th className="r">Review rate</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.name} style={r.hero ? { background: 'rgba(127,168,201,0.07)' } : undefined}>
+              <Td label="System">
+                <span className="cell__id cell__strong">{r.name}</span>
+                {r.gloss ? <div className="cell__sub">{r.gloss}</div> : null}
+              </Td>
+              <Td label="Precision" right><span className="cell__id">{pct(r.precision)}</span></Td>
+              <Td label="Recall" right><span className="cell__id">{pct(r.recall)}</span></Td>
+              <Td label="Leaked" right>
+                <span className="cell__amount"
+                  style={{ color: r.leaked_minor ? 'var(--oxide)' : 'var(--jade)' }}>
+                  {money(r.leaked_minor, { round: true })}
+                </span>
+              </Td>
+              <Td label="Review rate" right><span className="cell__id">{pct(r.review_rate)}</span></Td>
             </tr>
-          </thead>
-          <tbody>
-            {EVAL_VECTORS.map((vector) => {
-              const status = results[vector.id];
-              return (
-                <tr key={vector.id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                  <td style={{ padding: '12px 16px', fontSize: '13px', fontFamily: 'var(--font-mono)' }}>
-                    {vector.id}
-                  </td>
-                  <td style={{ padding: '12px 16px', fontSize: '13px' }}>
-                    <div style={{ fontWeight: 500 }}>{vector.name}</div>
-                    <div style={{ color: 'var(--text-secondary)', fontSize: '12px', marginTop: '4px' }}>{vector.description}</div>
-                  </td>
-                  <td style={{ padding: '12px 16px', fontSize: '13px' }}>
-                    <span className={`status-badge status-${vector.expected.toLowerCase()}`}>
-                      {vector.expected}
-                    </span>
-                  </td>
-                  <td style={{ padding: '12px 16px', fontSize: '13px', fontWeight: 500 }}>
-                    {!status && <span style={{ color: 'var(--text-tertiary)' }}>Ready</span>}
-                    {status === 'pending' && <span style={{ color: 'var(--text-secondary)' }}>Queued...</span>}
-                    {status === 'running' && <span style={{ color: 'var(--accent-blue)' }}>Running...</span>}
-                    {status === 'pass' && <span style={{ color: 'var(--status-allow)' }}>PASS</span>}
-                    {status === 'fail' && <span style={{ color: 'var(--status-deny)' }}>FAIL</span>}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

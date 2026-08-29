@@ -1,7 +1,7 @@
 # Kavach Engineering Audit
 
 ## A. Complete Repository Architecture Map
-- **cmd/**: Entrypoints (`mcp_server.py`, `benchmark.py`, `gate_benchmark.py`).
+- **apps/**: Entrypoints (`mcp_server.py`, `benchmark.py`, `gate_benchmark.py`).
 - **pkg/kavach/**: Core domain logic.
   - **eventlog.py**: Append-only log with idempotent ingestion.
   - **truth.py**: Deterministic state machine (Rail State vs Obligation State).
@@ -11,8 +11,10 @@
   - **intelligence/**: Duplicate-risk model, entailment model, feature extraction.
   - **razorpay/**: Provider adapter (live/replay client).
   - **mcp/**: MCP server implementation.
-  - **proof/**: Cryptographic audit chain (Planned).
-- **web/**: Next.js frontend (Mock/Demo UI).
+  - **proof.py**: Hash-chain verification, with its limits stated in `claims()`.
+  - **services/**: the one decision path shared by MCP, HTTP and the demo seed.
+- **apps/api_server.py**: the HTTP boundary; also mounts the built UI.
+- **web/**: landing page + operator console (Next.js static export, client-rendered).
 
 ## B. Runtime/Data-Flow Map
 1. **Agent MCP Call** -> `mcp/server.py`
@@ -50,7 +52,11 @@
 `Agent -> mcp.admit_cart -> gate.admission.admit -> gate.envelope.verify -> gate.mandate.admissible -> intelligence.model.score -> gate.admission.expected_losses -> gate.mandate.record_admission`
 
 ## H. Frontend -> Backend Integration Map
-Frontend is partially implemented in `web/` using Next.js. Currently reads mock data. Needs to consume backend state dynamically via API or direct DB connection.
+`browser -> apps/api_server.py -> kavach.services.* -> truth/ledger/governor/gate/proof`.
+
+The console is a static export that fetches at runtime; the API mounts `web/out` at `/`, so
+one process serves both and there is no CORS in the demo path. No dashboard screen reads
+mock data, and none substitutes a value when the API is unreachable.
 
 ## I. ML Training -> Inference -> Governance Flow
 `make bench` -> `intelligence/evaluate.py` trains `model.pkl` -> `mcp/server.py` loads `model.pkl` -> `governor.decide` consumes score -> Output bounded by `policy.risk_threshold`.
@@ -67,17 +73,20 @@ Test coverage is mostly present for core deterministic components (`truth`, `led
 | Subsystem | Status |
 |-----------|--------|
 | Truth Engine | IMPLEMENTED |
-| Event Log | IMPLEMENTED (missing hash chain) |
-| Obligation Ledger | PARTIALLY IMPLEMENTED (Lacks concurrency locks) |
+| Event Log | IMPLEMENTED (hash-chained) |
+| Obligation Ledger | IMPLEMENTED |
 | Risk Model | IMPLEMENTED |
 | Governor | IMPLEMENTED |
-| Razorpay Client | IMPLEMENTED |
-| Webhook Ingestion | PLANNED / MISSING |
-| Reconciliation | PLANNED / MISSING |
-| Inbound Gate | IMPLEMENTED (has bugs) |
-| MCP | IMPLEMENTED (has bugs) |
-| Proof / Hash Chain | PLANNED / MISSING |
-| Web Experience | IMPLEMENTED (Static UI aligned with ADR-019) |
+| Razorpay Client | IMPLEMENTED (live \| replay) |
+| Webhook Ingestion | IMPLEMENTED (HMAC, idempotent) |
+| Reconciliation | IMPLEMENTED |
+| Inbound Gate | IMPLEMENTED |
+| MCP | IMPLEMENTED |
+| Proof / Hash Chain | IMPLEMENTED, with limits stated in `proof.claims()` |
+| HTTP API | IMPLEMENTED |
+| Operator Console | IMPLEMENTED (17 routes, live data) |
+| Adversary Lab | IMPLEMENTED (11 scenarios, asserted in CI) |
+| Dispute Pack | IMPLEMENTED (JSON export) |
 
 ---
 
@@ -145,7 +154,7 @@ Test coverage is mostly present for core deterministic components (`truth`, `led
 
 ### P1-1: Webhook Ingestion & Deduplication
 - **Severity**: P1
-- **File**: `cmd/`
+- **File**: `apps/`
 - **Current Behavior**: Webhooks are not actively ingested by any web server/HTTP handler.
 - **Expected Behavior**: A secure webhook receiver (`POST /webhooks/razorpay`) must verify HMAC signatures and deduplicate events into the event log.
 - **Recommended Fix**: Create `pkg/kavach/webhooks/server.py` or similar HTTP endpoint.
@@ -161,3 +170,69 @@ Test coverage is mostly present for core deterministic components (`truth`, `led
 - **P2-1 (WONTFIX)**: ~Frontend uses mock data and static exports. Needs to be wired to the backend API/DB.~ *Per ADR-019, the Next.js UI is meant to be a static documentation asset that verifies benchmark numbers at build time. No DB connection is intended.*
 - **P2-2**: SQLite `kavach.db` hardcoded or uses CWD. Need robust environment variable configuration `KAVACH_DB`.
 - **P2-3**: Needs robust application lifecycle (startup/shutdown).
+
+
+---
+
+## Round 2 findings (console build)
+
+Found by building the product on top of the engine, and by verifying it in a real browser
+rather than assuming it worked.
+
+### R2-1: `governor.evaluate_and_record` was a fake decision path — FIXED
+A second evaluator with a hardcoded `if amount > X` heuristic that never read truth, the
+ledger or the estimator, and minted `"ed25519_" + sha256(...)` as a "signature" that the
+proof explorer displayed as cryptographic. Every dashboard page and the adversary lab ran
+through it. Deleted. `services/decisions.py` is now the only outbound path, and decisions
+are recorded as hash-chained events rather than carrying an invented signature.
+
+### R2-2: a captured payment aged out to AMBIGUOUS — FIXED
+`Rail.CONFIRMED` was missing from `truth._TERMINAL`, so any payment older than the
+fifteen-minute tolerance derived as AMBIGUOUS and `governor.decide` refused every refund
+against it with "payment is not captured". A credited refund (ARN present) had the same
+problem at six hours, re-opening settled obligations forever and inflating exposure.
+Guarded by two regression tests.
+
+### R2-3: `cmd/` shadowed the stdlib `cmd` module — FIXED
+`pytest` could not start at all: collecting tests imports `pdb`, which imports `cmd`, which
+resolved to the repository's entrypoint package. Renamed to `apps/`.
+
+### R2-4: the web build was broken, and would not have served — FIXED
+An unescaped `>` in JSX failed the build outright. Underneath that, `assetPrefix: '.'`
+resolved `/dashboard/gate`'s assets to `/dashboard/_next/...`, and `trailingSlash: false`
+emitted `dashboard.html` where any static server looks for `dashboard/index.html` — so the
+whole console would have 404'd the moment it was served. Both fixed and verified over HTTP.
+
+### R2-5: every API call 500'd from a browser — FIXED
+FastAPI runs a synchronous `yield` dependency's body in one threadpool worker and its
+teardown in another, so `conn.close()` tripped sqlite3's thread-affinity guard. Sequential
+`curl` never reproduced it; a browser's parallel fetches did every time. `connect()` now
+takes an explicit `same_thread` flag, opt-in, with a regression test for both directions.
+
+### R2-6: `useAction` froze its closure — FIXED
+`call` was memoised with `[]` dependencies, so it always invoked the first render's
+function. The Agent Gate posted the cart from its initial render: selecting a different
+cart and submitting showed **ALLOW over a cart it had not evaluated**. On a screen whose
+only job is to report what the backend decided, that is the worst available failure. The
+callable now lives in a ref refreshed every render.
+
+### R2-7: a grid track blew past the viewport — FIXED
+Bare `display: grid` wrappers create an implicit `auto` column that sizes to content, so the
+Agent Gate's result panel was 849px inside a 519px track and ran off a 1440px screen. Added
+a `.stack` primitive with `minmax(0, 1fr)`. Zero horizontal overflow at 1440/1180/900/390.
+
+### R2-8: the demo seed staged an execution the governor denied — FIXED
+Rail events were written before the intents that caused them, so the second refund was
+denied for exposure it was itself about to create, and the seed then forced it to EXECUTED.
+The seed now runs in causal order and raises rather than staging any outcome the governor
+did not produce.
+
+### Known limits, stated rather than fixed
+- The duplicate-risk estimator reads refund-reason text and is only meaningful in-distribution.
+  The same duplicate pair scores 0.74 at a 35-minute gap and 0.46 at an 11-minute gap — under
+  the threshold. This is documented in `services/scenarios.py` and is why the model may only
+  escalate, never authorise.
+- The hash chain is tamper-evident, not tamper-proof, and proves nothing about authorship.
+  Both limits ship in every proof response via `proof.claims()`.
+- The Gate's demo issuer key is derived locally. The Ed25519 verification is real; the claim
+  that a human signed the mandate is not, and every admission response says so.

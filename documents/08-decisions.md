@@ -112,7 +112,7 @@ count leaked rupees. It also disqualifies systems honestly instead of pricing th
 Razorpay's internal conventions are not public and inventing them would be worse than
 having none. What IS public is four Razorpay repositories, so the layout is taken from
 those and each choice is traceable to one:
-  - `cmd/` + `pkg/` + `Makefile`     razorpay/razorpay-mcp-server (their MCP server, the
+  - `apps/` + `pkg/` + `Makefile`     razorpay/razorpay-mcp-server (their MCP server, the
                                      closest analogue to this project)
   - `documents/` rather than `docs/` razorpay-mcp-server, razorpay-python, razorpay-go and
                                      razorpay-node all use `documents/`
@@ -120,7 +120,7 @@ those and each choice is traceable to one:
   - domain-named packages            razorpay-go (`errors/`, `resources/`, `requests/`)
   - SECURITY / CONTRIBUTING /
     CHANGELOG / .editorconfig / CI   present across their repos
-Deliberately NOT copied: Go's `internal/` and hyphenated `cmd/<binary>/` directories. Those
+Deliberately NOT copied: Go's `internal/` and hyphenated `apps/<binary>/` directories. Those
 are Go visibility and build conventions with no meaning in Python -- a hyphenated directory
 is not even importable. Transliterating them would signal cargo-culting to the first
 reviewer who opened the tree, which is the opposite of the intent.

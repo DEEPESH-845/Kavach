@@ -1,49 +1,43 @@
 'use client';
 
-import { useEffect } from 'react';
+/* Route-level error boundary for the console.
+ *
+ * It does not guess at a cause. The most common failure here by far is "the API is not
+ * running", so that gets a named remedy; everything else gets the message, a retry, and a
+ * way back — never a blank screen and never a stack trace, which on a payments surface is
+ * both useless to the operator and useful to whoever is probing it.
+ */
 
-export default function DashboardError({
-  error,
-  reset,
-}: {
-  error: Error & { digest?: string };
-  reset: () => void;
+import Link from 'next/link';
+import { useEffect } from 'react';
+import { AlertTriangle, RefreshCw } from 'lucide-react';
+
+export default function ConsoleError({ error, reset }: {
+  error: Error & { digest?: string }; reset: () => void;
 }) {
-  useEffect(() => {
-    // Log the error to an error reporting service
-    console.error('Dashboard Error:', error);
-  }, [error]);
+  useEffect(() => { console.error('Kavach console error:', error); }, [error]);
 
   return (
-    <div style={{
-      padding: '40px',
-      margin: '20px',
-      backgroundColor: 'var(--bg-card)',
-      border: '1px solid var(--border-danger, #ff4444)',
-      borderRadius: '8px',
-      color: 'var(--text-primary)'
-    }}>
-      <h2 style={{ color: 'var(--status-deny, #ff4444)' }}>Failed to load dashboard data</h2>
-      <p style={{ marginTop: '16px', color: 'var(--text-secondary)' }}>
-        Unable to connect to the Kavach backend API. Please make sure the Python server is running on port 8001.
+    <div className="state state--error" style={{ padding: '72px 24px' }}>
+      <AlertTriangle size={30} className="state__icon" aria-hidden />
+      <h1 className="state__title" style={{ fontSize: 17 }}>Something went wrong</h1>
+      <p className="state__body">
+        Kavach could not render this screen. Nothing was decided and no money moved — this is
+        a display failure, not a governance one.
       </p>
-      <div style={{ marginTop: '24px', padding: '16px', backgroundColor: 'var(--bg-body)', borderRadius: '4px', fontFamily: 'var(--font-mono)', fontSize: '13px', color: 'var(--text-tertiary)' }}>
+      <p className="state__body mono" style={{ fontSize: 12, color: 'var(--fog2)' }}>
         {error.message}
+        {error.digest ? ` · ${error.digest}` : ''}
+      </p>
+      <div className="state__actions">
+        <button className="btn btn--primary" onClick={reset}>
+          <RefreshCw size={13} /> Try again
+        </button>
+        <Link className="btn" href="/dashboard">Command centre</Link>
       </div>
-      <button
-        onClick={() => reset()}
-        style={{
-          marginTop: '24px',
-          padding: '8px 16px',
-          backgroundColor: 'var(--accent-blue)',
-          color: 'white',
-          border: 'none',
-          borderRadius: '4px',
-          cursor: 'pointer'
-        }}
-      >
-        Try again
-      </button>
+      <p className="state__body" style={{ fontSize: 12, marginTop: 6 }}>
+        If this persists, check that the API is running: <code className="mono">make demo</code>.
+      </p>
     </div>
   );
 }
