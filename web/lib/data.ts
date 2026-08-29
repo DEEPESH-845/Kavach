@@ -35,7 +35,7 @@ export const REPORT = {
    against the tree: the test count against `def test` in tests/, and the scenario count
    against the adversary lab's own registry. A footer that states a number nothing checks
    is exactly the drift ADR-007 exists to stop. */
-export const TREE = { tests: 183, scenarios: 11 };
+export const TREE = { tests: 188, scenarios: 11 };
 
 /* Policy defaults, verbatim from pkg/kavach/governor.py. The governor compares against its
    own risk_threshold, not the benchmark's frozen threshold — different numbers for different
