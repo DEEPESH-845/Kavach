@@ -1,97 +1,406 @@
-const API_BASE = 'http://127.0.0.1:8001/api';
+/* The only place this app knows a backend exists.
+ *
+ * Two rules hold the boundary:
+ *
+ * 1. NOTHING here invents data. There is no fallback object, no `?? 0`, no sample row
+ *    for when the API is down. A component that cannot reach the backend renders an
+ *    error state saying so. A dashboard that quietly substitutes zeros for an outage
+ *    is worse than one that goes blank, because the zeros are believed.
+ *
+ * 2. Money crosses as integer minor units named `*_minor`, and is formatted for display
+ *    only at the last moment, in format.ts. No arithmetic in this app touches rupees.
+ */
 
-export async function fetchAPI(endpoint: string, options: RequestInit = {}) {
-  const url = `${API_BASE}${endpoint}`;
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    },
-    cache: 'no-store', // Always fetch fresh data for dashboard
-  });
+/** Same-origin when the API serves the built UI; the dev server points at :8000. */
+export const API_BASE =
+  process.env.NEXT_PUBLIC_KAVACH_API ??
+  (typeof window !== 'undefined' && window.location.port === '3000'
+    ? 'http://127.0.0.1:8000'
+    : '');
 
-  if (!response.ok) {
-    throw new Error(`API Error: ${response.status} on ${endpoint}`);
+export class ApiError extends Error {
+  readonly status: number;
+  readonly code: string;
+  readonly fields?: { field: string; problem: string }[];
+  readonly reference?: string;
+
+  constructor(status: number, code: string, message: string, extra: Record<string, unknown> = {}) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
+    this.fields = extra.fields as ApiError['fields'];
+    this.reference = extra.reference as string | undefined;
   }
 
-  return response.json();
+  /** What the operator should do about it, in one sentence. */
+  get remedy(): string {
+    if (this.status === 0)
+      return 'Start the Kavach API with `make demo`, then retry.';
+    if (this.status === 404) return 'Check the identifier, or return to the command centre.';
+    if (this.status === 409) return 'Reload — this item has already moved on.';
+    if (this.status === 422) return 'Correct the highlighted fields and submit again.';
+    if (this.status >= 500) return 'The failure is logged on the server. Retry, or check its output.';
+    return 'Retry, or return to the command centre.';
+  }
 }
 
-export async function getDashboardOverview() {
-  const data = await fetchAPI('/dashboard/overview');
-  return data.data;
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/api${path}`, {
+      ...init,
+      headers: { 'Content-Type': 'application/json', ...init.headers },
+      cache: 'no-store',
+    });
+  } catch {
+    // A network-level failure has no status and no body. Naming it here means every
+    // caller gets the same actionable message instead of "Failed to fetch".
+    throw new ApiError(0, 'unreachable', 'Kavach API is not reachable.');
+  }
+
+  const text = await res.text();
+  let body: unknown = null;
+  if (text) {
+    try {
+      body = JSON.parse(text);
+    } catch {
+      body = null;
+    }
+  }
+
+  if (!res.ok) {
+    const err = (body as { error?: Record<string, unknown> } | null)?.error;
+    throw new ApiError(
+      res.status,
+      (err?.code as string) ?? 'error',
+      (err?.message as string) ?? `Request failed with status ${res.status}.`,
+      err ?? {},
+    );
+  }
+  return body as T;
 }
 
-export async function getDashboardActivity() {
-  const data = await fetchAPI('/dashboard/activity');
-  return data.data;
-}
+const get = <T,>(path: string) => request<T>(path);
+const post = <T,>(path: string, payload: unknown) =>
+  request<T>(path, { method: 'POST', body: JSON.stringify(payload) });
 
-export async function getIntents() {
-  const data = await fetchAPI('/intents');
-  return data.data;
-}
+/* ── domain types ───────────────────────────────────────────────────────────── */
 
-export async function getIntentDetail(intentId: string) {
-  const data = await fetchAPI(`/intents/${intentId}`);
-  return data.data;
-}
+export type Action = 'ALLOW' | 'ESCALATE' | 'DENY';
+export type Verdict = 'ALLOW' | 'STEP_UP' | 'HOLD' | 'DENY';
+export type StageState = 'PASS' | 'FAIL' | 'FLAG' | 'SKIPPED' | 'UNAVAILABLE';
 
-export async function getPayments() {
-  const data = await fetchAPI('/payments');
-  return data.data;
-}
+export type Health = {
+  status: string;
+  version: string;
+  mode: string;
+  mode_note: string;
+  database: string;
+  models: { duplicate_risk: boolean; entailment: boolean };
+  integrity: { chain_intact: boolean; events: number; broken_at: number | null };
+  policy: Record<string, number | boolean>;
+  ui: boolean;
+};
 
-export async function getPaymentDetail(paymentId: string) {
-  const data = await fetchAPI(`/payments/${paymentId}`);
-  return data.data;
-}
+export type DecisionPayload = {
+  action?: Action;
+  reasons?: string[];
+  evidence_events?: number[];
+  duplicate_risk?: number | null;
+  risk_factors?: string[];
+  open_exposure?: number;
+};
 
-export async function getRefunds() {
-  const data = await fetchAPI('/refunds');
-  return data.data;
-}
+export type Intent = {
+  intent_id: string;
+  agent_id: string;
+  session_id: string;
+  tool: string;
+  target_type: string;
+  target_id: string;
+  amount_minor: number;
+  reason_text: string;
+  created_at: number;
+  status: string;
+  result_id: string | null;
+  decision: DecisionPayload;
+};
 
-export async function getRefundDetail(refundId: string) {
-  const data = await fetchAPI(`/refunds/${refundId}`);
-  return data.data;
-}
+export type StreamItem = {
+  intent_id: string;
+  agent_id: string;
+  session_id: string;
+  tool: string;
+  target: string;
+  target_type: string;
+  target_id: string;
+  amount_minor: number;
+  reason_text: string;
+  created_at: number;
+  status: string;
+  result_id: string | null;
+  action: Action | null;
+  risk: number | null;
+  headline: string | null;
+  exposure: number | null;
+};
 
-export async function getObligations() {
-  const data = await fetchAPI('/obligations');
-  return data.data;
-}
+export type Overview = {
+  as_of: number;
+  exposure: { open_minor: number; open_count: number; oldest_seconds: number };
+  governed: { intents: number; amount_minor: number; executed: number; last_24h: number };
+  refused: { denied: number; escalated: number; protected_minor: number; duplicate_flagged: number };
+  review_queue: number;
+  unresolved_outcomes: number;
+  agents: { active: number; admission_rate: number | null };
+  integrity: { chain_verified: boolean; message: string; events: number };
+  by_status: Record<string, number>;
+};
 
-export async function getApprovals() {
-  const data = await fetchAPI('/approvals');
-  return data.data;
-}
+export type EventRow = {
+  seq: number;
+  source: string;
+  external_id: string;
+  entity_type: string;
+  entity_id: string;
+  parent_entity_id: string | null;
+  event_type: string;
+  occurred_at: number;
+  received_at: number;
+  sig_verified: boolean;
+  previous_event_hash: string | null;
+  event_hash: string;
+  payload?: Record<string, unknown>;
+  verified?: boolean;
+};
 
-export async function getReconciliations() {
-  const data = await fetchAPI('/reconciliations');
-  return data.data;
-}
+export type Fact = {
+  entity_type: string;
+  entity_id: string;
+  rail_state: string;
+  obligation_open: boolean;
+  confidence: string;
+  amount_minor: number;
+  currency: string;
+  because: string;
+  evidence: number[];
+  unresolved_for: number;
+  arn: string | null;
+  settled_to_customer: boolean;
+  exposure_minor?: number;
+};
 
-export async function getAgents() {
-  const data = await fetchAPI('/agents');
-  return data.data;
-}
+export type EntityDetail = Fact & {
+  timeline: EventRow[];
+  related: {
+    refunds?: Fact[];
+    intents?: {
+      intent_id: string; agent_id: string; session_id: string; amount_minor: number;
+      reason_text: string; status: string; created_at: number; result_id: string | null;
+    }[];
+    payment?: Fact | null;
+  };
+  note: string;
+};
 
-export async function getAgentDetail(agentId: string) {
-  const data = await fetchAPI(`/agents/${agentId}`);
-  return data.data;
-}
+export type TruthTrace = {
+  entity_type: string;
+  entity_id: string;
+  steps: {
+    event: EventRow;
+    rail_state?: string;
+    obligation_open?: boolean;
+    confidence?: string;
+    because?: string;
+    changed?: boolean;
+    error?: string;
+  }[];
+  fact: Fact;
+  provenance: Record<string, string>;
+  final_confidence: string;
+  as_of: number;
+};
 
-export async function submitIntent(payload: any) {
-  const data = await fetchAPI('/gate/intent', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
-  return data.data;
-}
+export type DecisionDetail = {
+  intent: Intent;
+  truth: {
+    fact: Fact | null;
+    evidence: EventRow[];
+    open_obligations: Record<string, unknown>[];
+    exposure_minor: number;
+  };
+  risk: { score: number | null; factors: string[]; assessed: boolean };
+  governor: { action: string; reasons: string[]; open_exposure: number | null };
+  integration: { result_id: string | null; provider_events: EventRow[]; settled: string };
+  audit: {
+    events: EventRow[];
+    sibling_intents: {
+      intent_id: string; agent_id: string; session_id: string; amount_minor: number;
+      reason_text: string; status: string; created_at: number; result_id: string | null;
+    }[];
+  };
+  proof: { verified: boolean; message: string; event_seqs: number[] };
+};
 
-export async function getProofs() {
-  const data = await fetchAPI('/proofs');
-  return data.data;
-}
+export type Obligations = {
+  items: {
+    entity_type: string; entity_id: string; amount_minor: number; currency: string;
+    rail_state: string; confidence: string; because: string; unresolved_for: number;
+    evidence: number[]; arn: string | null;
+  }[];
+  total_minor: number;
+  count: number;
+  oldest_seconds: number;
+  ambiguous: number;
+  as_of: number;
+};
+
+export type Agent = {
+  agent_id: string; intents: number; requested_minor: number; denied: number;
+  escalated: number; sessions: number; admission_rate: number | null;
+  first_seen: number; last_seen: number;
+};
+
+export type Policy = {
+  limits: Record<string, number | boolean>;
+  threshold_source: string;
+  authority_order: { rank: number; layer: string; kind: string; outcome: string; note: string }[];
+  mutable: boolean;
+  mutability_note: string;
+};
+
+export type Stage = { key: string; label: string; detail: string; state: StageState };
+
+export type Admission = {
+  verdict: Verdict;
+  reasons: string[];
+  envelope_failures: string[];
+  scope_violations: string[];
+  purpose_risk: number | null;
+  risk_factors: string[];
+  evidence_events: number[];
+  expected_loss_rupees: Record<string, number>;
+  mandate_id: string | null;
+  cart: {
+    cart_id: string; merchant_id: string; total_minor: number;
+    lines: { sku: string; description: string; category: string; quantity: number;
+             unit_amount_minor: number; total_minor: number; liquid: boolean }[];
+  };
+  stages: Stage[];
+  charged_to_mandate: boolean;
+  entailment_model: boolean;
+  issuer: { key_id: string; simulated: boolean; note?: string };
+};
+
+export type Mandate = {
+  mandate_id: string; principal_id: string; agent_id: string; purpose: string;
+  merchant_allowlist: string[]; categories: string[];
+  per_txn_cap_minor: number; cumulative_cap_minor: number;
+  not_before: number; not_after: number; nonce: string; issued_at: number;
+};
+
+export type ScenarioSpec = {
+  id: string; plane: 'inbound' | 'outbound'; severity: string; title: string;
+  question: string; defence: string; expect: string[];
+};
+
+export type ScenarioResult = ScenarioSpec & {
+  steps: string[];
+  actual: string;
+  expected: string[];
+  outcome: 'HELD' | 'BROKEN' | 'MODEL_UNAVAILABLE';
+  elapsed_ms: number;
+  model_used: boolean;
+  decision?: DecisionPayload;
+  truth?: Record<string, unknown>;
+  admission?: Admission;
+  first_admission?: Admission;
+  mandate?: Mandate;
+  sandbox: { isolated: boolean; epoch: number; note: string };
+};
+
+export type ChainPage = {
+  items: EventRow[];
+  next_before: number | null;
+  status: { ok: boolean; events: number; checked: number; broken_at: number | null; detail: string | null; head: string | null };
+  claims: Record<string, string>;
+};
+
+export type ReviewResult = {
+  intent_id: string; action: string; applied: boolean; status: string;
+  audit_event_seq: number; provider_call: string; what_happens_next: string;
+};
+
+export type EvaluateResult = {
+  committed: boolean;
+  intent_id: string | null;
+  decision: DecisionPayload;
+  truth: Record<string, unknown>;
+  note: string;
+};
+
+type Page<T> = { items: T[]; total: number; limit: number; offset: number };
+
+/* ── endpoints ──────────────────────────────────────────────────────────────── */
+
+export const api = {
+  health: () => get<Health>('/health'),
+  policy: () => get<Policy>('/policy'),
+  overview: () => get<Overview>('/overview'),
+  stream: (limit = 40, before?: number) =>
+    get<{ items: StreamItem[]; next_before: number | null }>(
+      `/stream?limit=${limit}${before ? `&before=${before}` : ''}`),
+
+  intents: (q: { status?: string; agent_id?: string; target_id?: string; limit?: number; offset?: number } = {}) => {
+    const p = new URLSearchParams();
+    Object.entries(q).forEach(([k, v]) => v !== undefined && v !== '' && p.set(k, String(v)));
+    return get<Page<Intent>>(`/intents${p.toString() ? `?${p}` : ''}`);
+  },
+  decision: (id: string) => get<DecisionDetail>(`/intents/${encodeURIComponent(id)}`),
+
+  reviewQueue: () => get<{ items: Intent[]; total: number }>('/review'),
+  review: (id: string, body: { action: 'approve' | 'reject'; reviewer?: string; note?: string }) =>
+    post<ReviewResult>(`/review/${encodeURIComponent(id)}`, body),
+  reconciliation: () => get<{ items: Intent[]; total: number }>('/reconciliation'),
+
+  entities: (type: 'payment' | 'refund', limit = 50, offset = 0) =>
+    get<Page<Fact> & { note: string }>(`/entities/${type}?limit=${limit}&offset=${offset}`),
+  entity: (type: 'payment' | 'refund', id: string) =>
+    get<EntityDetail>(`/entities/${type}/${encodeURIComponent(id)}`),
+  truth: (type: 'payment' | 'refund', id: string) =>
+    get<TruthTrace>(`/truth/${type}/${encodeURIComponent(id)}`),
+  obligations: () => get<Obligations>('/obligations'),
+
+  agents: () => get<{ items: Agent[] }>('/agents'),
+  agent: (id: string) => get<Agent & { intents: Intent[] }>(`/agents/${encodeURIComponent(id)}`),
+
+  gateInspect: (mandate: Mandate) => post<{
+    valid: boolean; failures: string[]; mandate: (Mandate & {
+      spent_minor: number; remaining_minor: number }) | null;
+    admissions?: { seq: number; at: number; cart_id: string; total_minor: number; event_hash: string }[];
+    issuer?: { key_id: string; simulated: boolean };
+  }>('/gate/inspect', mandate),
+  gateAdmit: (body: {
+    mandate: Mandate; cart_id: string; merchant_id: string;
+    lines: { sku: string; description: string; category: string;
+             unit_amount_minor: number; quantity: number; liquid: boolean }[];
+    untrusted_context?: string; commit?: boolean;
+  }) => post<Admission>('/gate/admit', body),
+
+  evaluate: (body: {
+    agent_id: string; session_id: string; target_id: string; amount_minor: number;
+    reason_text: string; tool?: string; commit?: boolean;
+  }) => post<EvaluateResult>('/governor/evaluate', body),
+
+  chain: (limit = 50, before?: number) =>
+    get<ChainPage>(`/proof/chain?limit=${limit}${before ? `&before=${before}` : ''}`),
+  verifyChain: () => get<ChainPage['status'] & { claims: Record<string, string>; verified_at: number }>('/proof/verify'),
+  disputeUrl: (id: string) => `${API_BASE}/api/dispute/${encodeURIComponent(id)}`,
+  dispute: (id: string) => get<Record<string, unknown>>(`/dispute/${encodeURIComponent(id)}`),
+
+  scenarios: () => get<{ items: ScenarioSpec[]; models: Record<string, boolean>; note: string }>('/scenarios'),
+  runScenario: (id: string) => post<ScenarioResult>(`/scenarios/${encodeURIComponent(id)}/run`, {}),
+
+  evaluations: () => get<{ risk: Record<string, unknown> | null; gate: Record<string, unknown> | null; note: string }>('/evaluations'),
+};

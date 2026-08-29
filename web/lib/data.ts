@@ -32,7 +32,7 @@ export const REPORT = {
 
 /* A line count changes on every commit and catches nothing; the test count is the
    one that means something, so it is the one the page states and the build guards. */
-export const TREE = { tests: 171 };
+export const TREE = { tests: 181 };
 
 /* Policy defaults, verbatim from pkg/kavach/governor.py. The governor compares against its
    own risk_threshold, not the benchmark's frozen threshold — different numbers for different

@@ -107,10 +107,20 @@ def fact_for(conn: sqlite3.Connection, entity_type: str, entity_id: str,
         return None
 
 
+#: Entity types the truth plane can derive a financial fact for. The log also carries
+#: `intent` and `mandate` rows -- governance events, not rail entities. Deriving a fact for
+#: one raises and is swallowed below, so the filter is not load-bearing for correctness; it
+#: is here because scanning them on every dashboard read is a scan of things we know cannot
+#: be obligations.
+MONEY_ENTITIES = ("payment", "refund", "order", "payout")
+
+
 def open_obligations(conn: sqlite3.Connection, now: int) -> list[FinancialFact]:
     """Every entity we hold whose obligation is still OPEN."""
+    q = ",".join("?" * len(MONEY_ENTITIES))
     rows = conn.execute(
-        "SELECT DISTINCT entity_type, entity_id FROM events").fetchall()
+        f"SELECT DISTINCT entity_type, entity_id FROM events WHERE entity_type IN ({q})",
+        MONEY_ENTITIES).fetchall()
     out = []
     for r in rows:
         f = fact_for(conn, r["entity_type"], r["entity_id"], now)

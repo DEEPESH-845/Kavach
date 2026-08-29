@@ -57,7 +57,14 @@ _PAYMENT = {"created": Rail.INITIATED, "authorized": Rail.ACCEPTED,
 # ponytail: fixed tolerance; replace with the P80 of the survival model (P1) when it lands.
 _STALE_SECONDS = {"refund": 6 * 3600, "payment": 15 * 60}
 
-_TERMINAL = {Rail.FAILED_TERMINAL, Rail.REVERSED, Rail.SETTLED}
+# A state nothing further is expected from. Silence after one of these is the end of the
+# story, not evidence that we have lost track.
+#
+# CONFIRMED belongs here and its absence was a live bug: a captured payment stopped being
+# CONFIRMED fifteen minutes after capture and became AMBIGUOUS, so governor.decide read
+# `payment_captured=False` and DENIED every refund against any payment older than that.
+# Capture is not an in-flight state waiting for news -- it is the news.
+_TERMINAL = {Rail.FAILED_TERMINAL, Rail.REVERSED, Rail.SETTLED, Rail.CONFIRMED}
 
 
 @dataclass(frozen=True)
@@ -156,7 +163,14 @@ def derive(events: list[Event], *, now: int) -> FinancialFact:
             currency, f"contradictory evidence: {contradiction}", evidence, now,
             unresolved, arn)
 
-    if state not in _TERMINAL and stale:
+    # A refund carrying a bank reference has been credited. Its rail status is still
+    # 'processed' -- Razorpay never sends a further event -- so it is only recognised as
+    # settled below, after the staleness check would already have called it AMBIGUOUS and
+    # re-opened a closed obligation. Recognise it here instead, or open exposure grows
+    # forever as credited refunds age out.
+    credited = entity_type == "refund" and state is Rail.PROCESSING and bool(arn)
+
+    if state not in _TERMINAL and not credited and stale:
         return FinancialFact(
             entity_type, entity_id, Rail.AMBIGUOUS, Confidence.UNKNOWN, True, amount,
             currency,

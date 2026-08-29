@@ -53,8 +53,17 @@ class Event:
     event_hash: str
 
 
-def connect(path: str = "kavach.db") -> sqlite3.Connection:
-    conn = sqlite3.connect(path, isolation_level=None)
+def connect(path: str = "kavach.db", *, same_thread: bool = True) -> sqlite3.Connection:
+    """Open the log.
+
+    `same_thread=False` relaxes sqlite3's thread-affinity guard and must only be passed by a
+    caller that gives each unit of work its OWN connection. The HTTP API needs it because a
+    threadpool may run a request handler on one thread and the teardown that closes its
+    connection on another -- sequentially, never concurrently. Sharing one connection across
+    threads that actually run at the same time is still unsafe, and the guard stays on by
+    default so nothing acquires that behaviour by accident.
+    """
+    conn = sqlite3.connect(path, isolation_level=None, check_same_thread=same_thread)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")

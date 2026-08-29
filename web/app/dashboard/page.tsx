@@ -1,166 +1,170 @@
-import React from 'react';
-import { getDashboardOverview, getDashboardActivity } from '@/lib/api';
+'use client';
+
+/* Command centre. Answers "what is happening?" above the fold, then shows the last
+ * decisions Kavach made and why.
+ *
+ * Every tile is a query result. There is no seeded number here, and a tile whose value is
+ * zero says what zero means rather than showing a bare 0 next to an alarming label.
+ */
+
 import Link from 'next/link';
-import { ShieldCheck, AlertTriangle, HelpCircle, Shield, ArrowRight } from 'lucide-react';
+import { useCallback } from 'react';
+import {
+  Activity, ArrowRight, Boxes, Gauge, ShieldCheck, ShieldX, TriangleAlert,
+} from 'lucide-react';
+import { api } from '@/lib/api';
+import { useApi, usePoll } from '@/lib/useApi';
+import { count, duration, moneyShort, pct } from '@/lib/format';
+import {
+  Async, Card, Empty, GoLink, PageHead, Section, Stat, StatSkeleton,
+} from '@/components/console/ui';
+import { StreamTable } from '@/components/console/StreamTable';
 
-export default async function DashboardPage() {
-  const [overview, activity] = await Promise.all([
-    getDashboardOverview(),
-    getDashboardActivity(),
-  ]);
+export default function CommandCentre() {
+  const overview = useApi(() => api.overview(), []);
+  const stream = useApi(() => api.stream(12), []);
 
-  const formatCurrency = (amountMinor: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      minimumFractionDigits: 0,
-    }).format(amountMinor / 100);
-  };
+  const refresh = useCallback(() => { overview.reload(); stream.reload(); },
+    [overview.reload, stream.reload]);
+  usePoll(refresh, 15_000);
 
   return (
-    <div className="dashboard-overview" style={{ animation: 'reveal 0.6s cubic-bezier(0.16, 1, 0.3, 1) both' }}>
-      
-      <div className="page-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', animation: 'reveal 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.1s both' }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-            <h1 className="page-title" style={{ margin: 0 }}>Command Center</h1>
-            <span className="status-badge status-allow" style={{ fontSize: '10px' }}>Protection Active</span>
-          </div>
-          <p className="page-subtitle">Kavach is monitoring and governing your agentic commerce.</p>
-        </div>
-      </div>
+    <>
+      <PageHead
+        title="Command Centre"
+        sub="Kavach governs what agents do with money and proves every decision either way. Everything below is derived from the event log at the moment you asked."
+        actions={<GoLink href="/dashboard/adversary">Try to break it</GoLink>}
+      />
 
-      <div className="grid-cards" style={{ marginBottom: '40px', animation: 'reveal 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.2s both' }}>
-        <div className="premium-card" style={{ position: 'relative', overflow: 'hidden' }}>
-          <div className="metric-label" title="Total value of financially unresolved obligations currently tracked by Kavach.">
-            <ShieldCheck size={16} style={{ color: 'var(--text-tertiary)' }} />
-            Open Financial Exposure
-          </div>
-          <div className="metric-value">{formatCurrency(overview.open_exposure)}</div>
-          <div className="metric-trend">Currently tracked unresolved obligations</div>
-          {/* Subtle Sparkline Background */}
-          <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '40px', opacity: 0.2, pointerEvents: 'none' }}>
-            <svg width="100%" height="100%" viewBox="0 0 200 40" preserveAspectRatio="none">
-              <path d="M0,40 L0,30 C20,30 40,10 60,15 C80,20 100,5 120,10 C140,15 160,35 180,25 C190,20 200,10 200,10 L200,40 Z" fill="url(#grad1)" />
-              <path d="M0,30 C20,30 40,10 60,15 C80,20 100,5 120,10 C140,15 160,35 180,25 C190,20 200,10 200,10" fill="none" stroke="var(--text-primary)" strokeWidth="1.5" />
-              <defs>
-                <linearGradient id="grad1" x1="0%" y1="0%" x2="0%" y2="100%">
-                  <stop offset="0%" stopColor="var(--text-primary)" stopOpacity="1" />
-                  <stop offset="100%" stopColor="var(--text-primary)" stopOpacity="0" />
-                </linearGradient>
-              </defs>
-            </svg>
-          </div>
-        </div>
+      <Async state={overview} skeleton={<StatSkeleton n={4} />}>
+        {(o) => (
+          <>
+            <div className="grid grid--stats">
+              <Stat
+                icon={<Boxes size={13} />}
+                label="Open obligation"
+                tone={o.exposure.open_minor > 0 ? 'steel' : 'bone'}
+                value={moneyShort(o.exposure.open_minor)}
+                note={o.exposure.open_count === 0
+                  ? 'Nothing is in flight. Every obligation Kavach holds has been credited or closed.'
+                  : `${o.exposure.open_count} obligation${o.exposure.open_count === 1 ? '' : 's'} in flight · oldest ${duration(o.exposure.oldest_seconds)}`}
+              />
+              <Stat
+                icon={<ShieldX size={13} />}
+                label="Refused or held"
+                tone={o.refused.protected_minor > 0 ? 'oxide' : 'bone'}
+                value={moneyShort(o.refused.protected_minor)}
+                note={`${o.refused.denied} denied by invariant · ${o.refused.escalated} escalated to a human`}
+              />
+              <Stat
+                icon={<Gauge size={13} />}
+                label="Duplicate risk flagged"
+                tone={o.refused.duplicate_flagged > 0 ? 'amber' : 'bone'}
+                value={count(o.refused.duplicate_flagged)}
+                note={o.refused.duplicate_flagged
+                  ? 'intents the estimator scored at or above the governor threshold'
+                  : 'no intent has scored above the threshold in this ledger'}
+              />
+              <Stat
+                icon={<ShieldCheck size={13} />}
+                label="Governed"
+                value={count(o.governed.intents)}
+                note={<>
+                  {moneyShort(o.governed.amount_minor)} requested ·{' '}
+                  {o.agents.admission_rate === null
+                    ? 'no intents yet'
+                    : `${pct(o.agents.admission_rate, 0)} admitted without a human`}
+                </>}
+              />
+            </div>
 
-        <div className="premium-card">
-          <div className="metric-label">
-            <AlertTriangle size={16} style={{ color: 'var(--status-escalate)' }} />
-            Escalated Actions
-          </div>
-          <div className="metric-value" style={{ color: 'var(--status-escalate)' }}>
-            {overview.escalated_actions}
-          </div>
-          <div className="metric-trend">Requires manual operator review</div>
-        </div>
+            <Section title="Where attention is needed">
+              <div className="grid grid--3">
+                <Attention
+                  href="/dashboard/review"
+                  icon={<TriangleAlert size={14} />}
+                  n={o.review_queue}
+                  label="waiting on a human"
+                  zero="Nothing is escalated. The governor released everything it saw."
+                  some="Kavach stopped these rather than guess. Each says why."
+                />
+                <Attention
+                  href="/dashboard/reconciliation"
+                  icon={<Activity size={14} />}
+                  n={o.unresolved_outcomes}
+                  label="unresolved outcomes"
+                  zero="Every committed intent has a provider result."
+                  some="Committed, but no provider result has been observed yet."
+                />
+                <Attention
+                  href="/dashboard/agents"
+                  icon={<ShieldCheck size={14} />}
+                  n={o.agents.active}
+                  label="agents acting"
+                  zero="No agent has acted against this merchant."
+                  some="Identity, volume and refusal rate per agent."
+                />
+              </div>
+            </Section>
 
-        <div className="premium-card">
-          <div className="metric-label">
-            <HelpCircle size={16} style={{ color: 'var(--status-unknown)' }} />
-            Unknown Outcomes
-          </div>
-          <div className="metric-value" style={{ color: 'var(--status-unknown)' }}>
-            {overview.unknown_outcomes}
-          </div>
-          <div className="metric-trend">Awaiting provider reconciliation</div>
-        </div>
+            <Section
+              title="Integrity"
+              note="the event log is hash-chained; this is a recomputation, not a stored flag"
+            >
+              <Card>
+                <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <span className={`badge badge--${o.integrity.chain_verified ? 'info' : 'deny'}`}>
+                    {o.integrity.chain_verified ? 'VERIFIED' : 'BROKEN'}
+                  </span>
+                  <span style={{ fontSize: 13, color: 'var(--fog)' }}>{o.integrity.message}</span>
+                  <div style={{ marginLeft: 'auto' }}>
+                    <GoLink href="/dashboard/proof">Inspect the chain</GoLink>
+                  </div>
+                </div>
+              </Card>
+            </Section>
+          </>
+        )}
+      </Async>
 
-        <div className="premium-card" style={{ position: 'relative', overflow: 'hidden' }}>
-          <div className="metric-label" title="Amount associated with intents that Kavach prevented or escalated because of duplicate-obligation risk.">
-            <Shield size={16} style={{ color: 'var(--status-allow)' }} />
-            Protected Amount
-          </div>
-          <div className="metric-value" style={{ color: 'var(--status-allow)' }}>
-            {formatCurrency(overview.protected_amount)}
-          </div>
-          <div className="metric-trend">Prevented via duplicate-obligation risk</div>
-          {/* Subtle Sparkline Background */}
-          <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '40px', opacity: 0.15, pointerEvents: 'none' }}>
-            <svg width="100%" height="100%" viewBox="0 0 200 40" preserveAspectRatio="none">
-              <path d="M0,40 L0,35 C30,35 50,25 70,25 C90,25 110,15 130,20 C160,25 180,5 200,5 L200,40 Z" fill="url(#grad2)" />
-              <path d="M0,35 C30,35 50,25 70,25 C90,25 110,15 130,20 C160,25 180,5 200,5" fill="none" stroke="var(--status-allow)" strokeWidth="1.5" />
-              <defs>
-                <linearGradient id="grad2" x1="0%" y1="0%" x2="0%" y2="100%">
-                  <stop offset="0%" stopColor="var(--status-allow)" stopOpacity="1" />
-                  <stop offset="100%" stopColor="var(--status-allow)" stopOpacity="0" />
-                </linearGradient>
-              </defs>
-            </svg>
-          </div>
-        </div>
-      </div>
-
-      <div className="premium-table-container" style={{ animation: 'reveal 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.3s both' }}>
-        <div style={{ padding: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-subtle)' }}>
-          <h2 style={{ fontSize: '15px', margin: 0, fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
-            Live Activity Stream
-          </h2>
-          <Link href="/dashboard/intents" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text-primary)', textDecoration: 'none', fontWeight: 500 }}>
-            View All Intents <ArrowRight size={14} />
+      <Section
+        title="Latest decisions"
+        actions={
+          <Link className="btn btn--sm" href="/dashboard/stream">
+            Full stream <ArrowRight size={12} />
           </Link>
-        </div>
-        
-        <table className="premium-table">
-          <thead>
-            <tr>
-              <th>Time</th>
-              <th>Agent ID</th>
-              <th>Operation</th>
-              <th style={{ textAlign: 'right' }}>Amount</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {activity.map((intent: any) => (
-              <tr key={intent.intent_id}>
-                <td style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
-                  {new Date(intent.created_at * 1000).toLocaleTimeString()}
-                </td>
-                <td style={{ fontFamily: 'var(--font-mono)', fontSize: '12px' }}>
-                  {intent.agent_id}
-                </td>
-                <td>
-                  <span style={{ background: 'rgba(255,255,255,0.05)', padding: '2px 8px', borderRadius: '4px', fontSize: '12px' }}>
-                    {intent.tool}
-                  </span>
-                </td>
-                <td style={{ fontFamily: 'var(--font-mono)', textAlign: 'right', color: 'var(--text-primary)' }}>
-                  {formatCurrency(intent.amount_minor)}
-                </td>
-                <td>
-                  <span className={`status-badge status-${intent.status.toLowerCase()}`}>
-                    {intent.status}
-                  </span>
-                </td>
-              </tr>
-            ))}
-            {activity.length === 0 && (
-              <tr>
-                <td colSpan={5} style={{ padding: '48px 0', textAlign: 'center', color: 'var(--text-tertiary)' }}>
-                  No recent activity found. All quiet.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      <style dangerouslySetInnerHTML={{__html: `
-        @keyframes reveal {
-          from { opacity: 0; transform: translateY(20px); filter: blur(4px); }
-          to { opacity: 1; transform: translateY(0); filter: blur(0); }
         }
-      `}} />
-    </div>
+      >
+        <Card flush>
+          <Async
+            state={stream}
+            skeleton={<div style={{ padding: 12 }}><StatSkeleton n={1} /></div>}
+            empty={(s) => s.items.length === 0 ? (
+              <Empty
+                title="No decisions yet"
+                body="Kavach has not been asked to govern anything against this ledger. Seed the demo with `make seed`, or send an intent from the Adversary Lab."
+                action={<GoLink href="/dashboard/adversary">Open the lab</GoLink>}
+              />
+            ) : null}
+          >
+            {(s) => <StreamTable items={s.items} />}
+          </Async>
+        </Card>
+      </Section>
+    </>
+  );
+}
+
+function Attention({ href, icon, n, label, zero, some }: {
+  href: string; icon: React.ReactNode; n: number; label: string; zero: string; some: string;
+}) {
+  return (
+    <Link href={href} className="card" style={{ textDecoration: 'none', display: 'block' }}>
+      <div className="stat">
+        <span className="stat__label">{icon}{label}</span>
+        <span className={`stat__value${n > 0 ? ' stat__value--amber' : ''}`}>{count(n)}</span>
+        <span className="stat__note">{n > 0 ? some : zero}</span>
+      </div>
+    </Link>
   );
 }

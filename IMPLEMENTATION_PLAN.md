@@ -23,7 +23,7 @@ Nothing gets built because it might be needed; §2 of the spec lists what is cut
 | 4 | `feat(intelligence): seeded cart corpus with liquidity and overlap attacks` | `intelligence/cart_corpus.py` | 190 |
 | 5 | `feat(intelligence): intent-cart entailment estimator` | `intelligence/entailment.py` | 130 |
 | 6 | `feat(gate): expected-loss admission verdict` | `gate/admission.py`, `tests/test_admission.py` | 240 |
-| 7 | `feat(gate): benchmark entailment against four baselines` | `intelligence/evaluate_gate.py`, `cmd/gate_benchmark.py`, `Makefile`, `.github/workflows/ci.yml` | 190 |
+| 7 | `feat(gate): benchmark entailment against four baselines` | `intelligence/evaluate_gate.py`, `apps/gate_benchmark.py`, `Makefile`, `.github/workflows/ci.yml` | 190 |
 | 8 | `feat(mcp): inbound admission tools` | `mcp/server.py` | 70 |
 | 9 | `docs: gate architecture, threat model, ADR-016..018` | `documents/05`, `06`, `07`, `08` | — |
 | 10 | `docs: trim the feature catalogue to what the tree contains` | `README.md` | — |

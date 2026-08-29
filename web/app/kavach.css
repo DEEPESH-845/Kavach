@@ -684,3 +684,20 @@ html[data-file] .offline {
   background: color-mix(in srgb, var(--amber) 12%, var(--void));
   color: var(--bone); font-size: .85rem;
 }
+
+/* ── handoff: the three doors out of the argument ─────────────────────────── */
+.handoff__grid {
+  display: grid; gap: 1px; margin-top: 46px;
+  grid-template-columns: repeat(auto-fit, minmax(258px, 1fr));
+  background: var(--seam); border: 1px solid var(--seam);
+}
+.door {
+  background: var(--void); padding: 30px 26px 28px;
+  display: flex; flex-direction: column; gap: 12px;
+  transition: background var(--t-fast) var(--e-reveal);
+}
+.door:hover { background: var(--iron); }
+.door__n { margin: 0; font-size: 10px; letter-spacing: .16em; color: var(--fog2); }
+.door__t { margin: 0; font-size: clamp(1.05rem, 1.5vw, 1.25rem); }
+.door__d { margin: 0 0 auto; font-size: .92rem; line-height: 1.6; color: var(--fog); }
+.door .btn { align-self: flex-start; margin-top: 20px; }

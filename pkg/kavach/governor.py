@@ -168,61 +168,9 @@ def new_intent(agent_id: str, session_id: str, payment_id: str, amount_minor: in
                          payment_id, amount_minor, reason, now)
 
 
-def evaluate_and_record(conn: sqlite3.Connection, agent_id: str, session_id: str, tool: str, target_type: str, target_id: str, amount_minor: int, reason_text: str) -> tuple[dict, str]:
-    import time
-    now = int(time.time())
-    
-    intent = ledger.Intent(
-        intent_id=str(uuid.uuid4()),
-        agent_id=agent_id,
-        session_id=session_id,
-        tool=tool,
-        target_type=target_type,
-        target_id=target_id,
-        amount_minor=amount_minor,
-        reason_text=reason_text,
-        created_at=now
-    )
-    
-    # We'll just hardcode some basic facts for demo/test flow
-    # Since we can't reliably parse the real ledger in this test harness, we'll
-    # fake the decision logic slightly for the harness or let it run.
-    pol = Policy()
-    
-    # Simple heuristic for the demo
-    if amount_minor > 500_000_00:
-        d = _deny(Decision(Action.ALLOW), "amount exceeds absolute system maximum")
-    elif amount_minor > pol.max_auto_refund_minor:
-        d = Decision(Action.ESCALATE)
-        d.reasons.append(f"amount exceeds autonomous limit")
-    else:
-        d = Decision(Action.ALLOW)
-        d.reasons.append("intent within autonomous limits")
-    
-    d.evidence = []
-    
-    dec_dict = d.to_dict()
-    dec_dict["status"] = d.action.value
-    
-    # Add fake signature for the proof explorer
-    import hashlib
-    import json
-    sig_payload = json.dumps(dec_dict, sort_keys=True)
-    dec_dict["signature"] = "ed25519_" + hashlib.sha256((sig_payload + intent.intent_id).encode()).hexdigest()
-    dec_dict["signed_by"] = "key_live_gov_1"
-    
-    conn.execute("SAVEPOINT evaluate")
-    try:
-        ledger.record(conn, intent, dec_dict)
-        if d.action == Action.ALLOW:
-            ledger.settle(conn, intent.intent_id, "APPROVED")
-        elif d.action == Action.ESCALATE:
-            ledger.settle(conn, intent.intent_id, "ESCALATED")
-        else:
-            ledger.settle(conn, intent.intent_id, "BLOCKED")
-        conn.execute("RELEASE SAVEPOINT evaluate")
-    except Exception:
-        conn.execute("ROLLBACK TO SAVEPOINT evaluate")
-        raise
-        
-    return dec_dict, intent.intent_id
+def new_gate_intent(agent_id: str, session_id: str, tool: str, target_type: str,
+                    target_id: str, amount_minor: int, reason: str,
+                    now: int) -> ledger.Intent:
+    """An intent over an arbitrary target. `new_intent` is the refund-shaped special case."""
+    return ledger.Intent(str(uuid.uuid4()), agent_id, session_id, tool, target_type,
+                         target_id, amount_minor, reason, now)

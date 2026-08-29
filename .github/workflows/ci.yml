@@ -17,12 +17,29 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e ".[dev]"
-      - run: ruff check pkg/ tests/ cmd/
+      - run: ruff check pkg/ tests/ apps/
       - run: pytest tests/
       # The benchmark asserts the model beats every feasible baseline. A regression in
       # model quality fails the build, the same as a broken test would.
-      - run: python cmd/benchmark.py
+      - run: python apps/benchmark.py
       # Same treatment for Gate: G5 must stay inside the step-up budget and beat every
       # feasible baseline, including the hand-written rule. If a rule ever wins, the claim
       # that purpose cannot be enforced by rules is wrong and the build should say so.
-      - run: python cmd/gate_benchmark.py
+      - run: python apps/gate_benchmark.py
+
+  ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --no-audit --no-fund
+        working-directory: web
+      # tsc first: a type error is a faster, clearer failure than a build error.
+      - run: npx tsc --noEmit
+        working-directory: web
+      # The console is a static export. If a route stops prerendering, the product stops
+      # being servable, and that should fail here rather than at a demo.
+      - run: npm run build
+        working-directory: web

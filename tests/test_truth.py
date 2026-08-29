@@ -90,3 +90,28 @@ def test_derivation_is_pure():
     cannot be replayed during a dispute months later."""
     events = [ev(1, "created", T), ev(2, "processed", T + 60)]
     assert derive(events, now=T + 120) == derive(events, now=T + 120)
+
+
+def test_a_captured_payment_does_not_go_stale():
+    """Capture is the news, not silence waiting for news.
+
+    Regression guard: while CONFIRMED was missing from the terminal set, every payment
+    older than the fifteen-minute tolerance derived as AMBIGUOUS, so governor.decide read
+    payment_captured=False and refused every refund against it.
+    """
+    events = [ev(1, "captured", T, etype="payment", eid="pay_A")]
+    fact = derive(events, now=T + 30 * 86_400)
+
+    assert fact.rail_state is Rail.CONFIRMED
+    assert fact.obligation_open is False
+
+
+def test_a_credited_refund_stays_closed_however_long_ago_it_was():
+    """An ARN means the bank has the money. No further event is coming, and treating the
+    silence as staleness re-opens an obligation that is settled."""
+    fact = derive([ev(1, "created", T), ev(2, "processed", T + 60, arn="ARN123")],
+                  now=T + 30 * 86_400)
+
+    assert fact.rail_state is Rail.CONFIRMED
+    assert fact.obligation_open is False
+    assert fact.arn == "ARN123"
