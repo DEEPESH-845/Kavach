@@ -46,6 +46,19 @@ ui:  ## build the web UI into web/out
 api:  ## run the API alone against the current database
 	$(PY) apps/api_server.py
 
+.PHONY: dev
+dev:  ## development: API on :8000 and the Next dev server on :3000, together
+	@echo "  API      http://127.0.0.1:8000"
+	@echo "  console  http://localhost:3000/dashboard"
+	@echo ""
+	@# Both in one process group so Ctrl-C stops both. Running `next dev` alone is the
+	@# usual way to end up staring at "Kavach API is not reachable": the console reads a
+	@# live backend, so the backend has to be up too.
+	@trap 'kill 0' EXIT INT TERM; \
+	  $(PY) apps/api_server.py & \
+	  (cd web && npm run dev) & \
+	  wait
+
 .PHONY: demo
 demo: seed ui  ## THE ONE COMMAND: seed, build, and serve the whole product on :8000
 	@echo ""
