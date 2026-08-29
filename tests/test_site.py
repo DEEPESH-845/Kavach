@@ -115,5 +115,26 @@ def test_the_entry_point_the_page_prints_is_the_one_that_is_installed():
 def test_the_test_count_the_footer_states_is_the_real_one():
     tests = len(re.findall(r"^def test", "\n".join(
         p.read_text() for p in (ROOT / "tests").glob("test_*.py")), re.M))
-    quoted = int(re.search(r"TREE = \{ tests: (\d+) \}", SITE).group(1))
+    quoted = int(re.search(r"TREE = \{[^}]*tests: (\d+)", SITE).group(1))
     assert quoted == tests, f"site says {quoted} tests, tree has {tests}"
+
+
+def test_the_scenario_count_the_footer_states_is_the_real_one():
+    """The footer says how many adversary scenarios exist. The lab's registry says the same,
+    or the footer is quoting a number nothing checks -- which is the drift ADR-007 exists to
+    stop, and the reason the test count is already guarded here."""
+    from kavach.services import scenarios
+
+    quoted = int(re.search(r"TREE = \{[^}]*scenarios: (\d+)", SITE).group(1))
+    assert quoted == len(scenarios.catalogue()), (
+        f"site says {quoted} scenarios, the lab registers {len(scenarios.catalogue())}")
+
+
+def test_the_footer_does_not_reuse_a_plane_name_as_a_slogan():
+    """`proof` names the hash-chain plane and section 08. Using it as the footer's sign-off
+    repeated the section and widened the word into a general claim of confidence. The mark
+    states what is checked instead."""
+    mark = re.search(r'className="foot__mark">.*?</p>', PAGE, re.S)
+    assert mark, "the footer no longer has a mark"
+    assert "proof" not in mark.group(0).lower(), (
+        "the footer mark claims 'proof'; it should name what is actually checked")

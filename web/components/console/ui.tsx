@@ -17,8 +17,9 @@
  */
 
 import Link from 'next/link';
-import type { ReactNode } from 'react';
-import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import type { ReactElement, ReactNode } from 'react';
+import { cloneElement, useEffect, useId, useState } from 'react';
 import {
   AlertTriangle, ArrowRight, Check, CircleSlash, Copy, Inbox,
   Minus, RefreshCw, TriangleAlert, X,
@@ -335,5 +336,58 @@ export function Td({ label, children, right, className = '' }: {
 }) {
   return (
     <td data-label={label} className={`${right ? 'r ' : ''}${className}`}>{children}</td>
+  );
+}
+
+/** Props that make a table row behave like the link it looks like.
+ *
+ * A `<tr onClick>` is invisible to the keyboard and to assistive tech: it is not focusable,
+ * it has no role, and Enter does nothing. Half the tables here had the focusable version and
+ * half did not, which is exactly what happens when the same four lines are retyped per page.
+ * One helper, used everywhere, and `router.push` rather than `window.location` so navigation
+ * stays client-side.
+ */
+export function useRowNav() {
+  const router = useRouter();
+  return (href: string, label: string) => ({
+    'data-clickable': '',
+    tabIndex: 0,
+    role: 'link' as const,
+    'aria-label': label,
+    onClick: () => router.push(href),
+    onKeyDown: (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        router.push(href);
+      }
+    },
+  });
+}
+
+/** A labelled form control.
+ *
+ * `useId` + `htmlFor` rather than a wrapping `<label>`: the label style is uppercase, and
+ * wrapping the control would inherit that into the input and visually upper-case whatever
+ * the operator types. `group` is for a cluster of buttons, which are named by their own
+ * text and need a group label rather than a dangling `htmlFor`.
+ */
+export function Field({ label, hint, group, children }: {
+  label: string; hint?: ReactNode; group?: boolean; children: ReactNode;
+}) {
+  const id = useId();
+  return (
+    <div className="field">
+      {group ? (
+        <span className="field__label" id={`${id}-label`}>{label}</span>
+      ) : (
+        <label className="field__label" htmlFor={id}>{label}</label>
+      )}
+      {group ? (
+        <div role="group" aria-labelledby={`${id}-label`}>{children}</div>
+      ) : (
+        cloneElement(children as ReactElement<{ id?: string }>, { id })
+      )}
+      {hint ? <span className="field__hint">{hint}</span> : null}
+    </div>
   );
 }

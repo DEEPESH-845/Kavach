@@ -14,11 +14,12 @@ import { api } from '@/lib/api';
 import { useApi } from '@/lib/useApi';
 import { count, duration, money, moneyShort } from '@/lib/format';
 import {
-  Async, Card, Empty, GoLink, PageHead, Section, Skeleton, Stat, State, Td,
+  Async, Card, Empty, GoLink, PageHead, Section, Skeleton, Stat, State, Td, useRowNav,
 } from '@/components/console/ui';
 
 export default function ObligationsPage() {
   const obs = useApi(() => api.obligations(), []);
+  const row = useRowNav();
 
   return (
     <>
@@ -76,11 +77,9 @@ export default function ObligationsPage() {
                     </thead>
                     <tbody>
                       {o.items.map((f) => (
-                        <tr key={`${f.entity_type}:${f.entity_id}`} data-clickable=""
-                          onClick={() => {
-                            window.location.href =
-                              `/dashboard/${f.entity_type}s?id=${encodeURIComponent(f.entity_id)}`;
-                          }}>
+                        <tr key={`${f.entity_type}:${f.entity_id}`}
+                          {...row(`/dashboard/${f.entity_type}s?id=${encodeURIComponent(f.entity_id)}`,
+                                  `Open ${f.entity_type} ${f.entity_id}`)}>
                           <Td label="Entity">
                             <span className="cell__id cell__strong">{f.entity_id}</span>
                             <div className="cell__sub">{f.entity_type}</div>
