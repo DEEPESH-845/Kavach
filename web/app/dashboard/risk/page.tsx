@@ -21,12 +21,14 @@ import { useApi } from '@/lib/useApi';
 import { count, money, pct, risk as fmtRisk, stamp } from '@/lib/format';
 import {
   Async, Badge, Card, Empty, GoLink, KV, PageHead, Section, Skeleton, Stat, State, Td,
+  useRowNav,
 } from '@/components/console/ui';
 
 export default function RiskPage() {
   const stream = useApi(() => api.stream(200), []);
   const policy = useApi(() => api.policy(), []);
   const health = useApi(() => api.health(), []);
+  const row = useRowNav();
 
   const scored = useMemo(
     () => (stream.data?.items ?? []).filter((i) => i.risk !== null),
@@ -123,9 +125,9 @@ export default function RiskPage() {
                       </thead>
                       <tbody>
                         {[...above].sort((a, b) => (b.risk ?? 0) - (a.risk ?? 0)).map((i) => (
-                          <tr key={i.intent_id} data-clickable="" onClick={() => {
-                            window.location.href = `/dashboard/decisions?id=${encodeURIComponent(i.intent_id)}`;
-                          }}>
+                          <tr key={i.intent_id}
+                            {...row(`/dashboard/decisions?id=${encodeURIComponent(i.intent_id)}`,
+                                    `Open decision on ${i.target_id}`)}>
                             <Td label="Score" right>
                               <span className="cell__amount" style={{ color: 'var(--amber)' }}>
                                 {fmtRisk(i.risk)}

@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'motion/react';
-import { TOOLS, TREE } from '@/lib/data';
+import { REPORT, TOOLS, TREE } from '@/lib/data';
 import { settle } from '@/lib/motion';
 import gsap from 'gsap';
 import { useScene } from '@/lib/useScene';
@@ -97,13 +97,43 @@ export function Proof() {
   );
 }
 
+/* The sign-off states what is CHECKED, not what is claimed.
+ *
+ * It reads `coverage.` rather than `proof.` for a reason worth keeping: proof is the name of
+ * a plane in this system — the hash chain, section 08 — and reusing it as a footer mark
+ * both repeats that section and quietly widens the word to mean "we are confident". What
+ * belongs here is the narrower, checkable thing: how much of this is held up by something
+ * that runs.
+ *
+ * Every number below is asserted against the tree by tests/test_site.py. Baselines are
+ * derived from the report rather than typed, so a re-run that adds or drops one cannot
+ * leave a stale count behind.
+ */
 export function Foot() {
+  const baselines = REPORT.results.filter((r) => !r.hero).length;
+
   return (
     <footer className="foot">
       <div className="wrap foot__in">
-        <p className="foot__mark"><span className="nav__glyph" aria-hidden /> proof.</p>
+        <p className="foot__mark"><span className="nav__glyph" aria-hidden /> coverage.</p>
+
+        <dl className="foot__stats">
+          <div>
+            <dt>tests</dt>
+            <dd className="mono">{TREE.tests}</dd>
+          </div>
+          <div>
+            <dt>adversary scenarios</dt>
+            <dd className="mono">{TREE.scenarios}</dd>
+          </div>
+          <div>
+            <dt>baselines beaten</dt>
+            <dd className="mono">{baselines}</dd>
+          </div>
+        </dl>
+
         <p className="foot__meta mono">
-          test mode only · {TREE.tests} tests · Razorpay AI Buildathon 2026
+          test mode only · Razorpay AI Buildathon 2026
         </p>
       </div>
     </footer>

@@ -8,12 +8,12 @@
  */
 
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api';
 import { useApi } from '@/lib/useApi';
 import { ago, count, money, pct, stamp } from '@/lib/format';
 import {
-  Async, Card, Empty, GoLink, PageHead, Section, Skeleton, Stat, State, Td,
+  Async, Card, Empty, GoLink, PageHead, Section, Skeleton, Stat, State, Td, useRowNav,
 } from '@/components/console/ui';
 
 export default function AgentsPage() {
@@ -22,8 +22,8 @@ export default function AgentsPage() {
 }
 
 function AgentList() {
-  const router = useRouter();
   const list = useApi(() => api.agents(), []);
+  const row = useRowNav();
 
   return (
     <>
@@ -53,14 +53,9 @@ function AgentList() {
                 </thead>
                 <tbody>
                   {d.items.map((a) => (
-                    <tr key={a.agent_id} data-clickable="" tabIndex={0} role="link"
-                      onClick={() => router.push(`/dashboard/agents?id=${encodeURIComponent(a.agent_id)}`)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          router.push(`/dashboard/agents?id=${encodeURIComponent(a.agent_id)}`);
-                        }
-                      }}>
+                    <tr key={a.agent_id}
+                      {...row(`/dashboard/agents?id=${encodeURIComponent(a.agent_id)}`,
+                              `Open agent ${a.agent_id}`)}>
                       <Td label="Agent">
                         <span className="cell__id cell__strong">{a.agent_id}</span>
                         <div className="cell__sub">{count(a.sessions)} session{a.sessions === 1 ? '' : 's'}</div>
@@ -93,6 +88,7 @@ function AgentList() {
 
 function AgentDetail({ id }: { id: string }) {
   const detail = useApi(() => api.agent(id), [id]);
+  const row = useRowNav();
 
   return (
     <Async state={detail}>
@@ -128,9 +124,9 @@ function AgentDetail({ id }: { id: string }) {
                     </thead>
                     <tbody>
                       {a.intents.map((i) => (
-                        <tr key={i.intent_id} data-clickable="" onClick={() => {
-                          window.location.href = `/dashboard/decisions?id=${encodeURIComponent(i.intent_id)}`;
-                        }}>
+                        <tr key={i.intent_id}
+                          {...row(`/dashboard/decisions?id=${encodeURIComponent(i.intent_id)}`,
+                                  `Open decision on ${i.target_id}`)}>
                           <Td label="Raised"><span className="cell__id">{stamp(i.created_at)}</span></Td>
                           <Td label="Session"><span className="cell__id">{i.session_id}</span></Td>
                           <Td label="Target"><span className="cell__id">{i.target_id}</span></Td>

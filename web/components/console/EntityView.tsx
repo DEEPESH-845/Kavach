@@ -9,14 +9,14 @@
  */
 
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api';
 import type { Fact } from '@/lib/api';
 import { useApi } from '@/lib/useApi';
 import { duration, money, stamp } from '@/lib/format';
 import { EventTable } from './EventTable';
 import {
-  Async, Badge, Card, Empty, GoLink, KV, PageHead, Section, Skeleton, State, Td,
+  Async, Badge, Card, Empty, GoLink, KV, PageHead, Section, Skeleton, State, Td, useRowNav,
 } from './ui';
 
 type Kind = 'payment' | 'refund';
@@ -27,10 +27,8 @@ export function EntityView({ kind, title, sub }: { kind: Kind; title: string; su
 }
 
 function Listing({ kind, title, sub }: { kind: Kind; title: string; sub: string }) {
-  const router = useRouter();
   const list = useApi(() => api.entities(kind, 100), [kind]);
-  const open = (eid: string) =>
-    router.push(`/dashboard/${kind}s?id=${encodeURIComponent(eid)}`);
+  const row = useRowNav();
 
   return (
     <>
@@ -61,11 +59,9 @@ function Listing({ kind, title, sub }: { kind: Kind; title: string; sub: string 
                 </thead>
                 <tbody>
                   {d.items.map((f) => (
-                    <tr key={f.entity_id} data-clickable="" tabIndex={0} role="link"
-                      onClick={() => open(f.entity_id)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(f.entity_id); }
-                      }}>
+                    <tr key={f.entity_id}
+                      {...row(`/dashboard/${kind}s?id=${encodeURIComponent(f.entity_id)}`,
+                              `Open ${kind} ${f.entity_id}`)}>
                       <Td label={kind === 'payment' ? 'Payment' : 'Refund'}>
                         <span className="cell__id cell__strong">{f.entity_id}</span>
                         <div className="cell__sub">idle {duration(f.unresolved_for)}</div>
@@ -106,6 +102,7 @@ function Listing({ kind, title, sub }: { kind: Kind; title: string; sub: string 
 
 function Detail({ kind, id }: { kind: Kind; id: string }) {
   const detail = useApi(() => api.entity(kind, id), [kind, id]);
+  const row = useRowNav();
 
   return (
     <Async state={detail}>
@@ -209,9 +206,9 @@ function Detail({ kind, id }: { kind: Kind; id: string }) {
                     </thead>
                     <tbody>
                       {d.related.intents.map((i) => (
-                        <tr key={i.intent_id} data-clickable="" onClick={() => {
-                          window.location.href = `/dashboard/decisions?id=${encodeURIComponent(i.intent_id)}`;
-                        }}>
+                        <tr key={i.intent_id}
+                          {...row(`/dashboard/decisions?id=${encodeURIComponent(i.intent_id)}`,
+                                  `Open decision by ${i.agent_id}`)}>
                           <Td label="Raised"><span className="cell__id">{stamp(i.created_at)}</span></Td>
                           <Td label="Agent"><span className="cell__id">{i.agent_id}</span></Td>
                           <Td label="Session"><span className="cell__id">{i.session_id}</span></Td>
@@ -237,6 +234,7 @@ function Detail({ kind, id }: { kind: Kind; id: string }) {
 }
 
 function RelatedFacts({ facts, kind = 'refund' }: { facts: Fact[]; kind?: Kind }) {
+  const row = useRowNav();
   return (
     <div className="tablewrap">
       <table className="table table--stack">
@@ -245,9 +243,9 @@ function RelatedFacts({ facts, kind = 'refund' }: { facts: Fact[]; kind?: Kind }
         </thead>
         <tbody>
           {facts.map((f) => (
-            <tr key={f.entity_id} data-clickable="" onClick={() => {
-              window.location.href = `/dashboard/${kind}s?id=${encodeURIComponent(f.entity_id)}`;
-            }}>
+            <tr key={f.entity_id}
+              {...row(`/dashboard/${kind}s?id=${encodeURIComponent(f.entity_id)}`,
+                      `Open ${kind} ${f.entity_id}`)}>
               <Td label="Id"><span className="cell__id cell__strong">{f.entity_id}</span></Td>
               <Td label="Amount" right><span className="cell__amount">{money(f.amount_minor)}</span></Td>
               <Td label="Rail"><State value={f.rail_state} /></Td>

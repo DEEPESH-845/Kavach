@@ -22,7 +22,8 @@ import type { DecisionDetail } from '@/lib/api';
 import { useApi } from '@/lib/useApi';
 import { clock, duration, hash, iso, money, risk as fmtRisk, stamp } from '@/lib/format';
 import {
-  Async, Badge, Card, Copyable, Empty, GoLink, Json, KV, PageHead, Section, State, Td, Why,
+  Async, Badge, Card, Copyable, Empty, GoLink, Json, KV, PageHead, Section, State, Td,
+  Why, useRowNav,
 } from '@/components/console/ui';
 import { EventTable } from '@/components/console/EventTable';
 
@@ -322,6 +323,7 @@ function Integration({ d }: { d: DecisionDetail }) {
 }
 
 function Audit({ d }: { d: DecisionDetail }) {
+  const row = useRowNav();
   return (
     <>
       <Section title="Events about this decision">
@@ -341,9 +343,9 @@ function Audit({ d }: { d: DecisionDetail }) {
                 </thead>
                 <tbody>
                   {d.audit.sibling_intents.map((s) => (
-                    <tr key={s.intent_id} data-clickable="" onClick={() => {
-                      window.location.href = `/dashboard/decisions?id=${encodeURIComponent(s.intent_id)}`;
-                    }}>
+                    <tr key={s.intent_id}
+                      {...row(`/dashboard/decisions?id=${encodeURIComponent(s.intent_id)}`,
+                              `Open sibling decision by ${s.agent_id}`)}>
                       <Td label="Time"><span className="cell__id">{clock(s.created_at)}</span></Td>
                       <Td label="Agent"><span className="cell__id">{s.agent_id}</span></Td>
                       <Td label="Session"><span className="cell__id">{s.session_id}</span></Td>

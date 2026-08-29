@@ -8,16 +8,14 @@
  * the same object.
  */
 
-import { useRouter } from 'next/navigation';
 import type { StreamItem } from '@/lib/api';
 import { clock, money, risk as fmtRisk, shortId } from '@/lib/format';
-import { State, Td } from './ui';
+import { State, Td, useRowNav } from './ui';
 
 export function StreamTable({ items, showAgent = true }: {
   items: StreamItem[]; showAgent?: boolean;
 }) {
-  const router = useRouter();
-  const open = (id: string) => router.push(`/dashboard/decisions?id=${encodeURIComponent(id)}`);
+  const row = useRowNav();
 
   return (
     <div className="tablewrap">
@@ -38,14 +36,8 @@ export function StreamTable({ items, showAgent = true }: {
           {items.map((i) => (
             <tr
               key={i.intent_id}
-              data-clickable=""
-              tabIndex={0}
-              role="link"
-              aria-label={`Decision on ${i.target} for ${money(i.amount_minor)}`}
-              onClick={() => open(i.intent_id)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(i.intent_id); }
-              }}
+              {...row(`/dashboard/decisions?id=${encodeURIComponent(i.intent_id)}`,
+                      `Decision on ${i.target} for ${money(i.amount_minor)}`)}
             >
               <Td label="Time">
                 <span className="cell__id">{clock(i.created_at)}</span>

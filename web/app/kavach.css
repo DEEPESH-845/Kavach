@@ -701,3 +701,21 @@ html[data-file] .offline {
 .door__t { margin: 0; font-size: clamp(1.05rem, 1.5vw, 1.25rem); }
 .door__d { margin: 0 0 auto; font-size: .92rem; line-height: 1.6; color: var(--fog); }
 .door .btn { align-self: flex-start; margin-top: 20px; }
+
+/* The footer states what is checked. Three counts, each guarded by tests/test_site.py,
+   set as a definition list because that is what they are — a label and its value. */
+.foot__stats {
+  display: flex; flex-wrap: wrap; gap: 6px 28px; margin: 0;
+  flex: 1 1 auto; justify-content: center;
+}
+.foot__stats > div { display: flex; align-items: baseline; gap: 8px; }
+.foot__stats dt {
+  font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--fog2);
+  order: 2;
+}
+.foot__stats dd { margin: 0; color: var(--bone); font-size: .95rem; order: 1; }
+
+@media (max-width: 760px) {
+  .foot__in { flex-direction: column; align-items: flex-start; gap: 18px; }
+  .foot__stats { justify-content: flex-start; gap: 6px 20px; }
+}

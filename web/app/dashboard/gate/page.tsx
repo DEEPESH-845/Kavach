@@ -20,7 +20,8 @@ import type { Admission, Mandate, Stage } from '@/lib/api';
 import { useAction } from '@/lib/useApi';
 import { duration, money, risk as fmtRisk, stamp } from '@/lib/format';
 import {
-  Badge, Card, ErrorState, GoLink, Json, KV, Ladder, PageHead, Section, State, Td, Why,
+  Badge, Card, ErrorState, Field, GoLink, Json, KV, Ladder, PageHead, Section, State, Td,
+  Why,
 } from '@/components/console/ui';
 
 const NOW = () => Math.floor(Date.now() / 1000);
@@ -163,7 +164,7 @@ export default function GatePage() {
                   onChange={(e) => set('categories', e.target.value.split(',').map((s) => s.trim()).filter(Boolean))} />
               </Field>
 
-              <Field label="Valid until"
+              <Field label="Valid until" group
                 hint={`${stamp(mandate.not_after)} — ${mandate.not_after < NOW() ? 'already expired' : `expires in ${duration(mandate.not_after - NOW())}`}`}>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button className="btn btn--sm" onClick={() => set('not_after', NOW() + 7 * 86_400)}>
@@ -362,14 +363,3 @@ function Result({ admission: a }: { admission: Admission }) {
   );
 }
 
-function Field({ label, hint, children }: {
-  label: string; hint?: string; children: React.ReactNode;
-}) {
-  return (
-    <div className="field">
-      <span className="field__label">{label}</span>
-      {children}
-      {hint ? <span className="field__hint">{hint}</span> : null}
-    </div>
-  );
-}
