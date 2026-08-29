@@ -97,17 +97,17 @@ export function Proof() {
   );
 }
 
-/* The sign-off states what is CHECKED, not what is claimed.
+/* The sign-off: the project's name, and what is actually checked.
  *
- * It reads `coverage.` rather than `proof.` for a reason worth keeping: proof is the name of
- * a plane in this system — the hash chain, section 08 — and reusing it as a footer mark
- * both repeats that section and quietly widens the word to mean "we are confident". What
- * belongs here is the narrower, checkable thing: how much of this is held up by something
- * that runs.
+ * The mark is the brand, set exactly as the header nav and the console sidebar set it, so
+ * all three agree and the page is bookended rather than signed off with a different word at
+ * each end. It used to read `proof.`, which is worse than a stray slogan: `proof` names a
+ * plane in this system — the hash chain, section 08 — so reusing it here both repeated that
+ * section and widened the word from "the chain verifies" into a general claim of confidence.
  *
- * Every number below is asserted against the tree by tests/test_site.py. Baselines are
- * derived from the report rather than typed, so a re-run that adds or drops one cannot
- * leave a stale count behind.
+ * The counts beside it are asserted against the tree by tests/test_site.py. Baselines are
+ * derived from the report rather than typed, so a re-run that adds or drops one cannot leave
+ * a stale count behind.
  */
 export function Foot() {
   const baselines = REPORT.results.filter((r) => !r.hero).length;
@@ -115,7 +115,10 @@ export function Foot() {
   return (
     <footer className="foot">
       <div className="wrap foot__in">
-        <p className="foot__mark"><span className="nav__glyph" aria-hidden /> coverage.</p>
+        <p className="foot__mark">
+          <span className="nav__glyph" aria-hidden />
+          <span className="foot__name">KAVACH</span>
+        </p>
 
         <dl className="foot__stats">
           <div>
