@@ -15,8 +15,10 @@
  */
 
 import Link from 'next/link';
-import gsap from 'gsap';
 import { useScene } from '@/lib/useScene';
+import { Kinetic } from '@/components/Kinetic';
+import { rise } from '@/lib/scroll';
+import { useMagnetic } from '@/lib/magnetic';
 
 const DOORS = [
   {
@@ -44,22 +46,17 @@ const DOORS = [
 ];
 
 export function Handoff() {
+  // one magnetic button on this page, and it is the one that opens the product
+  const mag = useMagnetic<HTMLSpanElement>();
   const ref = useScene<HTMLElement>((q) => {
-    gsap.from(q('.door'), {
-      scrollTrigger: { trigger: '.handoff__grid', start: 'top 84%' },
-      opacity: 0,
-      y: 18,
-      duration: 0.6,
-      stagger: 0.09,
-      ease: 'power2.out',
-    });
+    rise(q('.door'), { trigger: '.handoff__grid', start: 'top 84%', stagger: 0.09 });
   });
 
   return (
     <section className="sec" id="enter" ref={ref}>
       <div className="wrap">
-        <p className="eyebrow">09 · ENTER</p>
-        <h2 className="h2">Everything above is checkable.</h2>
+        <p className="eyebrow">10 · ENTER</p>
+        <Kinetic text="Everything above is *checkable.*" />
         <p className="lede">
           The console runs against the same governor, the same truth plane and the same
           estimators this page describes. Nothing in it is a mock, and where the environment
@@ -72,18 +69,20 @@ export function Handoff() {
               <p className="door__n mono">{d.n}</p>
               <h3 className="h3 door__t">{d.t}</h3>
               <p className="door__d">{d.d}</p>
-              <Link
-                className={`btn${d.primary ? ' btn--primary' : ''}`}
-                href={d.href}
-                onMouseMove={(e) => {
-                  // The button fills from wherever the pointer entered it -- the same seam
-                  // gesture the rest of the page uses, so the CTA is not a foreign object.
-                  const r = e.currentTarget.getBoundingClientRect();
-                  e.currentTarget.style.setProperty('--ox', `${((e.clientX - r.left) / r.width) * 100}%`);
-                }}
-              >
-                <span>{d.cta} →</span>
-              </Link>
+              <span className="mag" ref={d.primary ? mag : undefined}>
+                <Link
+                  className={`btn${d.primary ? ' btn--primary' : ''}`}
+                  href={d.href}
+                  onMouseMove={(e) => {
+                    // The button fills from wherever the pointer entered it -- the same seam
+                    // gesture the rest of the page uses, so the CTA is not a foreign object.
+                    const r = e.currentTarget.getBoundingClientRect();
+                    e.currentTarget.style.setProperty('--ox', `${((e.clientX - r.left) / r.width) * 100}%`);
+                  }}
+                >
+                  <span>{d.cta} →</span>
+                </Link>
+              </span>
             </article>
           ))}
         </div>
