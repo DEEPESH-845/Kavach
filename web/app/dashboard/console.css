@@ -170,12 +170,32 @@ body:has(.console) { overflow: hidden; }
   flex: 0 0 auto;
 }
 
+/* ── hit area ─────────────────────────────────────────────────────────────────
+   Three standalone controls in the shell were drawn at their text height and were
+   therefore 12-13px tall: the two wordmarks and the chain pill. WCAG 2.2 SC 2.5.8 asks
+   for 24px, and a thumb on a phone asks for more than that regardless. The type is
+   unchanged -- these gain hit area, not size, so nothing above them reflows. Prose links
+   inside a paragraph are deliberately left alone: they are exempt, and padding them
+   would break the line boxes they sit in. */
 .console .sidebar__mark {
   font: 600 13px/1 var(--sans);
   letter-spacing: 0.22em;
   color: var(--bone);
   text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
 }
+
+.console .topbar__crumbs a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+}
+
+/* Only the interactive form. A badge is usually a static label in a table cell, and
+   giving every one of those a 24px box would loosen every row on the screen. */
+.console a.badge { min-height: 24px; }
 
 .console .sidebar__nav { flex: 1 1 auto; overflow-y: auto; padding: 14px 10px 24px; scrollbar-width: thin; }
 .console .sidebar__nav::-webkit-scrollbar { width: 6px; }
@@ -726,7 +746,13 @@ body:has(.console) { overflow: hidden; }
 @keyframes shimmer { to { background-position: -200% 0; } }
 
 .console .skeleton--row { height: 40px; margin-bottom: 1px; border-radius: 0; }
-.console .skeleton--stat { height: 92px; }
+/* Measured against what actually arrives, not guessed: a stat tile renders at 118px on a
+   wide grid and 102-118px stacked, and the integrity card at 60px beside its heading and
+   96px once the message wraps. The old flat 92px was short of every one of them, so each
+   tile grew on arrival and everything below it was pushed down. A placeholder whose height
+   is not the content's height is just a smaller layout waiting to be replaced. */
+.console .skeleton--stat { height: 118px; }
+.console .skeleton--card { height: 60px; }
 
 .console .detail-panel { animation: rise 260ms var(--e-reveal) both; }
 @keyframes rise { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
@@ -735,6 +761,10 @@ body:has(.console) { overflow: hidden; }
 
 @media (max-width: 900px) {
   .console { --sidebar: 260px; }
+
+  /* Stacked, the tiles are shorter and the integrity message wraps to two lines. */
+  .console .skeleton--stat { height: 104px; }
+  .console .skeleton--card { height: 96px; }
   .console .burger { display: inline-flex; }
 
   .console .sidebar {
@@ -787,3 +817,9 @@ body:has(.console) { overflow: hidden; }
     transition-duration: 0.001ms !important;
   }
 }
+
+/* The route change, and nothing else. Rows, cells and cards appear at once: a staggered
+   table is a delight the first time and an obstacle every time after, and this screen is
+   read many times a day. The global reduced-motion rule above already neutralises it. */
+.console .route { animation: routeIn 170ms var(--e-reveal) both; }
+@keyframes routeIn { from { opacity: 0; transform: translateY(4px); } }

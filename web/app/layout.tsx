@@ -1,8 +1,17 @@
 import type { Metadata, Viewport } from 'next';
 import './kavach.css';
 
+/* NO TITLE HERE, DELIBERATELY. Each surface names itself: the landing page and the 404
+   through their own `metadata`, the console from its shell, because eighteen client-
+   rendered routes cannot each export a server-side `metadata` object.
+
+   A title here is not merely redundant, it wins. Next renders the root metadata into the
+   prerendered <head>, and hydration reconciles that element back to the value it was
+   built with -- measured at 5ms after the console's own assignment, on every fresh load.
+   The console appeared to have per-route titles while navigating within it and lost them
+   on reload or a pasted link, which is exactly when a tab name is worth something. The
+   description stays: it is genuinely site-wide. */
 export const metadata: Metadata = {
-  title: 'Kavach — the seam between what a rail says and what is owed',
   description:
     'Kavach is the merchant-side trust layer for agentic commerce: verify agents coming in, ' +
     'govern agents acting out, and prove every decision either way.',
