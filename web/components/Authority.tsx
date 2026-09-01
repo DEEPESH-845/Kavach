@@ -92,7 +92,7 @@ export function Authority() {
 
   return (
     <>
-      <motion.p className="eyebrow" {...settle}>06 — what the model is allowed to do</motion.p>
+      <motion.p className="eyebrow" {...settle}>05 — and what the model is allowed to do</motion.p>
       <motion.h2 className="h2" {...settle}>A wrong model may only widen caution.</motion.h2>
       <motion.p className="body" {...settle}>
         The duplicate-risk model returns a number between 0 and 1. Drag it. It can raise the

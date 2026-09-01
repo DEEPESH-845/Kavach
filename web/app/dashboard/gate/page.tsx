@@ -13,7 +13,7 @@
  * same Ed25519 verification that admits a good envelope refuses yours.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { KeyRound, Play, RotateCcw, ShieldCheck } from 'lucide-react';
 import { api } from '@/lib/api';
 import type { Admission, Mandate, Stage } from '@/lib/api';
@@ -88,6 +88,15 @@ const PRESETS: { id: string; label: string; hint: string; lines: Line[] }[] = [
 export default function GatePage() {
   const [mandate, setMandate] = useState<Mandate>(DEFAULT_MANDATE);
   const [preset, setPreset] = useState('groceries');
+  /* The mandate's validity window is built from Date.now(), and this page is statically
+     exported: the HTML carries the BUILD's clock and the first client render carries the
+     reader's. Every field below is a constant except the one that prints that window, so
+     the state can differ freely -- what cannot differ is rendered text. React counted it
+     as a hydration mismatch (#418), threw the tree away and re-rendered the whole screen
+     on arrival. The hint waits for mount instead, which is what the hero's clock does and
+     for the same reason. */
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
   const [context, setContext] = useState('');
   const lines = PRESETS.find((p) => p.id === preset)!.lines;
   const total = lines.reduce((n, l) => n + l.unit_amount_minor * l.quantity, 0);
@@ -165,7 +174,9 @@ export default function GatePage() {
               </Field>
 
               <Field label="Valid until" group
-                hint={`${stamp(mandate.not_after)} — ${mandate.not_after < NOW() ? 'already expired' : `expires in ${duration(mandate.not_after - NOW())}`}`}>
+                hint={mounted
+                  ? `${stamp(mandate.not_after)} — ${mandate.not_after < NOW() ? 'already expired' : `expires in ${duration(mandate.not_after - NOW())}`}`
+                  : 'not_after, checked against the clock at decision time'}>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button className="btn btn--sm" onClick={() => set('not_after', NOW() + 7 * 86_400)}>
                     Valid

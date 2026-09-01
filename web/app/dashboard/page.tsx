@@ -36,7 +36,7 @@ export default function CommandCentre() {
         actions={<GoLink href="/dashboard/adversary">Try to break it</GoLink>}
       />
 
-      <Async state={overview} skeleton={<StatSkeleton n={4} />}>
+      <Async state={overview} skeleton={<OverviewSkeleton />}>
         {(o) => (
           <>
             <div className="grid grid--stats">
@@ -152,6 +152,37 @@ export default function CommandCentre() {
         </Card>
       </Section>
     </>
+  );
+}
+
+/* THE PLACEHOLDER HAS THE SHAPE OF WHAT IS COMING.
+ *
+ * One `overview` response fills three blocks: the four tiles, the three-up attention row
+ * and the integrity card. The skeleton reserved the tiles and nothing else, so the two
+ * sections arrived into space nothing had claimed and shoved "Latest decisions" off a
+ * phone screen in one jump -- 0.14 CLS on a 390px viewport, where 0.1 is the threshold
+ * for "needs improvement".
+ *
+ * The titles are the real ones rather than grey bars: they are static text that does not
+ * depend on the response, so printing them costs nothing, holds the exact height the
+ * headings will occupy, and tells the reader what is loading instead of making them
+ * wait to find out.
+ */
+function OverviewSkeleton() {
+  return (
+    <div aria-busy="true" aria-label="Loading the overview">
+      <div className="grid grid--stats">
+        {Array.from({ length: 4 }, (_, i) => <div key={i} className="skeleton skeleton--stat" />)}
+      </div>
+      <Section title="Where attention is needed">
+        <div className="grid grid--3">
+          {Array.from({ length: 3 }, (_, i) => <div key={i} className="skeleton skeleton--stat" />)}
+        </div>
+      </Section>
+      <Section title="Integrity" note="the event log is hash-chained; this is a recomputation, not a stored flag">
+        <div className="skeleton skeleton--card" />
+      </Section>
+    </div>
   );
 }
 
