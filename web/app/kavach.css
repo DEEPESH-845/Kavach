@@ -160,7 +160,11 @@ main  { padding-left: var(--rail); }
   border-bottom: 1px solid transparent;
 }
 .nav[data-stuck] { background: color-mix(in srgb, var(--void) 88%, transparent); border-bottom-color: var(--seam); backdrop-filter: blur(10px); }
-.nav__mark { display: flex; align-items: center; gap: 11px; text-decoration: none; color: var(--bone); }
+/* min-height, not padding: the mark is the page's home link and was 18px tall — the
+   height of 11px type and nothing more. 24px is the WCAG 2.2 floor for a standalone
+   control, and the header row is taller than that already, so this buys hit area without
+   moving anything. The chapter links beside it are 30px and were never the problem. */
+.nav__mark { display: flex; align-items: center; min-height: 24px; gap: 11px; text-decoration: none; color: var(--bone); }
 /* The mark is the primitive: one object, two halves, one of them not yet known.
    Solid and outlined rather than an outlined box, which at 14px reads as a missing glyph. */
 .nav__glyph { display: flex; width: 13px; height: 15px; flex: none; }
@@ -733,3 +737,392 @@ html[data-file] .offline {
 
 .foot__stats { justify-content: flex-start; gap: 6px 20px; }
 }
+
+/* ═════════════════════════════════════════════════════════════════════════════
+   THE OUTBOUND HALF — chapters 05, 06, 07, and the chain that resolves them.
+
+   Three rules carry all of it, and each is the design system's existing rule
+   applied at a larger scale:
+
+   1. DIRECTION IS MEANING. Chapter 06 is the only place on the page where
+      anything travels rightward, because it is the only place anything leaves
+      us. Chapter 07 only ever converges. Nothing in either is decorative
+      travel, so a reader can tell "we acted" from "we observed" with the
+      labels covered.
+
+   2. EVERY SCENE IS ITS OWN FINAL STATE. All of this is authored in CSS as the
+      finished composition, and GSAP animates FROM a hidden start. A reader
+      whose bundle never arrives, or who asked for less motion, is handed the
+      resolved diagram rather than an empty box — degradation may widen what is
+      visible, never narrow it.
+
+   3. TRANSFORM AND OPACITY ONLY. No width, height, top or left is animated
+      anywhere below. The hairlines scale, the packets translate, the panels
+      fade. Nothing here asks the browser for a layout mid-scroll.
+   ═════════════════════════════════════════════════════════════════════════ */
+
+:root { --rail-r: 96px; }
+main, .foot { padding-right: var(--rail-r); }
+
+/* ── kinetic headings ────────────────────────────────────────────────────── */
+/* the hero's word mask, in its scroll-triggered form, so the two ends of the
+   page reveal type the same way rather than each inventing an entrance */
+.kin__w { display: inline-block; overflow: hidden; vertical-align: bottom;
+  padding-bottom: .1em; margin-bottom: -.1em; }
+.kin__w > i { display: inline-block; font-style: normal; }
+
+/* ── the chapter list ────────────────────────────────────────────────────── */
+/* Editorial, not a tab bar. At rest it is ten numbers and a tick: the CURRENT
+   chapter is brighter with a longer tick, and its name is not repeated here
+   because the header already prints it. Names appear only under the pointer or
+   the focus ring, and they are positioned OUT of flow so the resting column
+   costs the layout the width of a two-digit number rather than the width of
+   the longest chapter title. That is what keeps it clear of the text column
+   instead of sitting on top of it. */
+.toc {
+  position: fixed; right: 0; top: 50%; transform: translateY(-50%); z-index: 21;
+  padding: 14px 16px 14px 18px;
+  border-left: 1px solid transparent;
+  transition: background var(--t-normal) linear, border-color var(--t-normal) linear;
+}
+.toc:hover, .toc:focus-within {
+  background: color-mix(in srgb, var(--void) 84%, transparent);
+  border-left-color: var(--seam);
+  backdrop-filter: blur(10px);
+}
+.toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+.toc a {
+  position: relative; display: grid; grid-template-columns: auto 26px;
+  align-items: center; gap: 14px; padding: 5px 0; text-decoration: none;
+}
+.toc__n { font-size: 10px; letter-spacing: .14em; color: var(--seam2);
+  transition: color var(--t-fast) linear; }
+.toc__t {
+  position: absolute; right: calc(100% + 14px); top: 50%; white-space: nowrap;
+  font-family: var(--mono); font-size: 10px; letter-spacing: .14em; color: var(--fog2);
+  opacity: 0; transform: translateY(-50%) translateX(8px);
+  transition: opacity var(--t-normal) var(--e-reveal), transform var(--t-normal) var(--e-reveal),
+              color var(--t-fast) linear;
+}
+.toc__mark { justify-self: end; width: 12px; height: 1px; background: var(--seam2);
+  transition: width var(--t-normal) var(--e-seam), background var(--t-fast) linear; }
+.toc:hover .toc__t, .toc:focus-within .toc__t { opacity: 1; transform: translateY(-50%); }
+.toc a:hover .toc__n, .toc a:focus-visible .toc__n { color: var(--bone); }
+.toc a:hover .toc__t { color: var(--bone); }
+.toc a:hover .toc__mark { background: var(--fog); width: 18px; }
+.toc a[data-on] .toc__n { color: var(--bone); }
+.toc a[data-on] .toc__mark { width: 26px; background: var(--steel); }
+
+/* ── 05 · governor: four inputs onto one bus, one decision out ───────────── */
+.gov { position: relative; height: 300vh; }
+.gov__sticky { position: sticky; top: 0; height: 100svh; display: flex; align-items: center;
+  overflow: hidden; }
+.gov__q {
+  position: absolute; inset: 0; z-index: 2; margin: 0; padding: 0 var(--gut);
+  display: flex; align-items: center; justify-content: center; text-align: center;
+  pointer-events: none; color: var(--bone); font-weight: 500;
+  font-size: clamp(1.7rem, 5vw, 3.4rem); line-height: 1.1; letter-spacing: -.034em;
+}
+.gov__in-wrap { position: relative; }
+.gov__eyebrow { margin-bottom: 18px; }
+
+.gov__inputs {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: clamp(10px, 2vw, 28px);
+}
+.gov__in {
+  position: relative; display: flex; flex-direction: column; gap: 3px;
+  padding: 11px 0 30px; border-top: 1px solid var(--k);
+}
+.gov__in[data-k="steel"] { --k: var(--steel); }
+.gov__in[data-k="amber"] { --k: var(--amber); }
+.gov__in[data-k="bone"]  { --k: var(--bone);  }
+.gov__in-t { font-family: var(--mono); font-size: 10px; letter-spacing: .16em; color: var(--k); }
+.gov__in-v { font-size: clamp(.95rem, 1.5vw, 1.15rem); color: var(--bone); letter-spacing: -.02em; }
+.gov__in-s { font-size: .76rem; line-height: 1.45; color: var(--fog2); }
+/* the hairline drops from the input's own centre onto the bus below it */
+.gov__lead {
+  position: absolute; left: 50%; bottom: 0; width: 1px; height: 24px;
+  background: var(--seam2); transform-origin: 50% 0;
+}
+.gov__bus { height: 1px; background: var(--seam2); transform-origin: 50% 50%; }
+.gov__drop { width: 1px; height: clamp(18px, 3vh, 30px); margin: 0 auto; background: var(--seam2);
+  transform-origin: 50% 0; }
+
+.gov__box {
+  max-width: 660px; margin: 0 auto; padding: clamp(14px, 2vw, 22px) clamp(16px, 2.4vw, 26px);
+  border: 1px solid var(--seam2); background: var(--iron); transform-origin: 50% 0;
+}
+.gov__box-t { margin: 0 0 10px; font-size: 10px; letter-spacing: .22em; color: var(--fog2); }
+.gov__ladder { list-style: none; margin: 0; padding: 0; }
+.gov__rung {
+  display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 14px; align-items: baseline;
+  padding: 7px 10px 7px 0; border-top: 1px solid var(--seam);
+}
+.gov__rung-n { font-size: 10px; color: var(--fog2); }
+.gov__rung-t { font-size: .88rem; color: var(--fog); }
+.gov__rung-s { font-size: 10px; letter-spacing: .08em; color: var(--fog2); }
+/* an invariant that fires does not flash. It is simply, permanently, a different colour. */
+.gov__rung[data-fired="escalate"] { background: color-mix(in srgb, var(--amber) 10%, transparent); }
+.gov__rung[data-fired="escalate"] .gov__rung-t,
+.gov__rung[data-fired="escalate"] .gov__rung-s { color: var(--amber); }
+
+.gov__exit { width: 1px; height: clamp(16px, 2.6vh, 26px); margin: 0 auto; background: var(--amber);
+  transform-origin: 50% 0; }
+.gov__out { display: block; text-align: center; }
+.gov__out-v { display: block; font-size: clamp(1.5rem, 4vw, 2.6rem); letter-spacing: -.02em;
+  color: var(--amber); }
+.gov__why { list-style: none; margin: 10px auto 0; padding: 0; max-width: 62ch;
+  display: grid; gap: 5px; }
+.gov__why li { font-size: .74rem; line-height: 1.5; color: var(--fog2); }
+
+/* ── 06 · execution: the provider boundary ───────────────────────────────── */
+.xb { position: relative; height: 420vh; }
+.xb__sticky { position: sticky; top: 0; height: 100svh; display: flex; align-items: center;
+  overflow: hidden; }
+.xb__field {
+  position: relative; margin-top: 16px; padding-bottom: 104px;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: clamp(16px, 3vw, 44px);
+}
+.xb__side-t { margin: 0 0 4px; font-size: 10px; letter-spacing: .22em; color: var(--fog2); }
+.xb__side--them .xb__side-t { color: var(--steel); }
+.xb__them { margin: 12px 0 0; font-size: .84rem; line-height: 1.6; color: var(--fog2); max-width: 36ch; }
+.xb__blind { list-style: none; margin: 14px 0 0; padding: 0; max-width: 36ch; }
+.xb__blind li {
+  display: flex; justify-content: space-between; gap: 16px; align-items: baseline;
+  padding: 7px 0; border-top: 1px solid var(--seam); font-size: .8rem; color: var(--fog2);
+}
+.xb__blind li span:last-child { font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--seam2); white-space: nowrap; }
+.xb__states { list-style: none; margin: 10px 0 0; padding: 0; }
+.xb__st {
+  position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 14px;
+  padding: 9px 0 9px 14px; border-top: 1px solid var(--seam);
+}
+.xb__st-on { position: absolute; left: 0; top: 9px; bottom: 9px; width: 2px;
+  background: var(--steel); transform-origin: 50% 0; }
+.xb__st-s { min-width: 78px; font-size: 11px; letter-spacing: .1em; color: var(--bone); }
+.xb__st-d { grid-column: 2; font-size: .82rem; color: var(--fog2); }
+.xb__q {
+  margin: 12px 0 0; padding-left: 14px; font-size: 11px; color: var(--amber);
+  border-left: 1px solid var(--amber);
+}
+
+/* the boundary is the frame: drawn once, never moved, labelled where it ends */
+.xb__bound { position: relative; width: 1px; }
+.xb__bound-l { position: absolute; left: 0; top: -10px; bottom: -84px; width: 1px;
+  background: var(--seam2); transform-origin: 50% 0; }
+.xb__bound-t {
+  position: absolute; left: 50%; bottom: -102px; transform: translateX(-50%); margin: 0;
+  white-space: nowrap; font-size: 9px; letter-spacing: .18em; text-transform: uppercase;
+  color: var(--fog2);
+}
+.xb__wire { position: absolute; left: 0; right: 0; height: 22px; }
+.xb__wire[data-dir="out"] { bottom: 56px; }
+.xb__wire[data-dir="in"]  { bottom: 22px; }
+.xb__pkt {
+  position: absolute; left: 0; top: 0; white-space: nowrap; font-size: 10px;
+  padding: 3px 9px; border: 1px solid var(--seam2); background: var(--void); color: var(--fog);
+}
+.xb__pkt--in { border-color: var(--steel); color: var(--steel); }
+
+.xb__copy, .rc__copy { position: relative; margin-top: clamp(20px, 3.4vh, 38px);
+  min-height: clamp(190px, 26vh, 240px); }
+.xb__beat, .rc__beat { position: absolute; inset: 0; opacity: 0; }
+.xb__beat-h, .rc__beat-h { max-width: 24ch; margin-bottom: .45em;
+  font-size: clamp(1.25rem, 2.6vw, 2rem); }
+.xb__beat .body, .rc__beat .body { max-width: 64ch; margin: 0; }
+
+/* ── 07 · reconciliation: three records, one settled question ────────────── */
+.rc { position: relative; height: 360vh; }
+.rc__sticky { position: sticky; top: 0; height: 100svh; display: flex; align-items: center;
+  overflow: hidden; }
+.rc__lane { position: relative; height: 24px; margin: 16px 0 clamp(18px, 3vh, 30px); }
+.rc__hook {
+  position: absolute; left: 0; top: 0; white-space: nowrap; font-size: 10px;
+  padding: 3px 9px; border: 1px solid var(--steel); color: var(--steel); background: var(--void);
+}
+/* the fragments and the row they resolve into occupy the same cell, so the
+   convergence lands on the resolved row rather than beside it */
+.rc__field { position: relative; display: grid; min-height: clamp(122px, 17vh, 164px); }
+.rc__frags, .rc__resolved { grid-area: 1 / 1; }
+.rc__frags {
+  position: relative; list-style: none; margin: 0; padding: 0; align-self: start;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(10px, 2vw, 26px);
+}
+.rc__frag {
+  display: flex; flex-direction: column; gap: 4px; padding: 13px 15px;
+  border: 1px solid var(--seam); background: var(--iron); border-top: 1px solid var(--k);
+}
+.rc__frag[data-k="steel"] { --k: var(--steel); }
+.rc__frag[data-k="bone"]  { --k: var(--bone);  }
+.rc__frag-src { font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: var(--k); }
+.rc__frag-id { font-size: .95rem; color: var(--bone); letter-spacing: -.01em; }
+.rc__frag-d { font-size: .76rem; line-height: 1.5; color: var(--fog2); }
+.rc__resolved { align-self: center; text-align: center; pointer-events: none; }
+.rc__canon { margin: 0; font-size: clamp(.9rem, 1.6vw, 1.15rem); color: var(--fog); }
+.rc__open { margin: 14px 0 0; font-size: .8rem; color: var(--fog2); }
+
+/* ── 09 · the chain, walked end to end ───────────────────────────────────── */
+.pc { margin: 0 0 clamp(38px, 6vh, 60px); max-width: 760px; }
+.pc__track { position: relative; padding-left: 26px; margin-top: 10px; }
+.pc__rail { position: absolute; left: 5px; top: 10px; bottom: 10px; width: 1px;
+  background: var(--seam); }
+.pc__rail-lit { position: absolute; inset: 0; background: var(--steel); transform-origin: 50% 0; }
+.pc__nodes { list-style: none; margin: 0; padding: 0; }
+.pc__node { position: relative; padding: 7px 0; }
+.pc__dot {
+  position: absolute; left: -25px; top: 12px; width: 9px; height: 9px;
+  border: 1px solid var(--steel); background: var(--void);
+}
+.pc__node[data-end] .pc__dot { border-color: var(--bone); background: var(--bone); }
+.pc__body { display: grid; grid-template-columns: 116px minmax(0, 1fr); gap: 4px 20px;
+  align-items: baseline; }
+.pc__t { font-size: 11px; letter-spacing: .16em; color: var(--fog2); }
+.pc__node[data-end] .pc__t { color: var(--bone); }
+.pc__d { font-size: .86rem; color: var(--fog); }
+.pc__note { margin: 16px 0 0; padding-left: 26px; font-size: .78rem; color: var(--fog2);
+  max-width: 62ch; }
+.pc__claims { margin: 24px 0 0; display: grid; max-width: 74ch; }
+.pc__claims > div { display: grid; grid-template-columns: minmax(120px, 150px) minmax(0, 1fr);
+  gap: 20px; padding: 12px 0; border-top: 1px solid var(--seam); }
+.pc__claims dt { font-family: var(--mono); font-size: 10px; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--steel); }
+.pc__claims > div:nth-child(2) dt { color: var(--fog2); }
+.pc__claims > div[data-limit] dt { color: var(--amber); }
+.pc__claims dd { margin: 0; font-size: .86rem; line-height: 1.6; color: var(--fog); }
+
+/* ── responsive: a different composition, not a smaller one ──────────────── */
+@media (max-width: 860px) {
+  :root { --rail-r: 56px; }
+  /* pins are shorter and the compositions stack: a phone reads the beats, it does
+     not hold a four-column diagram in view while scrubbing through it */
+  .gov { height: 240vh; }
+  .xb  { height: 320vh; }
+  .rc  { height: 280vh; }
+  /* A phone holds one screenful, and chapter 06 stacks the most into it: three states,
+     the question, the boundary, the lane, and what we cannot see. The metrics tighten
+     rather than the content thinning, because every line here is load-bearing. */
+  .gov__sticky, .xb__sticky, .rc__sticky { align-items: flex-start; padding-top: 60px; }
+  .xb__copy, .rc__copy { min-height: clamp(150px, 21vh, 186px); }
+  .xb__st { padding: 7px 0 7px 12px; }
+  .xb__them { margin-top: 9px; font-size: .8rem; line-height: 1.5; }
+  .xb__blind { margin-top: 10px; }
+  .xb__blind li { padding: 5px 0; font-size: .78rem; }
+  .rc__resolved { text-align: left; }
+  /* Two by two, and the drop lines come out. In a single row each hairline points at
+     the bus; in a grid the top row's hairlines point at the row beneath them, which
+     draws a connection that does not exist. The bus alone does the collecting. */
+  .gov__inputs { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; }
+  .gov__in { padding-bottom: 12px; }
+  .gov__lead { display: none; }
+  .gov__in-s { display: none; }
+  .gov__rung { grid-template-columns: 16px minmax(0, 1fr); gap: 3px 10px; }
+  .gov__rung-s { grid-column: 2; }
+  .gov__why li { font-size: .7rem; }
+
+  /* One column, so the boundary is a rule between two stacked blocks and the traverse
+     runs down through the lane below it. The choreography is the same; the axis is the
+     one the screen actually has. */
+  .xb__field { grid-template-columns: 1fr; gap: 0; padding-bottom: 0; }
+  .xb__side--us { grid-row: 1; }
+  .xb__bound { grid-row: 2; width: auto; margin: 16px 0 14px; }
+  .xb__bound-l { position: static; width: 100%; height: 1px; transform-origin: 0 50%; }
+  .xb__bound-t { position: static; transform: none; margin: 7px 0 0; text-align: right; }
+  .xb__wire { grid-row: 3; grid-column: 1; position: relative; left: auto; right: auto;
+    bottom: auto; height: 50px; }
+  .xb__side--them { grid-row: 4; padding-top: 14px; border-top: 1px solid var(--seam); }
+  .xb__them, .xb__blind { max-width: none; }
+  .xb__pkt { font-size: 9px; padding: 3px 6px; }
+
+  .rc__frags { grid-template-columns: 1fr; gap: 8px; }
+  .rc__frag { flex-direction: row; align-items: baseline; gap: 12px; padding: 9px 12px; }
+  .rc__frag-d { display: none; }
+  .rc__hook { font-size: 9px; }
+  .pc__body { grid-template-columns: 1fr; gap: 2px; }
+  .pc__claims > div { grid-template-columns: 1fr; gap: 5px; }
+}
+@media (max-width: 640px) {
+  :root { --rail-r: 0px; }
+  .toc { display: none; }
+}
+
+/* ── reduced motion: every state, none of the theatre ────────────────────── */
+/* The pins come out entirely — a pinned section that cannot animate is a screen
+   that refuses to scroll — and each beat becomes an ordinary block in the order
+   it would have played. Nothing is hidden, so nothing is lost. */
+@media (prefers-reduced-motion: reduce) {
+  .gov, .xb, .rc { height: auto; }
+  .gov__sticky, .xb__sticky, .rc__sticky { position: static; height: auto; overflow: visible;
+    display: block; padding: clamp(72px, 11vh, 128px) 0; }
+  .gov__q { position: static; display: block; text-align: left; padding: 0 0 .6em;
+    max-width: 18ch; }
+  .xb__copy, .rc__copy { min-height: 0; display: grid; gap: clamp(30px, 5vh, 52px); }
+  .xb__beat, .rc__beat { position: static; opacity: 1; }
+  .rc__frags, .rc__resolved { grid-area: auto; }
+  .rc__field { gap: 24px; min-height: 0; }
+  .rc__resolved { text-align: left; }
+  .xb__wire { position: static; height: auto; margin-top: 10px; }
+  .xb__pkt { position: static; display: inline-block; }
+  .xb__field { padding-bottom: 24px; }
+  .xb__bound-l, .xb__bound-t { display: none; }
+  .pc__rail-lit { display: none; }
+}
+
+/* ── degraded: the bundle never ran ──────────────────────────────────────── */
+html[data-degraded] .gov,
+html[data-degraded] .xb,
+html[data-degraded] .rc { height: auto; }
+html[data-degraded] .gov__sticky,
+html[data-degraded] .xb__sticky,
+html[data-degraded] .rc__sticky {
+  position: static; height: auto; overflow: visible; display: block; padding: 88px 0;
+}
+html[data-degraded] .gov__q { position: static; display: block; text-align: left; }
+html[data-degraded] .xb__copy,
+html[data-degraded] .rc__copy { min-height: 0; display: grid; gap: 40px; }
+html[data-degraded] .xb__beat,
+html[data-degraded] .rc__beat { position: static; opacity: 1; }
+html[data-degraded] .xb__wire { position: static; height: auto; }
+html[data-degraded] .xb__pkt { position: static; display: inline-block; }
+html[data-degraded] .rc__frags,
+html[data-degraded] .rc__resolved { grid-area: auto; }
+
+/* ── the ground: three acts, one environment ─────────────────────────────── */
+/* Two fixed layers cross-fading against the void. The steps are two to three points of
+   luminance — below the threshold at which a single transition registers, above the
+   threshold at which the whole page feels like one room. Opacity is the only property
+   in flight, so this costs the compositor a layer and the main thread nothing. */
+.ground { position: fixed; inset: 0; z-index: -1; pointer-events: none; }
+.ground i { position: absolute; inset: 0; opacity: 0; }
+.ground i[data-act="act"]   { background: #0a0d0f; }   /* it stops arguing and acts */
+.ground i[data-act="prove"] { background: #090a0b; }   /* it stops acting and proves */
+
+/* ── the header, on the way down and on the way back ─────────────────────── */
+/* Retreats while the reader is moving forward and returns the instant they reverse,
+   because on a page this long scrolling up already means "take me back". Transform only,
+   and never while the hero is still on screen — there it is the only orientation there
+   is. */
+.nav {
+  transition: background var(--t-fast) linear, border-color var(--t-fast) linear,
+              transform var(--t-normal) var(--e-reveal);
+}
+.nav[data-away] { transform: translateY(-102%); }
+.nav:focus-within { transform: none; }
+
+/* ── the seam, continued ─────────────────────────────────────────────────── */
+/* The transcript's left rule is not a border: it is the hero's seam, arriving. Amber
+   where the divergence is still the subject, grey by the time it is only a margin. */
+.transcript { border-left: 0; position: relative; }
+.transcript__rule {
+  position: absolute; left: 0; top: 0; bottom: 0; width: 1px; transform-origin: 50% 0;
+  background: linear-gradient(180deg, var(--amber) 0%, var(--seam) 26%);
+}
+
+/* ── magnetism ───────────────────────────────────────────────────────────── */
+/* A wrapper, so the lean and the button's own :active press do not fight over one
+   transform. Layout-neutral: it takes the shape of the button inside it. */
+.mag { display: inline-flex; }
+.door .mag { align-self: flex-start; margin-top: 20px; }
+.door .mag .btn { margin-top: 0; }

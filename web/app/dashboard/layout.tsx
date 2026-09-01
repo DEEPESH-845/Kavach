@@ -16,7 +16,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Suspense, useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import {
   Activity, BadgeCheck, Boxes, Bug, FileSearch, FlaskConical, Gauge, KeyRound,
   Landmark, Layers, Menu, PanelsTopLeft, RefreshCw, Settings,
@@ -82,7 +82,13 @@ const TITLES: Record<string, string> = Object.fromEntries(
 );
 
 export default function ConsoleLayout({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
+  /* `trailingSlash: true` in next.config.ts means usePathname() hands back
+     '/dashboard/proof/', while every NAV href is written canonically without the slash.
+     Nothing matched: the breadcrumb read "Console" on all twenty routes and no sidebar
+     item ever took aria-current. Normalise once here rather than remember the slash at
+     each comparison. */
+  const raw = usePathname();
+  const pathname = raw.length > 1 && raw.endsWith('/') ? raw.slice(0, -1) : raw;
   const [open, setOpen] = useState(false);
 
   const health = useApi(() => api.health(), []);
@@ -100,8 +106,50 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
     return () => window.removeEventListener('keydown', onKey);
   }, [open]);
 
+  /* The drawer is a drawer only below 900px. Above it the sidebar is a static column and
+     `.scrim` has no styles at all -- so an open drawer that survives a resize to desktop
+     leaves an unstyled button sitting in the layout, and marks the content inert while
+     nothing is covering it. Widening the window closes it. */
+  useEffect(() => {
+    const mq = matchMedia('(min-width: 901px)');
+    const sync = () => { if (mq.matches) setOpen(false); };
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
+  }, []);
+
+  /* Opening the drawer moved nothing but pixels: focus stayed on the burger, so the next
+     Tab went to the breadcrumb -- behind the scrim, invisible, still reachable. Focus
+     follows the drawer in, and comes back to the burger when it closes, but only if it
+     was stranded there rather than deliberately placed somewhere else. `inert` on the
+     content region is what actually makes the covered half unreachable; it is a native
+     attribute, so there is no focus trap to write or to get wrong. */
+  const drawer = useRef<HTMLElement>(null);
+  const burger = useRef<HTMLButtonElement>(null);
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (open) {
+      drawer.current?.querySelector<HTMLElement>('a, button')?.focus();
+    } else if (wasOpen.current) {
+      const a = document.activeElement;
+      if (!a || a === document.body || drawer.current?.contains(a)) burger.current?.focus();
+    }
+    wasOpen.current = open;
+  }, [open]);
+
   const reviewCount = overview.data?.review_queue ?? 0;
   const title = TITLES[pathname] ?? 'Console';
+
+  /* ONE TITLE PER ROUTE. Every console screen inherited the root layout's single title,
+     so eighteen tabs read identically, browser history was a wall of one repeated string
+     and a bookmark named nothing.
+
+     Assigned rather than exported, because `metadata` is a server-component API and every
+     route under this shell is client-rendered. Assigned rather than rendered as <title>,
+     because React 19 hoists such an element into <head> ALONGSIDE the one Next already
+     put there and the browser reads the first. It works here only because the root layout
+     now declares no title of its own: with one, hydration reconciled the prerendered
+     element back over this assignment a few milliseconds later. */
+  useEffect(() => { document.title = `${title} — Kavach console`; }, [title]);
 
   return (
     <div className="console">
@@ -110,7 +158,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
           <button className="scrim" aria-label="Close navigation" onClick={() => setOpen(false)} />
         ) : null}
 
-        <aside className="sidebar" data-open={open} id="console-nav">
+        <aside className="sidebar" data-open={open} id="console-nav" ref={drawer}>
           <div className="sidebar__brand">
             <Link href="/" className="sidebar__mark">KAVACH</Link>
             <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -150,9 +198,10 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
           </nav>
         </aside>
 
-        <div className="main">
+        <div className="main" inert={open || undefined}>
           <header className="topbar">
             <button
+              ref={burger}
               className="burger"
               onClick={() => setOpen(true)}
               aria-label="Open navigation"
