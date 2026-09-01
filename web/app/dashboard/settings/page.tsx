@@ -17,8 +17,8 @@ import {
 } from '@/components/console/ui';
 
 const COMMANDS: [string, string][] = [
-  ['make demo', 'seed the ledger, build the UI, and serve everything on one port'],
-  ['make seed', 're-seed the demo ledger deterministically'],
+  ['make run', 'seed the ledger, build the UI, and serve everything on one port'],
+  ['make seed', 're-seed the reference ledger deterministically'],
   ['make api', 'run the API alone against the current database'],
   ['make bench', 'train the duplicate-risk estimator and write evals/risk_report.json'],
   ['make gate-bench', 'train the entailment estimator and write evals/gate_report.json'],
