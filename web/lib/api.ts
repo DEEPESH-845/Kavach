@@ -36,7 +36,7 @@ export class ApiError extends Error {
   /** What the operator should do about it, in one sentence.
    *
    * The unreachable case names the exact URL that failed and the command for the setup
-   * they are actually in. "Start the API with `make demo`" is wrong advice while someone
+   * they are actually in. "Start the API with `make run`" is wrong advice while someone
    * is running `next dev`, because demo rebuilds the UI and serves it on the API's port. */
   get remedy(): string {
     if (this.status === 0) {
@@ -44,7 +44,7 @@ export class ApiError extends Error {
       return typeof window !== 'undefined' && window.location.port === '3000'
         ? `Nothing answered at ${where}. Run \`make dev\` to start the API alongside the `
           + 'dev server, or `make api` in another terminal, then retry.'
-        : `Nothing answered at ${where}. Run \`make demo\` to seed, build and serve the `
+        : `Nothing answered at ${where}. Run \`make run\` to seed, build and serve the `
           + 'whole product, then retry.';
     }
     if (this.status === 404) return 'Check the identifier, or return to the command centre.';

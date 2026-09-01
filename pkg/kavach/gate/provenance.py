@@ -2,6 +2,17 @@
 
 This plane answers: did the objective mutate immediately after the agent read a product review
 or an injected span of hostile text?
+
+MECHANISM, stated exactly: set overlap between the cart's words and the untrusted span,
+discounting anything the mandate's own purpose already said. It is lexical, not learned,
+and the benchmark reports what that costs -- family F2 (goal drift) recall 0.550, the
+weakest of the four families and the one named as weakest in the README rather than averaged
+into a headline. The upgrade path is a trained scorer over the same three inputs, evaluated
+on the same held-out families; until that is measured, this ships as what it is.
+
+It is safe to ship a weak scorer here and nowhere else, because the score is advisory: it
+may raise the admission floor and can never authorise a cart (ADR-004/006). A drift score of
+0.0 does not admit anything the deterministic rungs above it refuse.
 """
 
 from __future__ import annotations
@@ -16,9 +27,8 @@ def score_drift(mandate_purpose: str, cart_text: str, untrusted_context: str) ->
     if not untrusted_context or not cart_text:
         return 0.0
 
-    # Extremely naive heuristic for demonstration:
-    # Measure word overlap between the cart and the untrusted context,
-    # weighted against words in the mandate.
+    # Word overlap between the cart and the untrusted context, discounted by the mandate's
+    # own vocabulary. Lexical by design: see the module docstring for the measured ceiling.
     
     def words(t: str) -> set[str]:
         return {w.lower() for w in t.split() if len(w) > 3}

@@ -67,6 +67,34 @@ def test_ambiguous_open_obligation_escalates_despite_low_risk(conn, refund_event
     assert any("AMBIGUOUS" in r for r in d.reasons)
 
 
+def test_the_kill_switch_routes_everything_to_a_human(conn):
+    """The operator halt. It escalates rather than denies on purpose: stopping the agents
+    must not strand a refund a customer is owed, it must put a person in front of it."""
+    d = decide(conn, intent=intent(50_00), payment_amount_minor=500_00, payment_captured=True,
+               now=T + 200, policy=Policy(kill_switch=True), risk_score=0.0)
+
+    assert d.action is Action.ESCALATE
+    assert any("kill switch" in r for r in d.reasons)
+
+
+def test_the_kill_switch_does_not_soften_an_invariant(conn, refund_event):
+    """Escalation is a floor, never a ceiling. A refund larger than the captured payment is
+    still refused outright while the switch is engaged."""
+    refund_event("rfnd_k", "processed", T + 100, amount=400_00)
+    d = decide(conn, intent=intent(200_00), payment_amount_minor=500_00,
+               payment_captured=True, now=T + 200, policy=Policy(kill_switch=True),
+               risk_score=0.0)
+
+    assert d.action is Action.DENY
+
+
+def test_the_kill_switch_is_off_unless_the_environment_says_otherwise(monkeypatch):
+    monkeypatch.delenv("KAVACH_KILL_SWITCH", raising=False)
+    assert Policy().kill_switch is False
+    monkeypatch.setenv("KAVACH_KILL_SWITCH", "1")
+    assert Policy().kill_switch is True
+
+
 def test_read_only_tier_cannot_move_money(conn):
     d = decide(conn, intent=intent(50_00), payment_amount_minor=500_00, payment_captured=True,
                now=T + 200, policy=Policy(allow_write=False), risk_score=0.0)

@@ -8,14 +8,16 @@ truth plane and the open-object ledger. A cap knows the amount. This knows the o
 Order of authority, strongest first:
   1. Accounting invariants   -- deterministic, model can never override. DENY.
   2. Permission tier         -- deterministic. DENY.
-  3. Truth-plane confidence  -- UNKNOWN raises the floor to human approval (ADR-006).
-  4. Duplicate-risk model    -- may only ESCALATE, never authorise (ADR-004/006).
-  5. Exposure caps           -- deterministic.
+  3. Kill switch             -- operator halt; every intent goes to a human (ADR-006).
+  4. Truth-plane confidence  -- UNKNOWN raises the floor to human approval (ADR-006).
+  5. Duplicate-risk model    -- may only ESCALATE, never authorise (ADR-004/006).
+  6. Exposure caps           -- deterministic.
 Anything the model says can make the outcome MORE cautious and nothing else.
 """
 
 from __future__ import annotations
 
+import os
 import sqlite3
 import uuid
 from dataclasses import dataclass, field
@@ -32,6 +34,16 @@ class Action(StrEnum):
     DENY = "DENY"           # never executable, no human can wave it through here
 
 
+def _halted() -> bool:
+    """The kill switch, read from the environment at policy construction.
+
+    Every caller builds its Policy the same way -- API, MCP server, seeder, lab -- so one
+    variable stops agent-initiated money movement everywhere without a code change or a
+    restart of anything but the process that reads it.
+    """
+    return os.environ.get("KAVACH_KILL_SWITCH", "").strip().lower() in {"1", "true", "on"}
+
+
 @dataclass(frozen=True)
 class Policy:
     allow_write: bool = True
@@ -39,6 +51,9 @@ class Policy:
     session_cap_minor: int = 5_000_00
     daily_cap_minor: int = 25_000_00
     risk_threshold: float = 0.5                 # from the model's frozen train threshold
+    #: Operator halt. ESCALATE rather than DENY on purpose: halting the agents must not
+    #: strand a legitimate refund, it must put a human in front of every one of them.
+    kill_switch: bool = field(default_factory=_halted)
 
 
 @dataclass
@@ -78,19 +93,24 @@ def decide(conn: sqlite3.Connection, *, intent: ledger.Intent, payment_amount_mi
     if not policy.allow_write:
         return _deny(d, "agent holds a read-only tier for money-moving tools")
 
-    # 3. Truth-plane confidence. Unknown state is not a reason to proceed carefully, it is a
+    # 3. Kill switch. Nothing autonomous while it is engaged.
+    if policy.kill_switch:
+        _escalate(d, "kill switch engaged: agent-initiated money movement is suspended, so "
+                     "every intent is routed to a human")
+
+    # 4. Truth-plane confidence. Unknown state is not a reason to proceed carefully, it is a
     #    reason to stop: we cannot assert what we would be duplicating.
     unknown = [f for f in open_facts if f.confidence is Confidence.UNKNOWN]
     if unknown:
         _escalate(d, f"{len(unknown)} open obligation(s) on this payment are in an "
                      f"AMBIGUOUS state, so the effect of this refund cannot be predicted")
 
-    # 4. Duplicate risk. ESCALATE only -- a low score never unlocks anything.
+    # 5. Duplicate risk. ESCALATE only -- a low score never unlocks anything.
     if risk_score is not None and risk_score >= policy.risk_threshold:
         _escalate(d, f"duplicate-risk {risk_score:.2f} >= {policy.risk_threshold:.2f}: this "
                      f"intent resembles an obligation already in flight")
 
-    # 5. Caps.
+    # 6. Caps.
     if intent.amount_minor > policy.max_auto_refund_minor:
         _escalate(d, f"amount {intent.amount_minor/100:,.2f} exceeds the autonomous limit "
                      f"of {policy.max_auto_refund_minor/100:,.2f}")
