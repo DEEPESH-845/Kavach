@@ -83,7 +83,7 @@ export default function StreamPage() {
             s.items.length === 0 ? (
               <Empty
                 title="Nothing has been governed yet"
-                body="Kavach records a decision for every intent an agent raises. Run a scenario to produce one, or seed the demo ledger."
+                body="Kavach records a decision for every intent an agent raises. Run a scenario to produce one, or seed the reference ledger."
                 action={<GoLink href="/dashboard/adversary">Open the Adversary Lab</GoLink>}
               />
             ) : (

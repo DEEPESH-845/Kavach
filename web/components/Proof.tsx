@@ -132,7 +132,7 @@ export function Foot() {
         </dl>
 
         <p className="foot__meta mono">
-          test mode only · Razorpay AI Buildathon 2026
+          replay mode by default · live mode requires explicit credentials
         </p>
       </div>
     </footer>

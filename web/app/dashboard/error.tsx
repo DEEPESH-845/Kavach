@@ -36,7 +36,7 @@ export default function ConsoleError({ error, reset }: {
         <Link className="btn" href="/dashboard">Command centre</Link>
       </div>
       <p className="state__body" style={{ fontSize: 12, marginTop: 6 }}>
-        If this persists, check that the API is running: <code className="mono">make demo</code>.
+        If this persists, check that the API is running: <code className="mono">make run</code>.
       </p>
     </div>
   );
