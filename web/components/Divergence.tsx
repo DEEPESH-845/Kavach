@@ -2,6 +2,7 @@
 
 import gsap from 'gsap';
 import { useScene } from '@/lib/useScene';
+import { fade, inward, rise } from '@/lib/scroll';
 
 /* The section where the failure is explained, choreographed so that scrolling performs
    the argument rather than merely revealing it:
@@ -16,15 +17,21 @@ import { useScene } from '@/lib/useScene';
 
 export function Divergence() {
   const ref = useScene<HTMLElement>((q) => {
-    gsap.from(q('.transcript__line'), {
-      scrollTrigger: { trigger: '.transcript', start: 'top 78%' },
-      opacity: 0, x: -18, duration: 0.5, stagger: 0.13, ease: 'power2.out',
+    /* THE HANDOFF FROM THE HERO. The seam that opened between the cell's two halves
+       keeps opening as the hero leaves, and this is where it lands: one hairline drawing
+       downward out of the fold, amber at the top where the divergence is still the
+       subject, grey by the time it is just a margin rule. Two sections, one line — the
+       argument does not start, it continues. It draws early, well before the lines it
+       carries, so the rule is already there for them to arrive against. */
+    gsap.fromTo(q('.transcript__rule'), { scaleY: 0 }, {
+      scaleY: 1, duration: 0.9, ease: 'power2.out',
+      scrollTrigger: { trigger: '.transcript', start: 'top 96%' },
     });
 
-    gsap.from(q('.quote blockquote'), {
-      scrollTrigger: { trigger: '.quote', start: 'top 80%' },
-      opacity: 0, duration: 0.6, ease: 'power2.out',
-    });
+    // the transcript accumulates: each line is a record arriving, not a heading landing
+    inward(q('.transcript__line'), { trigger: '.transcript', start: 'top 78%', stagger: 0.13, d: 18 });
+
+    fade(q('.quote blockquote'), { trigger: '.quote', start: 'top 80%' });
     gsap.fromTo(q('.quote blockquote'),
       { '--rule': '0%' }, {
         '--rule': '100%', duration: 0.7, ease: 'power2.inOut',
@@ -45,17 +52,12 @@ export function Divergence() {
         .fromTo(q('.split-claim__verdict'), { opacity: 0, scaleY: 0.55 }, { opacity: 1, scaleY: 1 }, 0.35);
     });
     mm.add('(max-width: 860px)', () => {
-      gsap.from(q('.split-claim__side, .split-claim__verdict'), {
-        scrollTrigger: { trigger: '.split-claim', start: 'top 82%' },
-        opacity: 0, y: 18, duration: 0.6, stagger: 0.12, ease: 'power2.out',
-      });
+      rise(q('.split-claim__side, .split-claim__verdict'),
+           { trigger: '.split-claim', start: 'top 82%', stagger: 0.12, d: 18 });
     });
 
-    gsap.utils.toArray<HTMLElement>(q('[data-rise]')).forEach((el) =>
-      gsap.from(el, {
-        scrollTrigger: { trigger: el, start: 'top 86%' },
-        opacity: 0, y: 16, duration: 0.7, ease: 'power2.out',
-      }));
+    gsap.utils.toArray<HTMLElement>(q('[data-rise]'))
+      .forEach((el) => rise(el, { start: 'top 86%' }));
   });
 
   return (
@@ -65,6 +67,7 @@ export function Divergence() {
         <h2 className="h2" data-rise>Tool acknowledgement is not financial truth.</h2>
 
         <div className="transcript">
+          <i className="transcript__rule" aria-hidden />
           <p className="transcript__line">
             <span className="who who--agent">agent</span>
             <span className="mono">create_refund(pay_Nx3f9K2, 500000)</span>

@@ -3,8 +3,10 @@
 import { motion } from 'motion/react';
 import { REPORT, TOOLS, TREE } from '@/lib/data';
 import { settle } from '@/lib/motion';
-import gsap from 'gsap';
 import { useScene } from '@/lib/useScene';
+import { Kinetic } from '@/components/Kinetic';
+import { fade, inward, rise } from '@/lib/scroll';
+import { ProofChain } from '@/components/ProofChain';
 
 const LOG = [
   { seq: 'seq 12', src: 'webhook · refund.created',   says: <>rail → <span className="mono" data-steel>ACCEPTED</span></>,   trust: 'HMAC verified', cited: true },
@@ -15,30 +17,24 @@ const LOG = [
 
 export function Proof() {
   const ref = useScene<HTMLElement>((q) => {
-    gsap.from(q('.chain__log li'), {
-      scrollTrigger: { trigger: '.chain__log', start: 'top 82%' },
-      opacity: 0, x: -14, duration: 0.5, stagger: 0.11, ease: 'power2.out',
-    });
-    gsap.from(q('.chain__fact'), {
-      scrollTrigger: { trigger: '.chain__log', start: 'top 60%' },
-      opacity: 0, duration: 0.7, delay: 0.2, ease: 'power2.out',
-    });
-    gsap.from(q('.tools li'), {
-      scrollTrigger: { trigger: '.tools', start: 'top 85%' },
-      opacity: 0, y: 12, duration: 0.45, stagger: 0.045, ease: 'power2.out',
-    });
+    // events are records arriving; the fact they produce merely becomes true
+    inward(q('.chain__log li'), { trigger: '.chain__log', stagger: 0.11 });
+    fade(q('.chain__fact'), { trigger: '.chain__log', start: 'top 60%' });
+    rise(q('.tools li'), { trigger: '.tools', start: 'top 85%', stagger: 0.045, d: 12 });
   });
 
   return (
     <section className="sec sec--proof" id="proof" ref={ref}>
       <div className="wrap">
-        <motion.p className="eyebrow" {...settle}>08 — the shared spine</motion.p>
-        <motion.h2 className="h2" {...settle}>Every fact cites the events behind it.</motion.h2>
+        <motion.p className="eyebrow" {...settle}>09 — the shared spine</motion.p>
+        <Kinetic text="Every fact cites the *events behind it.*" />
         <motion.p className="body" {...settle}>
           Facts are derived from an append-only log, never asserted. A decision replayed against
           the same events and the same clock returns the same verdict months later — which is what
           a chargeback on an agent-initiated order actually requires.
         </motion.p>
+
+        <ProofChain />
 
         <motion.figure className="chain" {...settle}>
           <figcaption className="cell__caption">the evidence behind the refund this page opened with</figcaption>

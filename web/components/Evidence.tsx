@@ -7,6 +7,8 @@ import { inr, pct } from '@/lib/util';
 import { T, E, settle, useStill } from '@/lib/motion';
 import gsap from 'gsap';
 import { useScene } from '@/lib/useScene';
+import { Kinetic } from '@/components/Kinetic';
+import { inward, rise } from '@/lib/scroll';
 
 /** Numbers travel to their value. Only the payoff column counts — four counters a row
  *  would be a slot machine, and the point is the rupees, not the animation. */
@@ -36,25 +38,20 @@ export function Evidence() {
   const s = REPORT.budget_sweep[budget];
 
   const ref = useScene<HTMLElement>((q) => {
-    gsap.from(q('.results tbody tr'), {
-      scrollTrigger: { trigger: '.results', start: 'top 80%' },
-      opacity: 0, y: 14, duration: 0.5, stagger: 0.08, ease: 'power2.out',
-    });
+    rise(q('.results tbody tr'), { trigger: '.results', start: 'top 80%', stagger: 0.08 });
+    // the bars are the row's claim, so they grow from the number rather than fading in
     gsap.fromTo(q('.leak__bar'), { scaleX: 0 }, {
       scrollTrigger: { trigger: '.results', start: 'top 72%' },
       scaleX: 1, duration: 0.9, stagger: 0.08, ease: 'power3.out',
     });
-    gsap.from(q('.limits li'), {
-      scrollTrigger: { trigger: '.limits', start: 'top 82%' },
-      opacity: 0, x: -12, duration: 0.5, stagger: 0.09, ease: 'power2.out',
-    });
+    inward(q('.limits li'), { trigger: '.limits', stagger: 0.09, d: 12 });
   });
 
   return (
     <section className="sec" id="evidence" ref={ref}>
       <div className="wrap">
-        <motion.p className="eyebrow" {...settle}>07 — measured, on a held-out split</motion.p>
-        <motion.h2 className="h2" {...settle}>Same human cost. Thirteen times less money out the door.</motion.h2>
+        <motion.p className="eyebrow" {...settle}>08 — measured, on a held-out split</motion.p>
+        <Kinetic text="Same human cost. Thirteen times less money out the door." />
         <motion.p className="body" {...settle}>
           Every system below escalates the identical share of intents, because “escalate
           everything” is otherwise optimal and operationally useless. Hold the friction fixed,
