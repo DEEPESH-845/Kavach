@@ -28,9 +28,6 @@ export const E = {
   seam: [0.62, 0, 0.16, 1],         // divergence opening
 } as const;
 
-/** GSAP takes the same curves as strings. */
-export const gsapEase = (k: keyof typeof E) => `cubic-bezier(${E[k].join(',')})`;
-
 /** The one reveal every block of content uses, so entrances are a system not a habit. */
 export const settle = {
   initial: { opacity: 0, y: 14 },
