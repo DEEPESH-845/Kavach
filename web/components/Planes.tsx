@@ -4,8 +4,8 @@ import { Fragment, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { PLANES } from '@/lib/data';
 import { T, E, settle, useStill } from '@/lib/motion';
-import gsap from 'gsap';
 import { useScene } from '@/lib/useScene';
+import { rise } from '@/lib/scroll';
 
 /* Layer three of the disclosure: what each plane catches, what it cannot, and the trust
    boundary it depends on. A button rather than <details> so the open state can drive the
@@ -18,10 +18,7 @@ export function Planes() {
 
   // the ladder the canvas just resolved into, landing rung by rung
   const ref = useScene<HTMLElement>((q) => {
-    gsap.from(q('.plane, .planes > .eyebrow'), {
-      scrollTrigger: { trigger: '.planes', start: 'top 82%' },
-      opacity: 0, y: 18, duration: 0.55, stagger: 0.055, ease: 'power2.out',
-    });
+    rise(q('.plane, .planes > .eyebrow'), { trigger: '.planes', stagger: 0.055 });
   });
 
   return (

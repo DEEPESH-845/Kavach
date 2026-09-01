@@ -5,6 +5,7 @@ import { motion, useMotionValue, useSpring } from 'motion/react';
 import gsap from 'gsap';
 import { T, E, useStill } from '@/lib/motion';
 import { useScene } from '@/lib/useScene';
+import { useMagnetic } from '@/lib/magnetic';
 
 /* Layer 1 background · 2 ambient field · 3 the split cell · 4 typography · 5 nav · 6 cue.
    The only thing that moves on its own is the clock, because an obligation nobody closed
@@ -59,14 +60,18 @@ export function SeamButton(
   { href, primary, children }: { href: string; primary?: boolean; children: React.ReactNode },
 ) {
   const ref = useRef<HTMLAnchorElement>(null);
+  // only the primary call leans toward the pointer; the secondary one just fills
+  const mag = useMagnetic<HTMLSpanElement>();
   return (
-    <a ref={ref} className={'btn' + (primary ? ' btn--primary' : '')} href={href}
-       onPointerEnter={(e) => {
-         const r = ref.current!.getBoundingClientRect();
-         ref.current!.style.setProperty('--ox', `${((e.clientX - r.left) / r.width) * 100}%`);
-       }}>
-      <span>{children}</span>
-    </a>
+    <span className="mag" ref={primary ? mag : undefined}>
+      <a ref={ref} className={'btn' + (primary ? ' btn--primary' : '')} href={href}
+         onPointerEnter={(e) => {
+           const r = ref.current!.getBoundingClientRect();
+           ref.current!.style.setProperty('--ox', `${((e.clientX - r.left) / r.width) * 100}%`);
+         }}>
+        <span>{children}</span>
+      </a>
+    </span>
   );
 }
 
@@ -104,15 +109,25 @@ export function Hero() {
   // gsap.context scopes selector strings to the root's descendants, so the root itself
   // has to be passed as the element — '#counter' from inside would match nothing.
   const ref = useScene<HTMLElement>((q, root) => {
-    gsap.timeline({
+    const tl = gsap.timeline({
       scrollTrigger: { trigger: root, start: 'top top', end: 'bottom top', scrub: 0.7 },
       defaults: { ease: 'none' },
     })
       .to(q('.hero__body'), { y: -90, opacity: 0.14 }, 0)
-      .to(q('.cell__half--l'), { xPercent: -9 }, 0)
-      .to(q('.cell__half--r'), { xPercent: 9 }, 0)
-      .to(q('.cell__seam'), { scaleY: 2.4 }, 0)   // grows downward, into what it explains
       .to(q('.hero__field'), { opacity: 0 }, 0);   // transform belongs to the springs
+
+    /* The cell only tears sideways where the layout has two columns to tear. Below that
+       the halves are stacked, so a horizontal pull means nothing — and at 9% of a
+       full-width half it pushes the document some thirty pixels past the viewport,
+       which `overflow-x: hidden` hides rather than fixes. Below the breakpoint the hero
+       simply rises and fades: the seam has already opened on load, and a phone does not
+       need the same gesture performed twice. */
+    const mm = gsap.matchMedia();
+    mm.add('(min-width: 861px)', () => {
+      tl.to(q('.cell__half--l'), { xPercent: -9 }, 0)
+        .to(q('.cell__half--r'), { xPercent: 9 }, 0)
+        .to(q('.cell__seam'), { scaleY: 2.4 }, 0);   // grows downward, into what it explains
+    });
   });
 
   return (
