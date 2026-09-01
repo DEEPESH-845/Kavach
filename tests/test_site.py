@@ -26,8 +26,15 @@ def _defaults(path: Path, cls: str) -> dict:
     tree = ast.parse(path.read_text())
     node = next(n for n in ast.walk(tree)
                 if isinstance(n, ast.ClassDef) and n.name == cls)
-    return {s.target.id: ast.literal_eval(s.value)
-            for s in node.body if isinstance(s, ast.AnnAssign) and s.value is not None}
+    out = {}
+    for s in node.body:
+        if not isinstance(s, ast.AnnAssign) or s.value is None:
+            continue
+        try:
+            out[s.target.id] = ast.literal_eval(s.value)
+        except ValueError:
+            continue  # a computed default (field(default_factory=...)); nothing to compare
+    return out
 
 
 def _members(path: Path, cls: str) -> set[str]:

@@ -274,7 +274,8 @@ def health(conn: Conn) -> dict[str, Any]:
         "policy": {"max_auto_refund_minor": policy().max_auto_refund_minor,
                    "session_cap_minor": policy().session_cap_minor,
                    "daily_cap_minor": policy().daily_cap_minor,
-                   "risk_threshold": policy().risk_threshold},
+                   "risk_threshold": policy().risk_threshold,
+                   "kill_switch": policy().kill_switch},
         "ui": STATIC_DIR.exists(),
     }
 
@@ -290,6 +291,7 @@ def get_policy() -> dict[str, Any]:
             "daily_cap_minor": p.daily_cap_minor,
             "risk_threshold": p.risk_threshold,
             "allow_write": p.allow_write,
+            "kill_switch": p.kill_switch,
         },
         "threshold_source": ("the estimator's frozen training threshold"
                              if m else "governor.Policy default; no model is loaded"),
@@ -298,13 +300,17 @@ def get_policy() -> dict[str, Any]:
              "outcome": "DENY", "note": "cannot be overridden by a model or a human here"},
             {"rank": 2, "layer": "Permission tier", "kind": "deterministic",
              "outcome": "DENY", "note": "read-only agents cannot move money"},
-            {"rank": 3, "layer": "Truth-plane confidence", "kind": "deterministic",
+            {"rank": 3, "layer": "Kill switch", "kind": "operator",
+             "outcome": "ESCALATE",
+             "note": "KAVACH_KILL_SWITCH suspends autonomous money movement; "
+                     "a human sees every intent"},
+            {"rank": 4, "layer": "Truth-plane confidence", "kind": "deterministic",
              "outcome": "ESCALATE",
              "note": "an obligation in an AMBIGUOUS state raises the floor to a human"},
-            {"rank": 4, "layer": "Duplicate-risk model", "kind": "learned, advisory",
+            {"rank": 5, "layer": "Duplicate-risk model", "kind": "learned, advisory",
              "outcome": "ESCALATE",
              "note": "may only widen caution; a low score never authorises anything"},
-            {"rank": 5, "layer": "Exposure caps", "kind": "deterministic",
+            {"rank": 6, "layer": "Exposure caps", "kind": "deterministic",
              "outcome": "ESCALATE", "note": "per-refund, per-session and daily"},
         ],
         "mutable": False,
