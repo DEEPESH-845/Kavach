@@ -35,7 +35,7 @@ mcp:  ## run the MCP server over stdio
 	$(PY) apps/mcp_server.py
 
 .PHONY: seed
-seed:  ## rebuild the demo ledger by running the real decision pipeline
+seed:  ## rebuild the reference ledger by running the real decision pipeline
 	$(PY) apps/demo_data.py
 
 .PHONY: ui
@@ -59,14 +59,22 @@ dev:  ## development: API on :8000 and the Next dev server on :3000, together
 	  (cd web && npm run dev) & \
 	  wait
 
-.PHONY: demo
-demo: seed ui  ## THE ONE COMMAND: seed, build, and serve the whole product on :8000
+.PHONY: run
+run: seed ui  ## THE ONE COMMAND: seed, build, and serve the whole product on :8000
 	@echo ""
 	@echo "  Kavach  ->  http://127.0.0.1:8000"
 	@echo "  landing    /            console    /dashboard"
 	@echo "  attacks    /dashboard/adversary    proof      /dashboard/proof"
 	@echo ""
 	$(PY) apps/api_server.py
+
+# `make demo` predates `make run` and is kept so older docs and muscle memory keep working.
+.PHONY: demo
+demo: run
+
+.PHONY: latency
+latency:  ## measure decision-path latency and single-core throughput
+	$(PY) apps/latency.py
 
 .PHONY: scenarios
 scenarios:  ## run every adversary scenario headless and print the verdicts
