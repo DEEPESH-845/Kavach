@@ -81,6 +81,21 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
   if (!res.ok) {
     const err = (body as { error?: Record<string, unknown> } | null)?.error;
+
+    /* EVERY failure the API produces carries an {"error": {...}} envelope -- the three
+       handlers in api_server.py leave no other shape. So a failure without one did not
+       come from Kavach: something else is answering on this origin. The ordinary case is
+       the built UI served by a plain static file server (`make site`, or web/out behind
+       any daemon) with no backend mounted, where /api/health is simply a missing file.
+       Read as an ordinary 404 that told the operator to "check the identifier, or return
+       to the command centre" -- sending them to look for a bad id on a screen that never
+       had one, and never naming the thing that is actually absent. It is the same
+       condition as an unreachable API and gets the same answer. */
+    if (!err) {
+      throw new ApiError(0, 'unreachable',
+        `Kavach API is not reachable — ${res.status} from something that is not it.`);
+    }
+
     throw new ApiError(
       res.status,
       (err?.code as string) ?? 'error',
