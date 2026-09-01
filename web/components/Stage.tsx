@@ -163,7 +163,10 @@ export function Stage() {
         .to(layers.refusal, { opacity: 0, y: -14, duration: 0.05 }, 0.50)
         .fromTo(layers.gradient, { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.08 },
                 narrow ? 0.58 : 0.58);
-      if (narrow) tl.to(layers.gradient, { opacity: 0, duration: 0.06 }, 0.72);
+      // narrow only: the copy clears before the section below arrives. It used to go at
+      // 0.72, which left the last fifth of a 360vh pin showing a dimmed canvas and no
+      // words at all — a long blank scroll on the device least able to afford one.
+      if (narrow) tl.to(layers.gradient, { opacity: 0, duration: 0.05 }, 0.88);
 
       ScrollTrigger.create({
         trigger: el, start: 'top top', end: 'bottom bottom',
@@ -174,8 +177,9 @@ export function Stage() {
           const flight = Math.round(Math.max(0, smooth(range(phase, 0, 0.32)) ** 1.7) * 240);
           if (intents.current) intents.current.textContent = flight.toLocaleString('en-IN');
           if (exposure.current) exposure.current.textContent = inr(flight * 5000);
-          el.dataset.beat = phase < 0.35 ? 'PRESSURE' : phase < 0.57 ? 'REFUSAL' : 'THE GRADIENT';
-          el.dataset.beatN = phase < 0.35 ? '03' : phase < 0.57 ? '04' : '05';
+          // the beat names chapter 03's current movement. It carries no number of its
+          // own — the header pairs it with 03, because a beat is not a destination.
+          el.dataset.beat = phase < 0.35 ? 'PRESSURE' : phase < 0.57 ? 'REFUSAL' : 'THE FIX';
         },
         onLeave: () => { delete el.dataset.beat; },
         onLeaveBack: () => { delete el.dataset.beat; },
@@ -234,7 +238,7 @@ export function Stage() {
 
         <div className="stage__layer" data-phase="gradient">
           <div className="wrap stage__copy">
-            <p className="eyebrow">05 — the shape of the fix</p>
+            <p className="eyebrow">03 — the shape of the fix</p>
             <h2 className="h2">Order the system by how much of it can be proven.</h2>
             <p className="body body--tight">
               Cryptography and integer arithmetic at the entrance. Accounting invariants at the
