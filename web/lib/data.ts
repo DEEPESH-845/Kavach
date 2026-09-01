@@ -35,7 +35,7 @@ export const REPORT = {
    against the tree: the test count against `def test` in tests/, and the scenario count
    against the adversary lab's own registry. A footer that states a number nothing checks
    is exactly the drift ADR-007 exists to stop. */
-export const TREE = { tests: 188, scenarios: 11 };
+export const TREE = { tests: 195, scenarios: 11 };
 
 /* Policy defaults, verbatim from pkg/kavach/governor.py. The governor compares against its
    own risk_threshold, not the benchmark's frozen threshold — different numbers for different
@@ -118,3 +118,47 @@ export const KINDS = [
   { k: 'price_match',      share: [.05, .2],  texts: ['price dropped after purchase, refund the difference', 'customer found a lower price, adjusting'] },
   { k: 'late_delivery',    share: [.05, .15], texts: ['delivered late, goodwill refund', 'sla breach on delivery, partial refund'] },
 ];
+
+/* ── the outbound half: intent lifecycle, verbatim from ledger.py's schema ───
+   `status TEXT NOT NULL,   -- PROPOSED|APPROVED|EXECUTED|BLOCKED|ESCALATED|FAILED`
+   Chapter 06 shows the three states of the happy path; tests/test_site.py asserts every
+   one it names is in that enumeration, so the page cannot invent a state the ledger has
+   no column value for. */
+export const INTENT_STATES = [
+  { s: 'PROPOSED', d: 'the intent, recorded before it is judged' },
+  { s: 'APPROVED', d: 'write-ahead — the reservation, committed before the call' },
+  { s: 'EXECUTED', d: 'settled, carrying the refund id the rail returned' },
+];
+
+/* ── what each chapter leaves behind in the one append-only log ─────────────
+   The final section walks this end to end. It is the page's own table of contents
+   restated as evidence, which is the only form the argument can be checked in. */
+export const CHAIN = [
+  { t: 'INTENT',      d: 'an intents row, PROPOSED, before anything judges it' },
+  { t: 'TRUTH',       d: 'a FinancialFact citing events [12, 17]' },
+  { t: 'OBLIGATION',  d: 'exposure recomputed from the log, never stored' },
+  { t: 'RISK',        d: 'score 0.951, recorded as advisory' },
+  { t: 'GOVERNOR',    d: 'ESCALATE, with the reasons that produced it' },
+  { t: 'PROVIDER',    d: 'one request, keyed kavach-<intent_id>' },
+  { t: 'WEBHOOK',     d: 'seq 17, sig_verified over the raw body' },
+  { t: 'RECONCILE',   d: 'EXECUTED, matched on notes.intent_id' },
+  { t: 'PROOF',       d: 'SHA-256 over every row and its predecessor', end: true },
+];
+
+/* Verbatim from proof.claims(), which the API ships with every proof response so the UI
+   cannot overstate the chain by omission. The page is a UI. tests/test_site.py asserts
+   these three strings against the Python, so the caveat cannot quietly fall out of the
+   marketing copy while staying in the API. */
+export const CLAIMS = {
+  proves:
+    "the ordered event log has not been altered since it was written: every row "
+    + "reproduces its stored SHA-256 over its own immutable fields and its "
+    + "predecessor's hash",
+  does_not_prove:
+    "who wrote an event. Provenance for rail events comes from the HMAC signature "
+    + "check on the webhook, recorded separately as sig_verified",
+  limit:
+    "an attacker with write access could rewrite the chain from the point of an edit "
+    + "forward. Externally anchoring the head would close that, and is not implemented",
+  algorithm: "SHA-256, chained",
+};
