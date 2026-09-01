@@ -37,7 +37,7 @@ Razorpay AI Buildathon 2026 · Track 02 — AI Risk Manager
 
 [Problem](#the-problem) · [What already exists](#what-already-exists-and-why-none-of-it-closes-this) · [Architecture](#architecture) · [Why AI](#why-ai-is-necessary-precisely) · [Results](#results) · [Features](#feature-catalogue) · [Quickstart](#quickstart) · [Status](#status)
 
-**One command:** `make demo` → <http://127.0.0.1:8000>
+**One command:** `make run` → <http://127.0.0.1:8000>
 
 </div>
 
@@ -393,7 +393,7 @@ make mcp                  # run the MCP server over stdio
 ### The console
 
 ```bash
-make demo                 # seed the ledger, build the UI, serve everything on :8000
+make run                  # seed the ledger, build the UI, serve everything on :8000
 ```
 
 One process, one port. The API mounts the built UI at `/`, so there is no second server and
@@ -446,7 +446,7 @@ Every number on those screens is a query result. There is no seeded metric, no f
 zero, and no page that renders a plausible value when the API is unreachable — an
 unreachable API produces an error state that says so.
 
-`make seed` rebuilds the demo ledger by running the real pipeline: truth, exposure, the
+`make seed` rebuilds the reference ledger by running the real pipeline: truth, exposure, the
 trained estimator, `governor.decide`. Nothing sets a verdict directly, and the seeder
 refuses to stage an execution the governor did not allow. A screenshot of the dashboard is
 therefore a screenshot of the system's behaviour.
@@ -547,7 +547,7 @@ Full threat model: [`SECURITY.md`](../../SECURITY.md).
 ## Status
 
 All eight planes are built. Nothing in the table below is aspirational — every row is
-exercised by the test suite, and the ones with a screen are reachable from `make demo`.
+exercised by the test suite, and the ones with a screen are reachable from `make run`.
 
 | Component | State | Evidence |
 |---|---|---|
@@ -605,7 +605,7 @@ Time-to-terminal survival model with calibrated P50/P80/P95 replacing the fixed 
 
 <div align="center">
 
-**Test mode only.** See [SECURITY.md](../../SECURITY.md) · [CONTRIBUTING.md](../../CONTRIBUTING.md) · [CHANGELOG.md](../../CHANGELOG.md)
+**Defaults to `replay`; `KAVACH_MODE=live` is explicit.** See [SECURITY.md](../../SECURITY.md) · [CONTRIBUTING.md](../../CONTRIBUTING.md) · [CHANGELOG.md](../../CHANGELOG.md)
 
 *Kavach — proof.*
 
