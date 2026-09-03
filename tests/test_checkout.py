@@ -86,8 +86,9 @@ def test_replay_mode_never_pretends_to_take_a_payment(db, monkeypatch):
     ok, why = checkout.available()
     assert not ok and "KAVACH_MODE" in why
     with pytest.raises(checkout.CheckoutError) as e:
-        checkout.start(db, cart=CART, mandate_id="m", agent_id="a", admission_seq=1,
-                       admission_hash="h", now=T)
+        checkout.start(db, admission={"cart_id": "c", "merchant_id": "m", "amount_minor": 100,
+                                      "agent_id": "a", "seq": 1, "event_hash": "h"},
+                       mandate_id="m", now=T)
     assert e.value.code == "checkout_unavailable" and e.value.status == 503
 
 
@@ -99,24 +100,51 @@ def test_a_live_key_that_is_not_a_test_key_is_refused(monkeypatch):
     assert not ok and "TEST" in why
 
 
+def _admit(db, *, cart_id="cart_1", total=50_900, merchant="merchant_bazaar_direct",
+           agent="agent_y"):
+    """The gate's admission event, written the way mandate.record_admission writes it."""
+    from kavach.eventlog import append
+    append(db, source="gate", external_id=f"admission:{cart_id}", entity_type="mandate",
+           entity_id="mnd_x", event_type="gate.admitted",
+           payload={"cart_id": cart_id, "merchant_id": merchant, "total_minor": total,
+                    "agent_id": agent, "lines": []},
+           occurred_at=T, received_at=T, sig_verified=True)
+    return checkout.admitted(db, cart_id)
+
+
+def test_an_unadmitted_cart_has_no_price(db):
+    assert checkout.admitted(db, "cart_never_admitted") is None
+
+
+def test_the_order_is_priced_by_the_admission_not_by_the_caller(db):
+    """A caller who admits something cheap must not be able to pay for something dear."""
+    c = StubClient()
+    adm = _admit(db, cart_id="cart_cheap", total=10_000)
+    out = checkout.start(db, admission={**adm, "amount_minor": adm["amount_minor"]},
+                         mandate_id="mnd_x", now=T, client=c)
+    assert out["amount_minor"] == 10_000
+    assert c.orders[out["order_id"]]["amount"] == 10_000
+    # the admission's own numbers, read back from the log
+    assert checkout.admitted(db, "cart_cheap")["amount_minor"] == 10_000
+
+
 def test_start_records_the_order_with_the_admission_hash_in_razorpays_notes(db):
     c = StubClient()
-    out = checkout.start(db, cart=CART, mandate_id="mnd_x", agent_id="agent_y",
-                         admission_seq=7, admission_hash="abc123", now=T, client=c)
-    assert out["amount_minor"] == 32_900 + 18_000
+    adm = _admit(db)
+    out = checkout.start(db, admission=adm, mandate_id="mnd_x", now=T, client=c)
+    assert out["amount_minor"] == 50_900
     assert out["key_id"] == "rzp_test_stub"
     assert "secret" not in str(out).lower()
-    assert c.orders[out["order_id"]]["notes"]["kavach_admission_hash"] == "abc123"
-    ev = db.execute("SELECT * FROM events").fetchall()
+    assert c.orders[out["order_id"]]["notes"]["kavach_admission_hash"] == adm["event_hash"]
+    ev = db.execute("SELECT * FROM events WHERE entity_type='checkout'").fetchall()
     assert len(ev) == 1 and ev[0]["event_type"] == "checkout.order.created"
     assert ev[0]["sig_verified"] == 0
-    assert ev[0]["entity_type"] == "checkout"          # never an obligation
 
 
 def test_a_bad_signature_records_nothing(db):
     c = StubClient()
-    o = checkout.start(db, cart=CART, mandate_id="m", agent_id="a", admission_seq=1,
-                       admission_hash="h", now=T, client=c)
+    o = checkout.start(db, admission=_admit(db, cart_id=f"cart_{id(c) % 9999}"),
+                       mandate_id="m", now=T, client=c)
     pid = c.pay(o["order_id"])
     with pytest.raises(checkout.CheckoutError) as e:
         checkout.confirm(db, order_id=o["order_id"], payment_id=pid, signature="nope",
@@ -128,8 +156,8 @@ def test_a_bad_signature_records_nothing(db):
 
 def test_a_good_signature_yields_a_probable_fact_and_a_certain_preview(db):
     c = StubClient()
-    o = checkout.start(db, cart=CART, mandate_id="m", agent_id="a", admission_seq=1,
-                       admission_hash="h", now=T, client=c)
+    o = checkout.start(db, admission=_admit(db, cart_id=f"cart_{id(c) % 9999}"),
+                       mandate_id="m", now=T, client=c)
     pid = c.pay(o["order_id"])
     out = checkout.confirm(db, order_id=o["order_id"], payment_id=pid,
                            signature=_sig(o["order_id"], pid), now=T + 40, client=c,
@@ -152,8 +180,8 @@ def test_a_good_signature_yields_a_probable_fact_and_a_certain_preview(db):
 
 def test_status_polls_the_order_until_a_payment_is_observed(db):
     c = StubClient()
-    o = checkout.start(db, cart=CART, mandate_id="m", agent_id="a", admission_seq=1,
-                       admission_hash="h", now=T, client=c)
+    o = checkout.start(db, admission=_admit(db, cart_id=f"cart_{id(c) % 9999}"),
+                       mandate_id="m", now=T, client=c)
     s0 = checkout.status(db, order_id=o["order_id"], now=T + 5, client=c)
     assert s0["paid"] is False and s0["payment_id"] is None
     c.pay(o["order_id"])
@@ -164,8 +192,8 @@ def test_status_polls_the_order_until_a_payment_is_observed(db):
 
 def test_the_phone_link_is_created_once_and_reused(db):
     c = StubClient()
-    o = checkout.start(db, cart=CART, mandate_id="m", agent_id="a", admission_seq=1,
-                       admission_hash="h", now=T, client=c)
+    o = checkout.start(db, admission=_admit(db, cart_id=f"cart_{id(c) % 9999}"),
+                       mandate_id="m", now=T, client=c)
     a = checkout.link(db, order_id=o["order_id"], now=T, client=c)
     b = checkout.link(db, order_id=o["order_id"], now=T + 1, client=c)
     assert a["link_id"] == b["link_id"] and not a["reused"] and b["reused"]

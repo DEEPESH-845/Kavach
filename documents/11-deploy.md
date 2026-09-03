@@ -97,6 +97,26 @@ From then on a payment made in the Bazaar is observed twice — once by the API 
 (`DERIVED_PROBABLE`) and once by the signed webhook (`DERIVED_CERTAIN`) — and the truth
 panel shows the upgrade for real rather than as the labelled preview.
 
+## There is no authentication, deliberately — and what that means
+
+Kavach ships no login. Every screen and every endpoint is open to whoever can reach the
+URL. That is right for a demonstration a judge should be able to open and drive, and it is
+wrong for anything else. Before this sits in front of a real ledger:
+
+- Put it behind an identity proxy (Cloudflare Access, IAP, your own SSO) — the API is
+  stateless, so there is nothing session-shaped to retrofit.
+- Set `KAVACH_DEMO=0` so `POST /api/demo/reset` disappears. It deletes the ledger.
+- Set `KAVACH_TRUST_PROXY=1` only once something in front of you actually sets
+  `X-Forwarded-For`; until then the rate limiter keys on the socket peer, which cannot be
+  spoofed by a header.
+- Know that anyone holding an `order_...` id can read that checkout's status. Order ids are
+  Razorpay's, not guessable, and carry no personal data — but they are not a secret either.
+
+The controls that are NOT relaxed for the demo: webhook HMAC is fail-closed, the checkout
+signature is verified with the secret server-side, policy limits are compiled in with no
+endpoint that edits them, a step-up token is 192 random bits with a ten-minute life, and
+the tamper demonstration writes only to an in-memory copy.
+
 ## Verifying a deployment
 
 ```bash
