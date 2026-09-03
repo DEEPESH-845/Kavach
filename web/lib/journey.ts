@@ -119,6 +119,9 @@ function restore(): Partial<JourneyState> | null {
 /* ── actions ────────────────────────────────────────────────────────────────── */
 
 export const journey = {
+  /** The current state, for callers outside React (the tour's drivers). */
+  snapshot(): JourneyState { return state; },
+
   /** Fetch the storefront once; keep whatever the session already had. */
   async load() {
     if (state.store) return;

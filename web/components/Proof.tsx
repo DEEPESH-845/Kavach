@@ -26,7 +26,7 @@ export function Proof() {
   return (
     <section className="sec sec--proof" id="proof" ref={ref}>
       <div className="wrap">
-        <motion.p className="eyebrow" {...settle}>09 — the shared spine</motion.p>
+        <motion.p className="eyebrow" {...settle}>10 — the shared spine</motion.p>
         <Kinetic text="Every fact cites the *events behind it.*" />
         <motion.p className="body" {...settle}>
           Facts are derived from an append-only log, never asserted. A decision replayed against
@@ -56,8 +56,6 @@ export function Proof() {
 
         <motion.p className="body" {...settle}>
           The obligation is open because <em>no event closes it</em> — not because a model guessed.
-          Replay those events against the same clock in six months and the verdict is identical,
-          which is the only form a dispute can actually use.
         </motion.p>
 
         <motion.dl className="facts" {...settle}>

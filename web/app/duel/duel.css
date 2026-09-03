@@ -1,0 +1,73 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   THE DUEL — one attack sequence, two lanes.
+
+   Left lane: the boundary bypassed; everything executes. Right lane: Kavach.
+   The numbers are the backend's; the only thing this stylesheet animates is
+   their arrival. Oxide is money that left; jade is money that did not.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+body:has(.duel) { overflow: auto; }
+.console.duel { min-height: 100dvh; }
+
+.duel .dl-wrap { width: min(100% - clamp(28px, 6vw, 56px), 1240px); margin-inline: auto; padding-bottom: 48px; }
+.duel .dl-head { padding: clamp(22px, 4vw, 40px) 0 18px; display: flex; gap: 18px; align-items: end; flex-wrap: wrap; }
+.duel .dl-head h1 { margin: 0; color: var(--bone); font-weight: 500; letter-spacing: -.03em; font-size: clamp(1.5rem, 3vw, 2.2rem); line-height: 1.08; }
+.duel .dl-head p { margin: 6px 0 0; max-width: 64ch; color: var(--fog); font-size: 14px; }
+.duel .dl-acts { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* the scoreboard */
+.duel .dl-board { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px; }
+.duel .dl-lane {
+  position: relative; padding: 18px 20px; border-radius: 14px; border: 1px solid var(--seam);
+  background: var(--slab); overflow: hidden;
+}
+.duel .dl-lane::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 4px; }
+.duel .dl-lane[data-lane='ungoverned']::before { background: var(--oxide); }
+.duel .dl-lane[data-lane='kavach']::before { background: var(--jade); }
+.duel .dl-lane small { display: block; font-family: var(--mono); font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--fog2); }
+.duel .dl-lane h2 { margin: 2px 0 10px; color: var(--bone); font-size: 16px; font-weight: 500; }
+.duel .dl-big { font-family: var(--mono); font-size: clamp(1.8rem, 4vw, 2.8rem); letter-spacing: -.03em; line-height: 1; color: var(--bone); font-variant-numeric: tabular-nums; }
+.duel .dl-lane[data-lane='ungoverned'] .dl-big { color: var(--oxide); }
+.duel .dl-lane[data-lane='kavach'] .dl-big { color: var(--jade); }
+.duel .dl-sub { margin-top: 6px; font-size: 12.5px; color: var(--fog); }
+.duel .dl-sub b { color: var(--bone); font-weight: 500; font-family: var(--mono); }
+@media (max-width: 720px) { .duel .dl-board { grid-template-columns: 1fr; } }
+
+/* the steps */
+.duel .dl-steps { display: grid; gap: 10px; }
+.duel .dl-step {
+  display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1fr); gap: 10px;
+  align-items: stretch; opacity: .28; transition: opacity var(--t-norm);
+}
+.duel .dl-step[data-on] { opacity: 1; animation: dl-in 420ms var(--e-reveal) both; }
+@keyframes dl-in { from { transform: translateY(8px); opacity: .28; } to { transform: none; opacity: 1; } }
+.duel .dl-act { padding: 12px 14px; border-radius: 10px; background: var(--slab); border: 1px solid var(--seam); min-width: 0; }
+.duel .dl-act .n { font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em; color: var(--fog2); }
+.duel .dl-act h3 { margin: 4px 0 4px; font-size: 14px; color: var(--bone); font-weight: 500; line-height: 1.3; }
+.duel .dl-act p { margin: 0; font-size: 12px; color: var(--fog); }
+.duel .dl-act .amt { display: inline-block; margin-top: 8px; font-family: var(--mono); font-size: 13px; color: var(--bone); }
+.duel .dl-out { padding: 12px 14px; border-radius: 10px; border: 1px solid var(--seam); background: var(--raise); min-width: 0; display: grid; align-content: start; gap: 6px; }
+.duel .dl-out[data-k='exec'] { border-color: color-mix(in srgb, var(--oxide) 45%, var(--seam)); }
+.duel .dl-out[data-k='ok'] { border-color: color-mix(in srgb, var(--jade) 45%, var(--seam)); }
+.duel .dl-out[data-k='refused'] { border-color: color-mix(in srgb, var(--jade) 65%, var(--seam)); background: var(--jade-wash); }
+.duel .dl-out .v { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 13px; color: var(--bone); }
+.duel .dl-out .v b { font-weight: 500; }
+.duel .dl-out[data-k='exec'] .v b { color: var(--oxide); }
+.duel .dl-out[data-k='refused'] .v b, .duel .dl-out[data-k='ok'] .v b { color: var(--jade); }
+.duel .dl-out .why { font-size: 12px; color: var(--fog); line-height: 1.45; }
+.duel .dl-out .by { font-family: var(--mono); font-size: 11px; color: var(--steel); }
+.duel .dl-out .run { font-family: var(--mono); font-size: 11px; color: var(--fog2); }
+@media (max-width: 860px) {
+  .duel .dl-step { grid-template-columns: 1fr; }
+  .duel .dl-out::before { content: attr(data-lane); font-family: var(--mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--fog2); }
+}
+.duel .dl-lanehead { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1fr); gap: 10px; margin: 6px 0; }
+.duel .dl-lanehead span { font-family: var(--mono); font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--fog2); }
+@media (max-width: 860px) { .duel .dl-lanehead { display: none; } }
+
+.duel .dl-foot { margin-top: 18px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; font-size: 12.5px; color: var(--fog2); }
+
+@media (prefers-reduced-motion: reduce) {
+  .duel .dl-step { transition: none; }
+  .duel .dl-step[data-on] { animation: none; }
+}

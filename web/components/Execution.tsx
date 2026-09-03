@@ -16,12 +16,12 @@ gsap.registerPlugin(ScrollTrigger);
  *
  * MOTION SEMANTICS. Execution is DIRECTIONAL — this is the only place on the page where
  * anything travels rightward, because it is the only place anything leaves us. The
- * answer travels back leftward along its own wire. Chapter 07 is convergent instead, and
+ * answer travels back leftward along its own wire. Chapter 08 is convergent instead, and
  * the reader should be able to tell the two apart with the labels covered.
  *
  * The sequence is `pkg/kavach/governor.py` read out loud: reserve → APPROVED → commit →
  * provider call → EXECUTED, with the crash window between the commit and the settle
- * stated rather than hidden, because the reconciler in chapter 07 only exists because
+ * stated rather than hidden, because the reconciler in chapter 08 only exists because
  * that window is real.
  *
  * Every animated property is transform or opacity. Nothing here touches layout.
@@ -170,7 +170,7 @@ export function Execution() {
                 The rail. We do not control it, and nothing on this page pretends we can see
                 past it. The asymmetry below is the honest shape of the integration:
               </p>
-              {/* Naming what we cannot observe is not an apology — it is the reason chapter 07
+              {/* Naming what we cannot observe is not an apology — it is the reason chapters 07 and 08
                   exists. `truth.py` returns these conditions as AMBIGUOUS with a stated reason
                   rather than inventing a value, and the empty half of this diagram is that
                   same refusal drawn at page scale. */}
@@ -208,7 +208,7 @@ export function Execution() {
   );
 }
 
-/* CHAPTER 07 — reconciliation, which has to FEEL different from chapter 06 or the
+/* CHAPTER 08 — reconciliation, which has to FEEL different from chapter 06 or the
  * distinction it exists to draw is lost.
  *
  * Execution was one thing travelling in one direction. Reconciliation is three separate
@@ -319,7 +319,7 @@ export function Reconcile() {
     <section className="rc" id="reconcile" ref={ref}>
       <div className="rc__sticky">
         <div className="wrap rc__wrap">
-          <p className="eyebrow">07 — you do not trust the intent, you observe the outcome</p>
+          <p className="eyebrow">08 — you do not trust the intent, you observe the outcome</p>
 
           <div className="rc__lane" aria-hidden>
             <span className="rc__hook mono">webhook · refund.processed · sig_verified</span>

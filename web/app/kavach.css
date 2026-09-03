@@ -739,14 +739,14 @@ html[data-file] .offline {
 }
 
 /* ═════════════════════════════════════════════════════════════════════════════
-   THE OUTBOUND HALF — chapters 05, 06, 07, and the chain that resolves them.
+   THE OUTBOUND HALF — chapters 05, 06, 08, and the chain that resolves them.
 
    Three rules carry all of it, and each is the design system's existing rule
    applied at a larger scale:
 
    1. DIRECTION IS MEANING. Chapter 06 is the only place on the page where
       anything travels rightward, because it is the only place anything leaves
-      us. Chapter 07 only ever converges. Nothing in either is decorative
+      us. Chapter 08 only ever converges. Nothing in either is decorative
       travel, so a reader can tell "we acted" from "we observed" with the
       labels covered.
 
@@ -1126,3 +1126,303 @@ html[data-degraded] .rc__resolved { grid-area: auto; }
 .mag { display: inline-flex; }
 .door .mag { align-self: flex-start; margin-top: 20px; }
 .door .mag .btn { margin-top: 0; }
+
+/* ── 07 · the distance: the trust boundary, at the scale it actually spans ────
+   The one place the page leaves its container. Everything above and below runs in a
+   1120px column against the void; this runs to the viewport edges, so the reader does
+   not need to be told the boundary is large — the layout stops being able to hold it.
+
+   Three rules, each the design system's existing rule at a larger scale:
+
+   1. THE DOT IS THE MARK. The land is a grid of 1:1 squares, which is the hero's
+      ambient field with the earth under it rather than a new object. Nothing on this
+      page is round and nothing here is either.
+
+   2. COLOUR IS DETERMINISM, unchanged. The observed leg is steel because it is
+      provable. The five unobserved ones are fog, and their stroke is a gradient that
+      reaches zero before the endpoint does — they do not arrive, because we do not know
+      that they did.
+
+   3. THE MAP IS THE GROUND, NOT A CARD. No border, no radius, no panel. It is masked
+      out at every edge so it reads as an environment the copy is standing in, which is
+      also what keeps it clear of the fixed spine and chapter list.
+
+   Node and label sizes are custom properties in SVG user units, so the phone gets a
+   re-composed drawing rather than a scaled-down one. */
+
+.dist { padding: clamp(80px, 11vh, 132px) 0; overflow: hidden; }
+/* one cell, two layers: the section is as tall as whichever of them is taller */
+.dist__stage { display: grid; }
+.dist__body, .dist__canvas { grid-area: 1 / 1; }
+.dist__body { position: relative; z-index: 1; align-self: center; }
+/* NO SCRIM, BECAUSE NOTHING OVERLAPS ANY MORE.
+   The copy used to stand ON the drawing behind a radial patch of --void, since --fog over
+   the dot field measures 3.3:1 and misses AA. That patch was 480px wide and the two
+   American destinations project to x≈355 at 1440 — so the chapter said `5 legs` and drew
+   three, with the other two painted out by its own contrast fix. Two of five is not a
+   detail on a drawing whose entire subject is the ratio.
+   The canvas is inset from the left instead (below), which costs some width and buys the
+   whole argument: every endpoint visible, no scrim, no rim, and --fog on plain --void. */
+.dist__copy { position: relative; max-width: 36ch; }
+.dist__copy .h2 { max-width: 15ch; }
+
+/* Bleeds off the RIGHT edge only. The fan opens westward out of Mumbai, so the drawing's
+   free space is its left third — which is exactly where the copy column is. Giving that
+   third back to the type puts the whole fan, both American endpoints included, in the
+   clear. It is still edge-to-edge in the direction the argument travels. */
+.dist__canvas {
+  position: relative; z-index: 0; align-self: center;
+  margin-left: 34%;
+  margin-right: calc(var(--rail-r) * -1);
+  aspect-ratio: 116 / 60;
+  /* Dissolved at every edge rather than cropped, so no coastline ends on a straight
+     line and the fixed spine and chapter list have quiet ground to sit on. ONE layer,
+     not two crossed linear ones: `mask-composite` is the only thing that would make a
+     pair intersect, and where it is unsupported a pair unions instead — which is no
+     fade at all. A single radial cannot fail that way. */
+  --dist-edge: radial-gradient(120% 126% at 50% 50%, #000 60%, transparent 100%);
+  -webkit-mask-image: var(--dist-edge);
+          mask-image: var(--dist-edge);
+}
+
+/* the land. One node, one cached request, no JavaScript: scripts/world-map.mjs baked
+   the grid into public/world.svg and this paints a colour through it. */
+.dist__world {
+  position: absolute; inset: 0;
+  -webkit-mask: url(/world.svg) center / cover no-repeat;
+          mask: url(/world.svg) center / cover no-repeat;
+}
+@supports (mask-image: url(/world.svg)) or (-webkit-mask-image: url(/world.svg)) {
+  .dist__world { background: var(--seam2); }
+}
+
+.dist__legs {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  /* User units, and only until the component measures the live scale — see
+     useMarkScale() in Distance.tsx. These are the right values for a wide screen, so
+     the prerendered frame is correct before any JavaScript runs. */
+  --dist-node: 0.46;      /* the rect inside is authored at 1 × 1.4 */
+  --dist-label: 0.86px;   /* one px in an SVG is one user unit */
+}
+/* stop-color is a CSS property, so the gradient reads the palette from here */
+.dist__legs stop { stop-color: var(--fog); }
+
+.dist__leg { fill: none; stroke-width: 1.4; vector-effect: non-scaling-stroke; }
+.dist__leg--sure { stroke: var(--steel); stroke-width: 1.5; }
+
+.dist__node { transform: scale(var(--dist-node)); transform-box: fill-box; transform-origin: center; }
+.dist__node rect { fill: none; stroke: var(--fog2); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.dist__node[data-k="sure"] rect { fill: var(--steel); stroke: none; }
+.dist__node[data-k="us"] rect { stroke: var(--bone); }
+
+/* the travelling mark: the same object as a node, moving. Outer <g> is GSAP's; this
+   scales the inner one, so a tween and a stylesheet are never writing one transform. */
+/* The same size as a node, not larger. A mark in flight is already the only filled,
+   moving thing on the drawing; scaling it up as well made it heavier than the endpoints
+   it is travelling between, which inverts what the chapter is about. */
+.dist__flight-m {
+  transform: scale(var(--dist-node));
+  transform-box: fill-box; transform-origin: center;
+}
+/* HIDDEN AT REST, and hidden in the stylesheet rather than by the scene. useScene does
+   not run at all under prefers-reduced-motion, so anything the scene hides stays visible
+   there — which parked all seven marks in a stack at the map's top-left corner. A still
+   drawing has nothing in flight, so opacity 0 is the correct resting state and the scene
+   only ever widens what is visible. */
+.dist__flight { opacity: 0; }
+.dist__flight rect { fill: var(--fog); }
+.dist__flight--sure rect { fill: var(--steel); }
+
+.dist__label {
+  font-family: var(--mono); font-size: var(--dist-label); letter-spacing: 0.16em;
+  fill: var(--fog2);
+}
+.dist__label[data-k="us"] { fill: var(--fog); }
+
+/* the drawing's claim, in words, because that is what a screen reader is owed */
+.dist__key { display: grid; gap: 0; margin: 2.4em 0 2em; max-width: 34ch; }
+.dist__key > div {
+  display: grid; grid-template-columns: 1fr auto; gap: 4px 18px; align-items: baseline;
+  padding: 12px 0 12px 14px; border-top: 1px solid var(--seam); position: relative;
+}
+.dist__key > div::before {
+  content: ''; position: absolute; left: 0; top: 12px; bottom: 12px; width: 1px;
+  background: var(--seam2);
+}
+.dist__key > div[data-k="sure"]::before { background: var(--steel); }
+.dist__key dt {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--fog2);
+}
+.dist__key > div[data-k="sure"] dt { color: var(--steel); }
+.dist__key dd { margin: 0; font-size: 0.84rem; color: var(--fog2); text-align: right; }
+.dist__n { color: var(--bone); font-variant-numeric: tabular-nums; }
+
+/* ── responsive: the copy on top of the drawing, not beside it ───────────── */
+@media (max-width: 1279px) {
+  /* Below this the copy column and the fan stop having room to sit side by side, so they
+     stop trying: the argument reads first and the ground follows it, full width. The old
+     threshold was 1000px, chosen for an overlay that no longer exists — a 34% inset needs
+     more room to stay clear of the type than a scrim did to sit under it. */
+  .dist__stage { display: block; }
+  .dist__canvas {
+    margin: clamp(32px, 5vh, 56px) calc(var(--rail-r) * -1) 0 calc(var(--rail) * -1);
+    aspect-ratio: 116 / 52;
+  }
+  .dist__copy, .dist__copy .h2 { max-width: none; }
+  .dist__key { max-width: 46ch; }
+}
+@media (max-width: 860px) {
+  /* a taller frame, and `slice` crops the empty Pacific rather than the destinations —
+     every endpoint stays inside x 22..114 at this ratio */
+  .dist__canvas { aspect-ratio: 116 / 72; }
+  .dist__leg { stroke-width: 1.35; }
+}
+
+/* ── reduced motion: the finished drawing, drawn ─────────────────────────── */
+/* useScene never runs, so nothing above is hidden to begin with — the resting CSS is
+   already the resolved composition. Nothing to restore here, and that is the point. */
+
+/* ── the seam between 08 and 09: one intent becomes the population ───────── */
+/* The only place on the page where something MOVES rather than being drawn. It sits
+   between the last single-transaction chapter and the first population one, and both of
+   its neighbours are quiet on purpose — 08 resolves and stops, 09 opens on a table.
+   Whatever this band does, it does alone. */
+
+.ls  { position: relative; width: 100%; height: 100%; }
+.ls__c { width: 100%; height: 100%; }
+
+/* NO `overflow` HERE. It clips to the section's padding box, which begins at the rail —
+   so it cuts the full-bleed field back to the column and puts the hard vertical edge back,
+   one rail in from each side. Nothing in this section overflows once the field lands
+   exactly on the viewport, and `body { overflow-x: hidden }` is the backstop if it ever
+   does. Same reason the top of this file refuses an overflow value on .stage__sticky's
+   ancestors: an overflow property is never local. */
+.vel {
+  position: relative; display: flex; align-items: center;
+  min-height: min(74vh, 740px);
+  padding: clamp(96px, 14vh, 168px) 0;
+}
+
+/* full bleed: out through both rails, to the edges of the viewport — the same escape
+   chapter 07 uses, so the two full-width moments on the page have one geometry */
+/* EXACTLY the viewport, not a pixel more. An overshoot of one gutter, the way chapter 07
+   escapes, has to be cropped by `overflow: hidden` on the section — and the section's box
+   starts at the rail, so the crop lands INSIDE the screen and draws a hard vertical edge
+   through half-faded streaks. Landing on the viewport edge instead means there is no seam
+   to see, because there is no page beyond it to see one against. */
+.vel__field {
+  position: absolute; top: 0; bottom: 0; z-index: 0;
+  left:  calc(var(--rail) * -1);
+  right: calc(var(--rail-r) * -1);
+  /* The vanishing point is off-centre, to the right of the copy column, so the densest
+     part of the field is never the part behind the type. Read by LightSpeed at every
+     resize, which is why the phone layout can move it back without a branch in the TSX. */
+  --ls-ox: 0.62;
+  --ls-oy: 0.5;
+  /* VERTICAL ONLY, and one layer. The band has to dissolve where it meets the chapters
+     above and below it; it does not have to dissolve left and right, because those edges
+     are the screen's. A radial that actually reaches transparent on all four sides is the
+     ellipse inscribed in the box, which throws away the corners and undoes the bleed —
+     and any radial that does NOT reach transparent leaves the top and bottom edges lit.
+     A single linear on the axis that needs it has neither problem, and cannot union
+     wrongly the way a crossed pair does where mask-composite is unsupported. */
+  --vel-edge: linear-gradient(180deg,
+    transparent 0%, #000 24%, #000 76%, transparent 100%);
+  -webkit-mask-image: var(--vel-edge);
+          mask-image: var(--vel-edge);
+  /* THE RESTING STATE. If the bundle never arrives, or the canvas never paints, this is
+     what is left: the same vanishing point, lit. The composition survives the animation
+     not running, which is the only test a decorative layer has to pass. */
+  background: radial-gradient(30% 52% at calc(var(--ls-ox) * 100%) calc(var(--ls-oy) * 100%),
+    color-mix(in srgb, var(--seam) 26%, transparent) 0%, transparent 70%);
+}
+
+/* THE SCRIM LIVES ON THE FIELD, NOT BEHIND THE TYPE.
+   --fog over lit streaks measures under AA, so the copy needs ground. Two obvious ways to
+   give it ground both fail: a bordered panel turns an environment back into a component
+   demo, and a scrim sized to the text block — chapter 07's radial — has a visible rim here,
+   because 07 sits on a static dot field and this sits on moving light. Worse, `.vel` clips
+   at the rail, so anything anchored to the copy column shows a hard vertical cut there.
+   Fading the FIELD instead has no edge to show: it spans the whole viewport, so a horizontal
+   gradient across it starts off-screen, and it inherits the field's own radial dissolve at
+   the top and bottom. */
+.vel__field::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background:
+    /* the copy column */
+    linear-gradient(90deg,
+      var(--void) 4%,
+      color-mix(in srgb, var(--void) 74%, transparent) 32%,
+      transparent 58%),
+    /* and the chapter list, which lives in the right rail and was reading its own numbers
+       through the brightest part of the field. Backgrounds stack; masks do not, which is
+       why this is here and not in --vel-edge. */
+    linear-gradient(270deg,
+      var(--void) 0%,
+      color-mix(in srgb, var(--void) 58%, transparent) 6%,
+      transparent 12%);
+}
+
+.vel__copy { position: relative; z-index: 1; max-width: 46ch; }
+/* Ground, not a card. --fog over lit streaks measures under AA, and a bordered panel here
+   would turn an environment back into a component demo. Sized to the text, no edge. */
+.vel__copy .h2 { max-width: 15ch; }
+.vel__foot { margin-bottom: 0; }
+
+@media (max-width: 860px) {
+  /* Below this the copy column and the field stop having room to share a cell, so they
+     stop sharing one — the sentence reads first and the field follows it. Same resolution
+     chapter 07 makes at the same width, so the page has one narrow-screen habit. */
+  .vel { display: block; min-height: 0; padding: clamp(80px, 11vh, 120px) 0; }
+  .vel__field {
+    position: relative; inset: auto; height: auto; aspect-ratio: 1 / 1;
+    margin: clamp(32px, 5vh, 56px) calc(var(--rail-r) * -1) 0 calc(var(--rail) * -1);
+    --ls-ox: 0.5;
+    --vel-edge: linear-gradient(180deg,
+      transparent 0%, #000 20%, #000 78%, transparent 100%);
+  }
+  /* the copy is above the field now, not on it, so it needs no ground */
+  .vel__field::after { display: none; }
+  .vel__copy { max-width: none; }
+}
+
+/* ── reduced motion: the field, held ─────────────────────────────────────── */
+/* The band keeps its picture — LightSpeed composes one frame mid-flight and never asks
+   for another — so nothing here has to hide it. Only the height comes down, because a
+   still image does not need three quarters of a viewport to be looked at. */
+@media (prefers-reduced-motion: reduce) {
+  .vel { min-height: min(56vh, 520px); }
+}
+
+
+/* ── the journey strip: the product in one line ──────────────────────────── */
+.js { padding-top: clamp(40px, 6vh, 72px); padding-bottom: clamp(48px, 7vh, 88px); }
+.js__track { position: relative; margin: 1.6em 0 0; }
+.js__line {
+  position: absolute; left: 0; right: 0; top: 17px; height: 1px; background: var(--seam2);
+  transform-origin: 0 50%;
+}
+.js__nodes {
+  list-style: none; margin: 0; padding: 0; display: grid;
+  grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 10px; position: relative;
+}
+.js__node { min-width: 0; }
+.js__link { display: grid; gap: 6px; text-decoration: none; color: inherit; min-width: 0; }
+.js__link:hover .js__t { color: var(--bone); }
+.js__n {
+  width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;
+  border: 1px solid var(--seam2); background: var(--void); color: var(--fog); font-size: 10.5px;
+  letter-spacing: .06em;
+}
+.js__node[data-tone="steel"] .js__n { border-color: var(--steel); color: var(--steel); }
+.js__node[data-tone="amber"] .js__n { border-color: var(--amber); color: var(--amber); }
+.js__node[data-tone="bone"]  .js__n { border-color: var(--bone); background: var(--bone); color: var(--void); }
+.js__node[data-tone="jade"]  .js__n { border-color: #74bd93; color: #74bd93; }
+.js__t { color: var(--fog); font-weight: 500; font-size: .95rem; letter-spacing: -.01em; }
+.js__d { color: var(--fog2); font-size: .8rem; line-height: 1.35; }
+@media (max-width: 980px) {
+  .js__nodes { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 22px; }
+  .js__line { display: none; }
+}
+@media (max-width: 520px) { .js__nodes { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

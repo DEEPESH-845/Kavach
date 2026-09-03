@@ -50,7 +50,7 @@ export function Evidence() {
   return (
     <section className="sec" id="evidence" ref={ref}>
       <div className="wrap">
-        <motion.p className="eyebrow" {...settle}>08 — measured, on a held-out split</motion.p>
+        <motion.p className="eyebrow" {...settle}>09 — measured, on a held-out split</motion.p>
         <Kinetic text="Same human cost. Thirteen times less money out the door." />
         <motion.p className="body" {...settle}>
           Every system below escalates the identical share of intents, because “escalate

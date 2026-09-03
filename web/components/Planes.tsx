@@ -21,6 +21,9 @@ export function Planes() {
     rise(q('.plane, .planes > .eyebrow'), { trigger: '.planes', stagger: 0.055 });
   });
 
+  const builtNs = PLANES.filter((p) => p.built).map((p) => p.n).join('');
+  const plannedNs = PLANES.filter((p) => !p.built).map((p) => p.n).join('');
+
   return (
     <section className="sec sec--planes" id="gradient" ref={ref}>
       <div className="wrap">
@@ -82,11 +85,13 @@ export function Planes() {
         </motion.p>
         <motion.p className="note" {...settle}>
           <em>State, stated.</em>{' '}
-          {PLANES.filter((p) => p.built).map((p) => p.n).join('')} are in the tree and under test.{' '}
-          {PLANES.filter((p) => !p.built).map((p) => p.n).join('')} are specified and not written
-          yet — the design is in <span className="mono">documents/specs/</span>. The latencies are
-          per-plane <em>budgets</em>, not measurements; the only measured numbers on this page are
-          in <a className="link" href="#evidence">Evidence</a>.
+          {builtNs} are in the tree and under test.
+          {plannedNs !== '' && (
+            <> {plannedNs} are specified and not written yet — the design is in{' '}
+              <span className="mono">documents/specs/</span>.</>
+          )}{' '}
+          The latencies are per-plane <em>budgets</em>, not measurements; the only measured
+          numbers on this page are in <a className="link" href="#evidence">Evidence</a>.
         </motion.p>
       </div>
     </section>
