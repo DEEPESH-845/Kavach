@@ -538,6 +538,11 @@ export type McpTools = {
   tools: McpTool[];
   status: { tools: number; read_only: boolean; toolsets: string[]; mode: string };
   suggested_target: { payment_id: string; amount_minor: number; order_id: string } | null;
+  duplicate_target: {
+    payment_id: string; refund_id: string; amount_minor: number; open_for_seconds: number;
+    intent_age_seconds: number; reason_text: string; confidence: string; rail_state: string;
+    asks: number;
+  } | null;
   seeded_targets: string[];
   config: Record<string, unknown>;
   parity: { toolsets: string[]; flags: string[]; note: string };

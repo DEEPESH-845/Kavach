@@ -53,7 +53,14 @@ def _refund(conn, now: int, refund_id: str, payment_id: str, amount_minor: int, 
                             "amount": amount_minor, "currency": "INR", "speed": "normal"}
     if arn:
         body["acquirer_data"] = {"arn": arn}
-    append(conn, source="seed", external_id=f"seed:{refund_id}:{status}",
+    # The external id has to distinguish an ARN ARRIVING from the dispatch that preceded
+    # it. Both are `refund.processed` -- Razorpay sends no further status -- so keying on
+    # status alone made the two collide, eventlog's (source, external_id) guard dropped the
+    # second as a duplicate, and the refund the seed meant to show as CREDITED stayed OPEN
+    # for ever. The demo then displayed two obligations in flight where it intended one,
+    # and never showed an obligation closing at all.
+    append(conn, source="seed",
+           external_id=f"seed:{refund_id}:{status}{':arn' if arn else ''}",
            entity_type="refund", entity_id=refund_id, parent_entity_id=payment_id,
            event_type=f"refund.{status}",
            payload={"payload": {"refund": {"entity": body}}},
@@ -169,6 +176,18 @@ def seed_conn(conn: sqlite3.Connection, *, reset: bool = True,
             executed_as="rfnd_R7L8OPEN0001")
     # Razorpay says 'processed'. No ARN. The customer has NOT been credited.
     _refund(conn, now, "rfnd_R7L8OPEN0001", "pay_R7L8vaB3xTe9", 84_900, 40 * 60)
+
+    # -- 75m ago: RESERVED FOR THE JUDGE. A second order with a refund in flight and no
+    #    second ask against it, so the duplicate the MCP console demonstrates is one the
+    #    judge creates rather than one the seed pre-recorded. services/intents
+    #    .duplicate_candidate finds it by that property -- one prior intent, obligation
+    #    open, state DERIVED_CERTAIN -- rather than by name.
+    _payment(conn, now, "pay_R7Sd5pQ2tYm7", 649_900, 100 * 60)
+    _intent(conn, now, agent="agent_cx_tier1", session="sess_k14m", ago=36 * 60,
+            payment="pay_R7Sd5pQ2tYm7", amount_minor=89_900, model=model,
+            reason="Two of the four items were missing from the parcel",
+            executed_as="rfnd_R7SdOPEN0002")
+    _refund(conn, now, "rfnd_R7SdOPEN0002", "pay_R7Sd5pQ2tYm7", 89_900, 35 * 60)
 
     # -- 52m ago: refund larger than the payment. An invariant, so DENY. --------------
     _intent(conn, now, agent="adversary_refund_pump", session="sess_f03d", ago=52 * 60,

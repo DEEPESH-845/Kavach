@@ -806,6 +806,7 @@ def mcp_tools(conn: Conn) -> dict[str, Any]:
     return {
         "tools": m.catalogue(), "status": m.status(),
         "suggested_target": checkout.latest_real_payment(conn),
+        "duplicate_target": intents.duplicate_candidate(conn),
         "seeded_targets": [r["entity_id"] for r in conn.execute(
             "SELECT DISTINCT entity_id FROM events WHERE entity_type='payment' AND "
             "source='seed' ORDER BY seq DESC LIMIT 6")],
@@ -836,9 +837,14 @@ def mcp_call(tool: str, body: McpCallRequest) -> dict[str, Any]:
     except (MoneyError, ValueError) as e:
         raise _fail(422, "invalid_arguments", f"{tool}: {e}") from None
     except RazorpayError as e:
+        detail = f": {e.description}" if e.description else ""
+        hint = ("" if e.status != 400 or "refund" not in e.path else
+                " A test-mode account refunds out of its own balance, so a refund larger "
+                "than that balance is refused here with no specific reason.")
         raise _fail(502, "provider_error",
-                    f"Razorpay answered {e.status} on {e.path}; the decision was recorded "
-                    f"and the intent settled by the failure classifier") from None
+                    f"Razorpay answered {e.status} on {e.path}{detail}. Kavach's decision "
+                    f"was recorded and the intent settled by the failure classifier; no "
+                    f"money moved.{hint}") from None
     except CassetteMismatch:
         raise _fail(503, "replay_no_recording",
                     "replay mode has no recorded provider response for this call; the "

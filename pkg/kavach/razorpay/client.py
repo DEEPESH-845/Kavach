@@ -36,6 +36,20 @@ class RazorpayError(RuntimeError):
         idempotent-unsafe 4xx is how duplicates get created."""
         return self.status >= 500 or self.status == 429
 
+    @property
+    def description(self) -> str:
+        """Razorpay's own error text, which is public and is what an operator needs.
+
+        Their refund API answers a merchant balance shortfall with a bare "invalid request
+        sent" and no reason -- so a caller that only prints the status is telling an
+        operator nothing they can act on, and a caller that guesses a cause is inventing
+        one. Print theirs, and let the caller add the caveat it can actually stand behind.
+        """
+        try:
+            return str(json.loads(self.body).get("error", {}).get("description", ""))[:200]
+        except (json.JSONDecodeError, AttributeError, TypeError):
+            return ""
+
 
 class CassetteMismatch(RuntimeError):
     pass

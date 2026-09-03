@@ -18,6 +18,8 @@ from typing import Any
 from .. import ledger
 from ..eventlog import Event, by_seq, for_entity
 from ..proof import verify_range
+from ..truth import Confidence
+from . import decisions
 from .decisions import DENIED, ESCALATED, REVIEW_STATUSES, UNRESOLVED_STATUSES
 
 _FIELDS = ("intent_id", "agent_id", "session_id", "tool", "target_type", "target_id",
@@ -163,6 +165,77 @@ def detail(conn: sqlite3.Connection, intent_id: str,
             "event_seqs": chain_seqs,
         },
     }
+
+
+def duplicate_candidate(conn: sqlite3.Connection,
+                        now: int | None = None) -> dict[str, Any] | None:
+    """A payment against which a duplicate refund is genuinely possible right now.
+
+    That means: an obligation already OPEN (money dispatched, no ARN) whose intent was
+    recorded long enough ago to look like a re-decision rather than a double-click. The
+    distinction is the product's own (ADR-008): a repeat seconds later is a REPLAYED
+    request, which Razorpay's idempotency key already refuses; a repeat an hour later is a
+    NEW intent for the same obligation, which only the ledger and the estimator can catch.
+    The duplicate-risk model learned that difference -- `log_time_gap` is its largest
+    positive coefficient -- so pointing the demonstration at a fresh payment would be
+    asking the model a question its corpus never contained.
+
+    Returns None when nothing in the ledger qualifies, rather than naming a payment that
+    would not actually escalate.
+    """
+    if now is None:
+        now = int(time.time())
+    best: dict[str, Any] | None = None
+    for f in ledger.open_obligations(conn, now):
+        if f.entity_type != "refund":
+            continue
+        payment_id = _parent_of(conn, f.entity_id)
+        if payment_id is None:
+            continue
+        all_priors = ledger.prior_intents(conn, "payment", payment_id)
+        priors = [i for i in all_priors if i.status == decisions.EXECUTED]
+        if not priors:
+            continue
+        age = now - max(i.created_at for i in priors)
+        # under fifteen minutes is a replay, not a re-decision
+        if age < 900:
+            continue
+        row = {"payment_id": payment_id, "refund_id": f.entity_id,
+               "amount_minor": f.amount_minor, "open_for_seconds": f.unresolved_for,
+               "intent_age_seconds": age, "reason_text": priors[-1].reason_text,
+               "confidence": f.confidence.value, "rail_state": f.rail_state.value,
+               "asks": len(all_priors)}
+        if best is None or _better(row, best):
+            best = row
+    return best
+
+
+def _better(a: dict[str, Any], b: dict[str, Any]) -> bool:
+    """Prefer the obligation whose state Kavach is CERTAIN of, then the oldest intent.
+
+    An AMBIGUOUS obligation already escalates one rung earlier, on truth confidence -- so
+    demonstrating the duplicate estimator against one would credit the model for a refusal
+    the truth plane makes without it. The interesting target is the obligation we are sure
+    is in flight, where only the ledger and the estimator can see the collision.
+    """
+    certain = (a["confidence"] != Confidence.UNKNOWN.value,
+               b["confidence"] != Confidence.UNKNOWN.value)
+    if certain[0] != certain[1]:
+        return certain[0]
+    # Then the obligation nobody has re-asked yet: a target that already carries a second
+    # intent would put the caller's ask THIRD, and the estimator reads the gap to the
+    # closest prior -- so the question it would be answering is a different one.
+    fresh = (a["asks"] == 1, b["asks"] == 1)
+    if fresh[0] != fresh[1]:
+        return fresh[0]
+    return a["intent_age_seconds"] > b["intent_age_seconds"]
+
+
+def _parent_of(conn: sqlite3.Connection, refund_id: str) -> str | None:
+    r = conn.execute("SELECT parent_entity_id FROM events WHERE entity_type='refund' AND "
+                     "entity_id=? AND parent_entity_id IS NOT NULL LIMIT 1",
+                     (refund_id,)).fetchone()
+    return r["parent_entity_id"] if r else None
 
 
 def agents(conn: sqlite3.Connection) -> list[dict[str, Any]]:
