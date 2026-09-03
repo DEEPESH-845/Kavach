@@ -278,10 +278,10 @@ export const journey = {
     set({ error: null });
     log('rail', 'Creating a Razorpay TEST order for the admitted cart');
     try {
+      // Only the cart id: the API prices the order from the gate's own admission event,
+      // so nothing this client says can change what is charged.
       const order = await journeyApi.checkoutStart({
-        cart_id: cartId, merchant_id: mandate.merchant_allowlist[0],
-        lines: lines.map(({ name: _n, ...l }) => l), mandate_id: mandate.mandate_id,
-        agent_id: mandate.agent_id,
+        cart_id: cartId, mandate_id: mandate.mandate_id,
       });
       if (gen !== generation) return;
       set({ phase: 'checkout', checkout: { order, status: null } });

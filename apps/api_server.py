@@ -29,6 +29,7 @@ allowed through CORS explicitly.
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import re
@@ -110,13 +111,18 @@ _LIMITED = ("/api/stepup", "/api/checkout", "/api/mcp", "/api/demo", "/api/proof
 _bucket = ratelimit.Bucket(int(os.environ.get("KAVACH_RATE_LIMIT", "60")))
 
 
+#: Only a deployment that IS behind a proxy may believe X-Forwarded-For. Off by default:
+#: trusting it unconditionally lets any client mint a fresh rate-limit bucket per request
+#: by varying one header, which is a rate limit that only looks like one.
+_TRUST_PROXY = os.environ.get("KAVACH_TRUST_PROXY", "").strip().lower() in {"1", "true", "on"}
+
+
 def _client_key(request: Request) -> str:
-    # The first hop of X-Forwarded-For when a proxy sets it; otherwise the socket peer.
-    # Spoofable by a client that is not behind the proxy, which bounds what this is for:
-    # one process's own protection, not the edge's.
+    peer = request.client.host if request.client else "?"
+    if not _TRUST_PROXY:
+        return peer
     fwd = request.headers.get("x-forwarded-for", "")
-    return (fwd.split(",")[0].strip() if fwd else "") or (request.client.host
-                                                           if request.client else "?")
+    return (fwd.split(",")[0].strip() if fwd else "") or peer
 
 
 @app.middleware("http")
@@ -309,11 +315,11 @@ class StepUpResolveRequest(BaseModel):
 
 
 class CheckoutStartRequest(BaseModel):
+    """Only the cart id. Everything priced -- amount, merchant, agent -- is read from the
+    gate's own admission event, which is the only record of what was authorised."""
+
     cart_id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._-]+$")
-    merchant_id: str = Field(min_length=1, max_length=128)
-    lines: list[CartLineRequest] = Field(min_length=1, max_length=100)
     mandate_id: str = Field(min_length=1, max_length=128)
-    agent_id: str = Field(min_length=1, max_length=128)
 
 
 class CheckoutConfirmRequest(BaseModel):
@@ -334,6 +340,10 @@ class McpCallRequest(BaseModel):
     def _keys(cls, v: dict[str, Any]) -> dict[str, Any]:
         if len(v) > 32 or any(not re.match(r"^[a-z_][a-z0-9_]{0,63}$", k) for k in v):
             raise ValueError("argument names must be short snake_case identifiers")
+        # A tool argument is an id, an amount or a sentence. Anything larger is not a call
+        # this surface has a use for, and an unbounded one is memory somebody else chose.
+        if len(json.dumps(v, default=str)) > 20_000:
+            raise ValueError("arguments must be under 20 kB")
         return v
 
 
@@ -707,18 +717,14 @@ def _checkout_fail(e: checkout.CheckoutError) -> HTTPException:
 def checkout_start(body: CheckoutStartRequest, conn: Conn) -> dict[str, Any]:
     """A real Razorpay TEST order -- for a cart the gate ADMITTED. The admission event is
     looked up in the log by cart id; a cart with no admission has no checkout."""
-    row = conn.execute("SELECT seq, event_hash FROM events WHERE source='gate' AND "
-                       "external_id=?", (f"admission:{body.cart_id}",)).fetchone()
-    if row is None:
+    admission = checkout.admitted(conn, body.cart_id)
+    if admission is None:
         raise _fail(409, "not_admitted",
                     "this cart was not admitted against a mandate, so there is nothing to "
                     "pay for; run admission first")
-    cart = {"cart_id": body.cart_id, "merchant_id": body.merchant_id,
-            "lines": [ln.model_dump() for ln in body.lines]}
     try:
-        return checkout.start(conn, cart=cart, mandate_id=body.mandate_id,
-                              agent_id=body.agent_id, admission_seq=int(row["seq"]),
-                              admission_hash=row["event_hash"], now=int(time.time()))
+        return checkout.start(conn, admission=admission, mandate_id=body.mandate_id,
+                              now=int(time.time()))
     except checkout.CheckoutError as e:
         raise _checkout_fail(e) from None
 

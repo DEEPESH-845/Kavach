@@ -572,9 +572,8 @@ export const journeyApi = {
   stepUpView: (token: string) => get<StepUpView>(`/stepup/${encodeURIComponent(token)}`),
   stepUpResolve: (token: string, action: 'approve' | 'deny', resolver = 'principal') =>
     post<StepUpResolved>(`/stepup/${encodeURIComponent(token)}/resolve`, { action, resolver }),
-  checkoutStart: (body: {
-    cart_id: string; merchant_id: string; lines: CartLine[]; mandate_id: string; agent_id: string;
-  }) => post<CheckoutStart>('/checkout', body),
+  checkoutStart: (body: { cart_id: string; mandate_id: string }) =>
+    post<CheckoutStart>('/checkout', body),
   checkoutLink: (orderId: string) =>
     post<{ link_id: string; short_url: string; reused: boolean }>(`/checkout/${encodeURIComponent(orderId)}/link`, {}),
   checkoutConfirm: (body: { order_id: string; payment_id: string; signature: string }) =>

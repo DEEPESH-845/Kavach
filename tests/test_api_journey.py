@@ -108,8 +108,7 @@ def test_a_denied_cart_cannot_open_a_step_up(client):
 
 def test_checkout_refuses_unadmitted_carts_and_is_honest_about_replay_mode(client):
     body, _ = _admit(client, "legit", commit=False, nonce="n_ck", cart_id="cart_ck")
-    req = {"cart_id": "cart_ck", "merchant_id": body["merchant_id"], "lines": body["lines"],
-           "mandate_id": body["mandate"]["mandate_id"], "agent_id": body["mandate"]["agent_id"]}
+    req = {"cart_id": "cart_ck", "mandate_id": body["mandate"]["mandate_id"]}
     r = client.post("/api/checkout", json=req)
     assert r.status_code == 409 and r.json()["error"]["code"] == "not_admitted"
     assert client.get("/api/checkout/order_nope").status_code == 404
@@ -167,6 +166,8 @@ def test_the_mcp_surface_dispatches_to_the_real_tool_functions(client):
     assert money.status_code == 422
     ugly = client.post("/api/mcp/check_refund", json={"args": {"bad key!": 1}})
     assert ugly.status_code == 422
+    huge = client.post("/api/mcp/check_refund", json={"args": {"reason": "x" * 30_000}})
+    assert huge.status_code == 422 and "20 kB" in huge.json()["error"]["message"]
 
 
 def test_metrics_is_prometheus_text(client):

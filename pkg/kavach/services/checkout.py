@@ -26,6 +26,7 @@ variables to set; there is no replay stand-in for a payment a judge is meant to 
 
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 import time
@@ -102,27 +103,48 @@ def _provider(e: Exception) -> CheckoutError:
     return CheckoutError("provider_error", "the provider call failed", 502)
 
 
-def start(conn: sqlite3.Connection, *, cart: dict[str, Any], mandate_id: str, agent_id: str,
-          admission_seq: int | None, admission_hash: str | None, now: int,
+def admitted(conn: sqlite3.Connection, cart_id: str) -> dict[str, Any] | None:
+    """The gate's own record of admitting this cart, or None.
+
+    THE AMOUNT COMES FROM HERE AND NOWHERE ELSE. An earlier version verified that a cart
+    had been admitted and then priced the order from the request body, so a caller could
+    admit something cheap and pay for something expensive under its id. The admission event
+    is the only party that knows what was actually authorised, and it is hash-chained.
+    """
+    row = conn.execute("SELECT seq, event_hash, payload FROM events WHERE source='gate' "
+                       "AND external_id=?", (f"admission:{cart_id}",)).fetchone()
+    if row is None:
+        return None
+    payload = json.loads(row["payload"])
+    return {"seq": int(row["seq"]), "event_hash": row["event_hash"],
+            "cart_id": payload["cart_id"], "merchant_id": payload["merchant_id"],
+            "amount_minor": int(payload["total_minor"]), "agent_id": payload["agent_id"],
+            "lines": payload.get("lines", [])}
+
+
+def start(conn: sqlite3.Connection, *, admission: dict[str, Any], mandate_id: str, now: int,
           client: Razorpay | None = None) -> dict[str, Any]:
-    """Create the order. Returns what Standard Checkout needs and nothing it must not have:
-    the key ID is public by design; the secret never leaves the server."""
+    """Create the order for an ADMITTED cart. Returns what Standard Checkout needs and
+    nothing it must not have: the key ID is public by design; the secret never leaves the
+    server."""
     client = client or _require()
-    total = sum(int(ln["unit_amount_minor"]) * int(ln["quantity"]) for ln in cart["lines"])
+    cart_id = admission["cart_id"]
+    total = admission["amount_minor"]
     if total <= 0:
         raise CheckoutError("empty_cart", "there is nothing to pay for")
-    notes = {"kavach_cart": cart["cart_id"], "kavach_mandate": mandate_id,
+    agent_id = admission["agent_id"]
+    notes = {"kavach_cart": cart_id, "kavach_mandate": mandate_id,
              "kavach_agent": agent_id,
-             "kavach_admission_seq": str(admission_seq or ""),
-             "kavach_admission_hash": (admission_hash or "")[:64]}
+             "kavach_admission_seq": str(admission["seq"]),
+             "kavach_admission_hash": (admission["event_hash"] or "")[:64]}
     try:
-        order = client.create_order(total, receipt=cart["cart_id"][:40], notes=notes)
+        order = client.create_order(total, receipt=cart_id[:40], notes=notes)
     except Exception as e:  # noqa: BLE001 - classified below
         raise _provider(e) from None
     order_id = order["id"]
     conn.execute("INSERT OR IGNORE INTO checkouts (order_id, cart_id, mandate_id, agent_id, "
                  "amount_minor, created_at) VALUES (?,?,?,?,?,?)",
-                 (order_id, cart["cart_id"], mandate_id, agent_id, total, now))
+                 (order_id, cart_id, mandate_id, agent_id, total, now))
     seq, _ = append(conn, source="api_response", external_id=f"order:{order_id}:created",
                     entity_type="checkout", entity_id=order_id,
                     event_type="checkout.order.created",
