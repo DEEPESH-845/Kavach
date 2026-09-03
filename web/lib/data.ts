@@ -35,7 +35,7 @@ export const REPORT = {
    against the tree: the test count against `def test` in tests/, and the scenario count
    against the adversary lab's own registry. A footer that states a number nothing checks
    is exactly the drift ADR-007 exists to stop. */
-export const TREE = { tests: 198, scenarios: 11 };
+export const TREE = { tests: 252, scenarios: 11 };
 
 /* Policy defaults, verbatim from pkg/kavach/governor.py. The governor compares against its
    own risk_threshold, not the benchmark's frozen threshold — different numbers for different
@@ -60,6 +60,10 @@ export const TOOLS = [
   { n: 'verify_audit_trail',    w: false, d: 'cryptographically verify the event log integrity' },
   { n: 'verify_agent',          w: false, d: 'the delegation envelope, checked over the raw bytes' },
   { n: 'admit_cart',            w: false, d: 'does this cart entail the mandate it arrived under?' },
+  { n: 'create_payment_link',   w: true,  d: 'a request for money, recorded before it is sent' },
+  { n: 'fetch_payment_link',    w: false, d: 'the link and the payments made against it' },
+  { n: 'create_order',          w: true,  d: 'an order for Checkout, recorded as an event' },
+  { n: 'fetch_order',           w: false, d: 'the order, as the rail reports it' },
 ];
 
 /* ── the eight planes, ordered by how much of each can be proven ─────────── */
@@ -85,10 +89,10 @@ export const PLANES: Plane[] = [
     catches: 'An objective that mutated immediately after the agent read a product review, and the span of hostile text that moved it.',
     cannot: 'An agent that was hostile before the session began. There is no drift to measure against.',
     boundary: 'Page text, cart text and traces enter our own prompts as tagged untrusted data, never as instructions. A test asserts the verifier refuses an embedded “return ALLOW”.' },
-  { half: 'GATE · inbound',  n: '④', src: 'gate/population.py', built: true, t: 'Population',        m: 'rings, velocity, inhuman regularity over an identity graph',  k: 'amber', ai: 'classical ML',      ms: '~8 ms',
-    catches: 'Mandate-farming rings sharing devices, addresses or tokens; timing too regular to be a person.',
-    cannot: 'A patient single actor with clean infrastructure. Population signal needs a population.',
-    boundary: 'Split by principal and by ring, never by row — a ring straddling train and test would score itself.' },
+  { half: 'GATE · inbound',  n: '④', src: 'gate/population.py', built: true, t: 'Population',        m: 'how many actions this agent took in the last hour',           k: 'amber', ai: 'heuristic, advisory', ms: '<1 ms',
+    catches: 'A bot farm firing intents faster than any operator would — 20 in an hour raises the floor, 50 pins it.',
+    cannot: 'Rings. The ledger records an agent and a session and no device, address or token, so there are no shared attributes to build a graph over. Ring detection is the upgrade path, not a shipped plane.',
+    boundary: 'A count over our own intent ledger, so nothing the agent asserts can move it. Advisory: it may raise the floor and can never admit a cart.' },
   { half: 'RAIL · outbound', n: '⑤', src: 'truth.py', built: true, t: 'Truth',             m: 'events → FinancialFact. rail state ≠ obligation state',       k: 'steel', ai: 'no — deliberately', ms: '<1 ms',
     catches: '<span class="mono">processed</span> read as <em>credited</em>. Contradictions, and silence past the staleness tolerance.',
     cannot: 'Observe anything NPCI-side. Those conditions are returned as <span class="mono">AMBIGUOUS</span> with a stated reason, never invented.',

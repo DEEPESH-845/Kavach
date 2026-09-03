@@ -16,7 +16,7 @@ def conn():
 
 def test_check_velocity_low(conn):
     now = 1000
-    risk = population.check_velocity(conn, "agent_1", "princ_1", now=now, window_seconds=3600)
+    risk = population.check_velocity(conn, "agent_1", now=now, window_seconds=3600)
     assert risk.score == 0.0
     assert len(risk.reasons) == 0
 
@@ -32,7 +32,7 @@ def test_check_velocity_high(conn):
              "test", now - 10, "APPROVED")
         )
     
-    risk = population.check_velocity(conn, "agent_1", "princ_1", now=now, window_seconds=3600)
+    risk = population.check_velocity(conn, "agent_1", now=now, window_seconds=3600)
     assert risk.score == 0.6
     assert "high velocity" in risk.reasons[0]
 
@@ -48,6 +48,6 @@ def test_check_velocity_extreme(conn):
              "test", now - 10, "APPROVED")
         )
     
-    risk = population.check_velocity(conn, "agent_1", "princ_1", now=now, window_seconds=3600)
+    risk = population.check_velocity(conn, "agent_1", now=now, window_seconds=3600)
     assert risk.score == 1.0
     assert "extreme velocity" in risk.reasons[0]

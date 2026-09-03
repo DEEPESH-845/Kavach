@@ -9,14 +9,28 @@ same arguments, same model, same prompt. The only variable is what the tools han
 
 An agent reading `status: processing` has to guess what it means. Nothing in that payload
 tells it a refund for the same obligation went out nine minutes ago.
+
+PARITY WITH razorpay-mcp-server IS MORE THAN NAMES. Razorpay's server groups tools into
+toolsets selected with `--toolsets`, and hides every write tool under `--read-only`. This
+one honours both flags with the same semantics, and read-only additionally compiles a
+Policy whose permission tier refuses money movement -- so a stale client that still calls
+`create_refund` is refused by the governor, not merely by a missing tool.
+
+ONE SET OF FUNCTIONS, TWO TRANSPORTS. `@mcp.tool` returns the function unchanged, and each
+one is also recorded in TOOLS. The HTTP API's `/api/mcp/{tool}` dispatches to these exact
+objects under LOCK, so the console's "MCP" screen and an agent over stdio cannot disagree.
 """
 
 from __future__ import annotations
 
+import argparse
 import base64
 import binascii
 import os
+import threading
 import time
+from collections.abc import Callable
+from typing import Any
 
 from mcp.server import MCPServer
 from mcp.types import ToolAnnotations
@@ -28,6 +42,7 @@ from ..intelligence import entailment
 from ..intelligence import model as risk
 from ..money import parse_inr
 from ..razorpay.client import Razorpay
+from ..services import decisions
 from ..truth import derive
 
 mcp = MCPServer(
@@ -45,11 +60,14 @@ _READ = ToolAnnotations(read_only_hint=True, destructive_hint=False, idempotent_
 _WRITE = ToolAnnotations(read_only_hint=False, destructive_hint=True, idempotent_hint=False)
 
 _DB = os.environ.get("KAVACH_DB", "kavach.db")
-_conn = connect(_DB)
+# same_thread=False because the HTTP dispatcher below calls these functions from a thread
+# pool. Every call is serialised under LOCK, so the connection is never used concurrently.
+_conn = connect(_DB, same_thread=False)
 ledger.init(_conn)
 envelope.init(_conn)
 _client = Razorpay()
 _policy = governor.Policy()
+LOCK = threading.RLock()
 
 _model = None
 if risk.MODEL_PATH.exists():
@@ -58,6 +76,23 @@ if risk.MODEL_PATH.exists():
 
 # Absent, admission floors every cart at STEP_UP rather than admitting it (ADR-006).
 _entailment = entailment.load() if entailment.MODEL_PATH.exists() else None
+
+#: name -> the function object @mcp.tool registered. The HTTP surface dispatches to these.
+TOOLS: dict[str, Callable[..., dict]] = {}
+#: name -> toolset, in razorpay-mcp-server's vocabulary where a toolset exists there.
+TOOLSET_OF: dict[str, str] = {}
+WRITE_TOOLS: set[str] = set()
+
+
+def _in(toolset: str, *, write: bool = False):
+    """Record a tool's toolset. Stacks above @mcp.tool, which hands back the function."""
+    def wrap(fn):
+        TOOLS[fn.__name__] = fn
+        TOOLSET_OF[fn.__name__] = toolset
+        if write:
+            WRITE_TOOLS.add(fn.__name__)
+        return fn
+    return wrap
 
 
 def _now() -> int:
@@ -78,31 +113,7 @@ def _ingest(entity_type: str, entity: dict, source: str = "api_response") -> Non
            sig_verified=False)
 
 
-def _risk(intent: ledger.Intent) -> tuple[float | None, list[str]]:
-    if _model is None:
-        return None, []
-    priors = ledger.prior_intents(_conn, "payment", intent.target_id)
-    row = {
-        "payment_id": intent.target_id,
-        "payment_amount": max(1, _payment_amount(intent.target_id)),
-        "t": intent.created_at, "amount": intent.amount_minor, "reason": intent.reason_text,
-        "session_id": intent.session_id, "agent_id": intent.agent_id,
-        "prior": [{"amount": p.amount_minor, "reason": p.reason_text, "t": p.created_at,
-                   "session_id": p.session_id, "agent_id": p.agent_id, "status": p.status,
-                   "result_known": p.result_id is not None} for p in priors],
-        "open_amount": ledger.exposure(_conn, intent.target_id, _now()),
-        "open_count": len(ledger.open_against_payment(_conn, intent.target_id, _now())),
-    }
-    if not row["prior"]:
-        return 0.0, ["no prior intent on this payment"]
-    return _model.score(row), _model.explain(row)
-
-
-def _payment_amount(payment_id: str) -> int:
-    f = ledger.fact_for(_conn, "payment", payment_id, _now())
-    return f.amount_minor if f else 0
-
-
+@_in("payments")
 @mcp.tool(annotations=_READ)
 def fetch_payment(payment_id: str) -> dict:
     """Fetch a payment as a financial fact: rail state, obligation state, and evidence."""
@@ -113,6 +124,7 @@ def fetch_payment(payment_id: str) -> dict:
             "open_refund_exposure": ledger.exposure(_conn, payment_id, _now()) / 100}
 
 
+@_in("refunds")
 @mcp.tool(annotations=_READ)
 def fetch_refund(refund_id: str) -> dict:
     """Fetch a refund as a financial fact.
@@ -126,6 +138,7 @@ def fetch_refund(refund_id: str) -> dict:
     return derive(for_entity(_conn, "refund", refund_id), now=_now()).to_agent()
 
 
+@_in("refunds")
 @mcp.tool(annotations=_READ)
 def list_open_obligations(payment_id: str) -> dict:
     """Money already in flight against this payment that has not reached the customer."""
@@ -135,6 +148,7 @@ def list_open_obligations(payment_id: str) -> dict:
             "obligations": [f.to_agent() for f in facts]}
 
 
+@_in("refunds")
 @mcp.tool(annotations=_READ)
 def check_refund(payment_id: str, amount: float | str, reason: str,
                  session_id: str = "default", agent_id: str = "mcp_client") -> dict:
@@ -143,18 +157,20 @@ def check_refund(payment_id: str, amount: float | str, reason: str,
     Free to call and safe to call. An agent that is unsure should call this rather than
     guess -- which is the behaviour the raw API cannot offer, because there is no way to ask
     Razorpay "would this be a duplicate?".
+
+    Runs decisions.evaluate, which is what create_refund runs. A dry run built out of its own
+    calls to governor.decide is a dry run that can disagree with the thing it predicts, and
+    this one did: it read `captured` as "the payment's obligation is closed", which is also
+    true of a REVERSED or terminally FAILED payment. Only CONFIRMED means the money is ours
+    to return.
     """
     intent = governor.new_intent(agent_id, session_id, payment_id, parse_inr(amount),
-                               reason, _now())
-    score, expl = _risk(intent)
-    fact = ledger.fact_for(_conn, "payment", payment_id, _now())
-    d = governor.decide(_conn, intent=intent,
-                      payment_amount_minor=fact.amount_minor if fact else 0,
-                      payment_captured=bool(fact and not fact.obligation_open),
-                      now=_now(), policy=_policy, risk_score=score, risk_explain=expl)
-    return {"would": d.action.value, **d.to_dict(), "dry_run": True}
+                                 reason, _now())
+    d, truth = decisions.evaluate(_conn, intent, now=_now(), policy=_policy, model=_model)
+    return {"would": d.action.value, **d.to_dict(), "truth": truth, "dry_run": True}
 
 
+@_in("refunds", write=True)
 @mcp.tool(annotations=_WRITE)
 def create_refund(payment_id: str, amount: float | str, reason: str,
                   session_id: str = "default", agent_id: str = "mcp_client") -> dict:
@@ -162,23 +178,23 @@ def create_refund(payment_id: str, amount: float | str, reason: str,
 
     Same name and arguments as Razorpay's MCP tool. The difference is that this one can
     refuse, and when it refuses it says why and cites the events it relied on.
+
+    The decision comes from services/decisions -- the same path the HTTP API and the demo
+    seed run -- so this tool cannot develop its own opinion about what "captured" means or
+    how a duplicate is scored. It also means the decision is written into the hash-chained
+    log as an event, not only into the mutable `intents.decision` column.
     """
-    fact = ledger.fact_for(_conn, "payment", payment_id, _now())
-    if fact is None:
+    if ledger.fact_for(_conn, "payment", payment_id, _now()) is None:
         entity = _client.fetch_payment(payment_id)
         _ingest("payment", entity)
 
     _conn.execute("BEGIN EXCLUSIVE")
     try:
-        fact = ledger.fact_for(_conn, "payment", payment_id, _now())
         intent = governor.new_intent(agent_id, session_id, payment_id, parse_inr(amount),
-                                   reason, _now())
-        score, expl = _risk(intent)
-        d = governor.decide(_conn, intent=intent,
-                          payment_amount_minor=fact.amount_minor if fact else 0,
-                          payment_captured=bool(fact and fact.rail_state.value == "CONFIRMED"),
-                          now=_now(), policy=_policy, risk_score=score, risk_explain=expl)
-        out = governor.reserve(_conn, intent, d)
+                                     reason, _now())
+        d, _truth = decisions.evaluate(_conn, intent, now=_now(), policy=_policy,
+                                       model=_model)
+        out = decisions.record(_conn, intent, d, now=_now())
         _conn.commit()
     except Exception:
         _conn.rollback()
@@ -193,6 +209,7 @@ def create_refund(payment_id: str, amount: float | str, reason: str,
     return out
 
 
+@_in("governance")
 @mcp.tool(annotations=_READ)
 def approval_queue() -> dict:
     """Intents held for a human, with the reason each was held."""
@@ -202,6 +219,7 @@ def approval_queue() -> dict:
     return {"pending": [dict(r) for r in rows], "count": len(rows)}
 
 
+@_in("governance")
 @mcp.tool(annotations=_READ)
 def audit_trail(payment_id: str) -> dict:
     """Every intent against this payment and what happened to it. The record a dispute needs."""
@@ -212,17 +230,19 @@ def audit_trail(payment_id: str) -> dict:
                         for i in ledger.prior_intents(_conn, "payment", payment_id)]}
 
 
+@_in("governance")
 @mcp.tool(annotations=_READ)
 def verify_audit_trail() -> dict:
     """Cryptographically verify the integrity of the event log.
-    
-    Returns the verification result of the hash chain, proving whether 
+
+    Returns the verification result of the hash chain, proving whether
     financial events have been tampered with or deleted.
     """
     valid, msg = proof.verify_event_chain(_conn)
     return {"valid": valid, "message": msg}
 
 
+@_in("gate")
 @mcp.tool(annotations=_READ)
 def verify_agent(envelope_b64: str, signature_b64: str, key_id: str,
                  expected_principal: str = "") -> dict:
@@ -259,6 +279,7 @@ def verify_agent(envelope_b64: str, signature_b64: str, key_id: str,
                      "a cart can sit inside every cap and still be refused")}
 
 
+@_in("gate")
 @mcp.tool(annotations=_READ)
 def admit_cart(envelope_b64: str, signature_b64: str, key_id: str, merchant_id: str,
                cart_id: str, lines: list[dict], expected_principal: str = "",
@@ -295,8 +316,134 @@ def admit_cart(envelope_b64: str, signature_b64: str, key_id: str, merchant_id: 
             "charged_to_mandate": result.verdict is admission.Verdict.ALLOW}
 
 
+# --------------------------------------------------------------------------- pass-through
+# Razorpay's `payment_links` and `orders` toolsets. These create a REQUEST for money rather
+# than moving any, so the governor is not consulted; they are write tools all the same and
+# disappear under --read-only exactly as they do in razorpay-mcp-server. Every response is
+# ingested as an event so what an agent asked for is on the record.
+
+def _ingest_checkout(kind: str, entity: dict) -> None:
+    eid = entity.get("id")
+    if not eid:
+        return
+    status_ = entity.get("status")
+    append(_conn, source="api_response", external_id=f"{kind}:{eid}:{status_}",
+           entity_type="checkout", entity_id=eid, event_type=f"api.{kind}.{status_}",
+           payload={kind: {k: entity.get(k) for k in
+                           ("id", "amount", "currency", "status", "receipt", "reference_id",
+                            "short_url", "notes", "created_at")}},
+           occurred_at=int(entity.get("created_at") or _now()), received_at=_now(),
+           sig_verified=False)
+
+
+@_in("payment_links", write=True)
+@mcp.tool(annotations=_WRITE)
+def create_payment_link(amount: float | str, description: str,
+                        reference_id: str = "") -> dict:
+    """Create a Razorpay Payment Link (a request for money; nothing moves until it is paid).
+    `amount` in rupees. Same name and arguments as Razorpay's tool."""
+    pl = _client.create_payment_link(parse_inr(amount), description,
+                                     reference_id=reference_id or None)
+    _ingest_checkout("payment_link", pl)
+    return {"id": pl.get("id"), "short_url": pl.get("short_url"), "status": pl.get("status"),
+            "amount": pl.get("amount", 0) / 100, "recorded": True}
+
+
+@_in("payment_links")
+@mcp.tool(annotations=_READ)
+def fetch_payment_link(link_id: str) -> dict:
+    """Fetch a Payment Link and the payments made against it."""
+    pl = _client.fetch_payment_link(link_id)
+    _ingest_checkout("payment_link", pl)
+    return {"id": pl.get("id"), "status": pl.get("status"), "amount": pl.get("amount", 0) / 100,
+            "amount_paid": pl.get("amount_paid", 0) / 100, "short_url": pl.get("short_url"),
+            "payments": [p.get("payment_id") for p in pl.get("payments", [])]}
+
+
+@_in("orders", write=True)
+@mcp.tool(annotations=_WRITE)
+def create_order(amount: float | str, receipt: str) -> dict:
+    """Create a Razorpay Order for Checkout. `amount` in rupees."""
+    order = _client.create_order(parse_inr(amount), receipt=receipt)
+    _ingest_checkout("order", order)
+    return {"id": order.get("id"), "status": order.get("status"),
+            "amount": order.get("amount", 0) / 100, "receipt": order.get("receipt"),
+            "recorded": True}
+
+
+@_in("orders")
+@mcp.tool(annotations=_READ)
+def fetch_order(order_id: str) -> dict:
+    """Fetch an Order."""
+    order = _client.fetch_order(order_id)
+    _ingest_checkout("order", order)
+    return {"id": order.get("id"), "status": order.get("status"),
+            "amount": order.get("amount", 0) / 100,
+            "amount_paid": order.get("amount_paid", 0) / 100,
+            "receipt": order.get("receipt")}
+
+
+# --------------------------------------------------------------------------- configuration
+
+TOOLSETS: tuple[str, ...] = tuple(dict.fromkeys(TOOLSET_OF.values()))
+_enabled: set[str] = set(TOOLS)
+_read_only = False
+
+
+def configure(*, toolsets: set[str] | None = None, read_only: bool = False) -> dict[str, Any]:
+    """Apply razorpay-mcp-server's flags. Removing a tool from the server hides it from
+    clients; read-only ALSO compiles a Policy the governor refuses writes under."""
+    global _enabled, _policy, _read_only
+    unknown = set(toolsets or ()) - set(TOOLSETS)
+    if unknown:
+        raise ValueError(f"unknown toolsets {sorted(unknown)}; known: {list(TOOLSETS)}")
+    keep = {n for n, ts in TOOLSET_OF.items() if toolsets is None or ts in toolsets}
+    if read_only:
+        keep -= WRITE_TOOLS
+        _policy = governor.Policy(risk_threshold=_policy.risk_threshold, allow_write=False)
+    _read_only = read_only
+    for name in set(TOOLS) - keep:
+        if name in _enabled:
+            mcp.remove_tool(name)
+    _enabled = keep
+    return {"enabled": sorted(keep), "read_only": read_only}
+
+
+def catalogue() -> list[dict[str, Any]]:
+    """Every tool, whether it is currently enabled, and which toolset it belongs to."""
+    return [{"name": n, "toolset": TOOLSET_OF[n], "write": n in WRITE_TOOLS,
+             "enabled": n in _enabled,
+             "summary": (fn.__doc__ or "").strip().splitlines()[0]}
+            for n, fn in TOOLS.items()]
+
+
+def dispatch(name: str, args: dict[str, Any]) -> dict:
+    """Call a tool exactly as the stdio transport would, serialised on the shared connection.
+    Raises KeyError for a tool that is unknown or disabled; the caller maps that."""
+    if name not in _enabled:
+        raise KeyError(name)
+    with LOCK:
+        return TOOLS[name](**args)
+
+
+def status() -> dict[str, Any]:
+    return {"tools": len(_enabled), "read_only": _read_only, "toolsets": list(TOOLSETS),
+            "mode": _client.mode}
+
+
 def main() -> None:
     """stdio entrypoint. Registered as the `kavach-mcp-server` console script."""
+    parser = argparse.ArgumentParser(description="Kavach MCP server (stdio)")
+    parser.add_argument("--toolsets", "-t", default=os.environ.get("KAVACH_TOOLSETS", ""),
+                        help="comma-separated toolsets to enable; default all: "
+                             + ",".join(TOOLSETS))
+    parser.add_argument("--read-only", action="store_true",
+                        default=os.environ.get("KAVACH_READ_ONLY", "").lower()
+                        in {"1", "true", "on"},
+                        help="hide write tools and refuse money movement at the governor")
+    args = parser.parse_args()
+    toolsets = {t.strip() for t in args.toolsets.split(",") if t.strip()} or None
+    configure(toolsets=toolsets, read_only=args.read_only)
     mcp.run()
 
 

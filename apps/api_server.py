@@ -31,6 +31,8 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import re
+import secrets
 import sqlite3
 import time
 from collections.abc import Iterator
@@ -42,22 +44,30 @@ import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
-from kavach import __version__, governor, ledger, proof
+from kavach import __version__, governor, ledger, proof, webhook
 from kavach.eventlog import connect
 from kavach.gate import envelope
 from kavach.intelligence import entailment
 from kavach.intelligence import model as risk_model
-from kavach.money import MAX_MINOR_UNITS
+from kavach.money import MAX_MINOR_UNITS, MoneyError
+from kavach.razorpay.client import CassetteMismatch, RazorpayError
 from kavach.services import (
+    checkout,
     dashboard,
     decisions,
+    demo,
     dispute,
+    duel,
     financials,
     intents,
+    ratelimit,
     review,
     scenarios,
+    stepup,
+    storefront,
+    tamper,
 )
 from kavach.services import gate as gate_service
 from pydantic import BaseModel, Field, field_validator
@@ -90,6 +100,39 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type"],
 )
+
+STARTED_AT = time.time()
+_requests = 0
+_REQUEST_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+#: Endpoints a stranger can drive from a QR code or a demo button. Bounded per client.
+_LIMITED = ("/api/stepup", "/api/checkout", "/api/mcp", "/api/demo", "/api/proof/tamper",
+            "/api/webhooks")
+_bucket = ratelimit.Bucket(int(os.environ.get("KAVACH_RATE_LIMIT", "60")))
+
+
+def _client_key(request: Request) -> str:
+    # The first hop of X-Forwarded-For when a proxy sets it; otherwise the socket peer.
+    # Spoofable by a client that is not behind the proxy, which bounds what this is for:
+    # one process's own protection, not the edge's.
+    fwd = request.headers.get("x-forwarded-for", "")
+    return (fwd.split(",")[0].strip() if fwd else "") or (request.client.host
+                                                           if request.client else "?")
+
+
+@app.middleware("http")
+async def _request_id_and_limits(request: Request, call_next):
+    global _requests
+    _requests += 1
+    incoming = request.headers.get("x-request-id", "")
+    rid = incoming if _REQUEST_ID.match(incoming) else f"req_{secrets.token_hex(6)}"
+    request.state.request_id = rid
+    if request.url.path.startswith(_LIMITED) and not _bucket.allow(_client_key(request)):
+        return JSONResponse(status_code=429, headers={"X-Request-Id": rid}, content={
+            "error": {"code": "rate_limited",
+                      "message": "too many requests from this client; wait a minute"}})
+    response = await call_next(request)
+    response.headers["X-Request-Id"] = rid
+    return response
 
 
 # ------------------------------------------------------------------ infrastructure
@@ -127,6 +170,8 @@ def _open() -> Iterator[sqlite3.Connection]:
     try:
         ledger.init(conn)
         envelope.init(conn)
+        stepup.init(conn)
+        checkout.init(conn)
         yield conn
     finally:
         conn.close()
@@ -252,6 +297,46 @@ class ReviewRequest(BaseModel):
     note: str = Field(default="", max_length=2_000)
 
 
+class PlanRequest(BaseModel):
+    mandate: MandateRequest
+    mode: str = Field(default="legit", min_length=1, max_length=32, pattern=r"^[a-z_]+$")
+
+
+class StepUpResolveRequest(BaseModel):
+    action: Literal["approve", "deny"]
+    resolver: str = Field(default="principal", min_length=1, max_length=64,
+                          pattern=r"^[A-Za-z0-9 ._-]+$")
+
+
+class CheckoutStartRequest(BaseModel):
+    cart_id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._-]+$")
+    merchant_id: str = Field(min_length=1, max_length=128)
+    lines: list[CartLineRequest] = Field(min_length=1, max_length=100)
+    mandate_id: str = Field(min_length=1, max_length=128)
+    agent_id: str = Field(min_length=1, max_length=128)
+
+
+class CheckoutConfirmRequest(BaseModel):
+    order_id: str = Field(min_length=1, max_length=64, pattern=r"^order_[A-Za-z0-9]+$")
+    payment_id: str = Field(min_length=1, max_length=64, pattern=r"^pay_[A-Za-z0-9]+$")
+    signature: str = Field(min_length=1, max_length=128, pattern=r"^[a-f0-9]+$")
+
+
+class TamperRequest(BaseModel):
+    seq: int | None = Field(default=None, ge=1)
+
+
+class McpCallRequest(BaseModel):
+    args: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("args")
+    @classmethod
+    def _keys(cls, v: dict[str, Any]) -> dict[str, Any]:
+        if len(v) > 32 or any(not re.match(r"^[a-z_][a-z0-9_]{0,63}$", k) for k in v):
+            raise ValueError("argument names must be short snake_case identifiers")
+        return v
+
+
 # ------------------------------------------------------------------ system
 
 @app.get("/api/health")
@@ -277,7 +362,29 @@ def health(conn: Conn) -> dict[str, Any]:
                    "risk_threshold": policy().risk_threshold,
                    "kill_switch": policy().kill_switch},
         "ui": STATIC_DIR.exists(),
+        "razorpay": {"mode": mode,
+                     "credentials": bool(os.environ.get("RAZORPAY_KEY_ID")
+                                         and os.environ.get("RAZORPAY_KEY_SECRET")),
+                     "checkout": checkout.available()[0],
+                     "checkout_note": checkout.available()[1]},
+        "webhook": {"configured": bool(os.environ.get("RAZORPAY_WEBHOOK_SECRET")),
+                    "path": "/api/webhooks/razorpay",
+                    "note": ("signed webhooks become DERIVED_CERTAIN evidence"
+                             if os.environ.get("RAZORPAY_WEBHOOK_SECRET") else
+                             "no RAZORPAY_WEBHOOK_SECRET: webhooks are refused (fail-closed) "
+                             "and payments observed by polling stay DERIVED_PROBABLE")},
+        "mcp": _mcp_status(),
+        "demo": {"reset_enabled": demo.enabled()},
+        "uptime_seconds": int(time.time() - STARTED_AT),
     }
+
+
+def _mcp_status() -> dict[str, Any]:
+    try:
+        return {"available": True, **_mcp().status()}
+    except HTTPException as e:
+        return {"available": False, "reason": e.detail.get("message")
+                if isinstance(e.detail, dict) else str(e.detail)}
 
 
 @app.get("/api/policy")
@@ -518,6 +625,260 @@ def evaluations() -> dict[str, Any]:
             log.exception("could not read %s", name)
             out[key] = None
     return {**out, "note": "produced by the benchmarks in CI; not computed on request"}
+
+
+# ------------------------------------------------------------------ the buyer journey
+
+@app.get("/api/storefront")
+def storefront_catalogue() -> dict[str, Any]:
+    """The Bazaar's catalogue, Priya's default mandate, and the scenarios the agent can run."""
+    return {**storefront.catalogue(), "mandate": storefront.default_mandate(int(time.time()))}
+
+
+@app.post("/api/storefront/plan")
+def storefront_plan(body: PlanRequest) -> dict[str, Any]:
+    """The agent's cart for one mode, with the trace of how it got there. Decides nothing."""
+    try:
+        return storefront.plan(body.mandate.model_dump(), body.mode)
+    except KeyError:
+        raise _fail(404, "unknown_mode",
+                    f"mode must be one of {', '.join(storefront.MODES)}") from None
+
+
+def _stepup_fail(e: stepup.StepUpError) -> HTTPException:
+    status = {"not_found": 404, "expired": 410, "already_resolved": 409,
+              "invalid_action": 422, "not_step_up": 409,
+              "re_admission_refused": 409}.get(e.code, 400)
+    return _fail(status, e.code, e.message)
+
+
+@app.post("/api/stepup")
+def stepup_create(body: AdmitRequest, conn: Conn) -> dict[str, Any]:
+    """Ask the principal. The verdict is re-derived here, never taken from the client: only
+    a cart the gate itself steps up can produce a token."""
+    gate_service.register_demo_issuer(conn)
+    now = int(time.time())
+    adm = gate_service.admit(
+        conn, envelope_body=body.mandate.model_dump(), cart_id=body.cart_id,
+        merchant_id=body.merchant_id, lines=[ln.model_dump() for ln in body.lines],
+        now=now, expected_principal=body.mandate.principal_id,
+        untrusted_context=body.untrusted_context, model=_models.get("entailment"),
+        charge=False)
+    cart = {"cart_id": body.cart_id, "merchant_id": body.merchant_id,
+            "lines": [ln.model_dump() for ln in body.lines],
+            "untrusted_context": body.untrusted_context}
+    try:
+        out = stepup.create(conn, mandate_body=body.mandate.model_dump(), cart=cart,
+                            admission_result=adm, now=now)
+    except stepup.StepUpError as e:
+        raise _stepup_fail(e) from None
+    return {**out, "approve_path": f"/approve/?t={out['token']}", "admission": adm,
+            "ttl_seconds": stepup.TTL}
+
+
+@app.get("/api/stepup/{token}")
+def stepup_view(token: str, conn: Conn) -> dict[str, Any]:
+    try:
+        return stepup.view(conn, _token(token), int(time.time()))
+    except stepup.StepUpError as e:
+        raise _stepup_fail(e) from None
+
+
+@app.post("/api/stepup/{token}/resolve")
+def stepup_resolve(token: str, body: StepUpResolveRequest, conn: Conn) -> dict[str, Any]:
+    try:
+        return stepup.resolve(conn, _token(token), action=body.action, now=int(time.time()),
+                              resolver=body.resolver, model=_models.get("entailment"))
+    except stepup.StepUpError as e:
+        raise _stepup_fail(e) from None
+
+
+def _token(value: str) -> str:
+    if not re.match(r"^[A-Za-z0-9_-]{16,64}$", value):
+        raise _fail(404, "not_found", "this approval link is not one Kavach issued")
+    return value
+
+
+def _checkout_fail(e: checkout.CheckoutError) -> HTTPException:
+    return _fail(e.status, e.code, e.message)
+
+
+@app.post("/api/checkout")
+def checkout_start(body: CheckoutStartRequest, conn: Conn) -> dict[str, Any]:
+    """A real Razorpay TEST order -- for a cart the gate ADMITTED. The admission event is
+    looked up in the log by cart id; a cart with no admission has no checkout."""
+    row = conn.execute("SELECT seq, event_hash FROM events WHERE source='gate' AND "
+                       "external_id=?", (f"admission:{body.cart_id}",)).fetchone()
+    if row is None:
+        raise _fail(409, "not_admitted",
+                    "this cart was not admitted against a mandate, so there is nothing to "
+                    "pay for; run admission first")
+    cart = {"cart_id": body.cart_id, "merchant_id": body.merchant_id,
+            "lines": [ln.model_dump() for ln in body.lines]}
+    try:
+        return checkout.start(conn, cart=cart, mandate_id=body.mandate_id,
+                              agent_id=body.agent_id, admission_seq=int(row["seq"]),
+                              admission_hash=row["event_hash"], now=int(time.time()))
+    except checkout.CheckoutError as e:
+        raise _checkout_fail(e) from None
+
+
+@app.get("/api/checkout/latest")
+def checkout_latest(conn: Conn) -> dict[str, Any]:
+    """The most recent real payment, for the MCP console to refund. May be null."""
+    return {"payment": checkout.latest_real_payment(conn)}
+
+
+@app.post("/api/checkout/{order_id}/link")
+def checkout_link(order_id: str, conn: Conn) -> dict[str, Any]:
+    try:
+        return checkout.link(conn, order_id=_order(order_id), now=int(time.time()))
+    except checkout.CheckoutError as e:
+        raise _checkout_fail(e) from None
+
+
+@app.post("/api/checkout/confirm")
+def checkout_confirm(body: CheckoutConfirmRequest, conn: Conn) -> dict[str, Any]:
+    try:
+        return checkout.confirm(conn, order_id=body.order_id, payment_id=body.payment_id,
+                                signature=body.signature, now=int(time.time()))
+    except checkout.CheckoutError as e:
+        raise _checkout_fail(e) from None
+
+
+@app.get("/api/checkout/{order_id}")
+def checkout_status(order_id: str, conn: Conn) -> dict[str, Any]:
+    try:
+        return checkout.status(conn, order_id=_order(order_id), now=int(time.time()))
+    except checkout.CheckoutError as e:
+        raise _checkout_fail(e) from None
+
+
+def _order(value: str) -> str:
+    if not re.match(r"^order_[A-Za-z0-9]{1,40}$", value):
+        raise _fail(404, "order_not_found", "no checkout for that order id")
+    return value
+
+
+@app.post("/api/webhooks/razorpay")
+async def razorpay_webhook(request: Request) -> JSONResponse:
+    """Signed webhooks become DERIVED_CERTAIN evidence. Same verifier as apps/webhook_server;
+    fail-closed on a missing secret."""
+    raw = await request.body()
+    secret = os.environ.get("RAZORPAY_WEBHOOK_SECRET", "")
+    with _open() as conn:
+        code, message = webhook.process(
+            conn, raw, request.headers.get("X-Razorpay-Signature"), secret,
+            event_id=request.headers.get("X-Razorpay-Event-Id"))
+    return JSONResponse(status_code=code, content={"status": message})
+
+
+@app.get("/api/duel")
+def duel_run() -> dict[str, Any]:
+    """Without Kavach vs with Kavach on one attack sequence. Derived, sandboxed, repeatable."""
+    return duel.run()
+
+
+@app.post("/api/proof/tamper")
+def proof_tamper(body: TamperRequest, conn: Conn) -> dict[str, Any]:
+    """Edit a COPY of the log and verify it. The live ledger is never written."""
+    try:
+        return tamper.demo(conn, seq=body.seq)
+    except tamper.TamperError as e:
+        raise _fail(404 if e.code == "no_such_event" else 409, e.code, e.message) from None
+
+
+# ------------------------------------------------------------------ MCP over HTTP
+
+def _mcp():
+    """The MCP module, imported on first use: it opens its own connection and a Razorpay
+    client, and in live mode without credentials that is a refusal, reported as a 503."""
+    try:
+        from kavach.mcp import server as mcp_server
+    except RuntimeError as e:
+        raise _fail(503, "mcp_unavailable", str(e)) from None
+    return mcp_server
+
+
+@app.get("/api/mcp/tools")
+def mcp_tools(conn: Conn) -> dict[str, Any]:
+    m = _mcp()
+    return {
+        "tools": m.catalogue(), "status": m.status(),
+        "suggested_target": checkout.latest_real_payment(conn),
+        "seeded_targets": [r["entity_id"] for r in conn.execute(
+            "SELECT DISTINCT entity_id FROM events WHERE entity_type='payment' AND "
+            "source='seed' ORDER BY seq DESC LIMIT 6")],
+        "config": {"mcpServers": {"kavach": {"command": "kavach-mcp-server",
+                                             "args": ["--toolsets", "payments,refunds"]}}},
+        "parity": {"toolsets": list(m.TOOLSETS),
+                   "flags": ["--toolsets", "--read-only"],
+                   "note": "same flags and semantics as razorpay-mcp-server; read-only also "
+                           "compiles a policy the governor refuses writes under"},
+    }
+
+
+@app.post("/api/mcp/{tool}")
+def mcp_call(tool: str, body: McpCallRequest) -> dict[str, Any]:
+    """Call a tool exactly as an MCP client would. The function object is the one the stdio
+    server registered; there is no HTTP re-implementation."""
+    if not re.match(r"^[a-z_]{1,64}$", tool):
+        raise _fail(404, "unknown_tool", "no such tool")
+    m = _mcp()
+    started = time.perf_counter()
+    try:
+        result = m.dispatch(tool, body.args)
+    except KeyError:
+        raise _fail(404, "unknown_tool",
+                    f"no enabled tool named {tool}; see /api/mcp/tools") from None
+    except TypeError as e:
+        raise _fail(422, "invalid_arguments", f"{tool}: {e}") from None
+    except (MoneyError, ValueError) as e:
+        raise _fail(422, "invalid_arguments", f"{tool}: {e}") from None
+    except RazorpayError as e:
+        raise _fail(502, "provider_error",
+                    f"Razorpay answered {e.status} on {e.path}; the decision was recorded "
+                    f"and the intent settled by the failure classifier") from None
+    except CassetteMismatch:
+        raise _fail(503, "replay_no_recording",
+                    "replay mode has no recorded provider response for this call; the "
+                    "decision was recorded, the provider was not reached") from None
+    return {"tool": tool, "args": body.args, "result": result,
+            "elapsed_ms": round((time.perf_counter() - started) * 1000, 1),
+            "write": tool in m.WRITE_TOOLS, "toolset": m.TOOLSET_OF.get(tool)}
+
+
+# ------------------------------------------------------------------ demo and metrics
+
+@app.post("/api/demo/reset")
+def demo_reset(conn: Conn) -> dict[str, Any]:
+    """Re-seed the ledger deterministically. Destructive, so it exists only under
+    KAVACH_DEMO=1 -- the container and `make run` set it; a production deploy does not."""
+    if not demo.enabled():
+        raise _fail(403, "demo_disabled",
+                    "reset is disabled; set KAVACH_DEMO=1 to enable it in this environment")
+    counts = demo.seed_conn(conn, reset=True)
+    return {"reset": True, "counts": counts, "at": int(time.time())}
+
+
+@app.get("/api/metrics")
+def metrics(conn: Conn) -> PlainTextResponse:
+    """A small Prometheus text surface. Counts, not internals."""
+    status = proof.scan(conn)
+    lines = [
+        "# TYPE kavach_events_total gauge", f"kavach_events_total {status['events']}",
+        "# TYPE kavach_chain_intact gauge", f"kavach_chain_intact {int(status['ok'])}",
+        "# TYPE kavach_intents_total gauge",
+    ]
+    for r in conn.execute("SELECT status, COUNT(*) c FROM intents GROUP BY status"):
+        lines.append(f'kavach_intents_total{{status="{r["status"]}"}} {r["c"]}')
+    pend = conn.execute("SELECT COUNT(*) FROM stepups WHERE status='PENDING'").fetchone()[0]
+    lines += ["# TYPE kavach_stepups_pending gauge", f"kavach_stepups_pending {pend}",
+              "# TYPE kavach_http_requests_total counter",
+              f"kavach_http_requests_total {_requests}",
+              "# TYPE kavach_uptime_seconds gauge",
+              f"kavach_uptime_seconds {int(time.time() - STARTED_AT)}"]
+    return PlainTextResponse("\n".join(lines) + "\n", media_type="text/plain; version=0.0.4")
 
 
 # ------------------------------------------------------------------ static UI
