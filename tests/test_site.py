@@ -263,3 +263,24 @@ def test_no_surface_is_left_without_a_name_of_its_own():
         "the console shell no longer sets document.title, so every console route shows "
         "whatever the root layout left behind"
     )
+
+
+def test_the_distance_chapter_counts_the_legs_it_actually_draws():
+    """Chapter 07 states a ratio -- one observed leg against five it cannot see -- and
+    then draws it. The drawing is the claim, so the two have to agree.
+
+    Adding a destination without touching the copy would leave the page asserting a
+    number its own SVG contradicts, which is the drift this module exists to stop. The
+    coordinates are deliberately illustrative and live in the component rather than in
+    lib/data.ts; the COUNT is not illustrative, so it is checked here.
+    """
+    src = (WEB / "components" / "Distance.tsx").read_text()
+    dark = re.search(r"const DARK = \[([^\]]*)\]", src)
+    assert dark, "the DARK destination list is gone from Distance.tsx"
+    n = len([d for d in dark.group(1).split(",") if d.strip()])
+    assert n == 5, f"the drawing has {n} unobserved legs"
+    words = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six"}
+    assert f"<span className=\"dist__n\">{n}</span> legs" in src, (
+        f"the readout does not say {n} legs")
+    assert f"{words[n]} threads" in src, f"the copy does not say {words[n]} threads"
+    assert f"{words[n]} continents" in src, f"the copy does not say {words[n]} continents"

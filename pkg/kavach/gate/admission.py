@@ -16,10 +16,16 @@ layer cannot tell whether a perfectly in-scope, perfectly in-budget cart is what
 principal asked for -- that is the entire reason this plane exists. A missing model
 therefore raises the floor to STEP_UP rather than opening the gate (ADR-006).
 
-NOT SIDE-EFFECT FREE. envelope.verify() claims the envelope's nonce, so a mandate is
-single-use: calling decide() twice with the same envelope returns REPLAYED_NONCE the second
-time. That is the intended semantics -- an envelope is presented once, at one checkout, for
-one cart -- but it means this cannot be used as a speculative dry run.
+WHERE THE NONCE IS SPENT. decide() verifies WITHOUT claiming the nonce, so it is a genuine
+dry run: the signature, window, principal binding and revocation are all checked, the cart is
+scored, and the mandate survives. admit() is the wrapper that claims the nonce and charges
+the cumulative cap, and it does both ONLY on ALLOW.
+
+So a mandate is single-use across admissions, not across questions. Calling admit() twice
+with the same envelope returns REPLAYED_NONCE the second time -- an envelope is presented
+once, at one checkout, for one cart -- while calling decide() repeatedly costs nothing.
+A caller that wants the money-moving semantics must call admit(); decide() alone admits
+nothing and must never be treated as an admission.
 """
 
 from __future__ import annotations
@@ -117,11 +123,11 @@ def decide(conn: sqlite3.Connection, raw: bytes, signature: bytes, cart: Cart, *
            key_id: str, now: int, expected_principal: str | None = None,
            untrusted_context: str = "",
            costs: Costs = DEFAULT_COSTS, model: Model | None = None) -> Admission:
-    """Admit, step up, hold or refuse this cart. See the module docstring on single use.
+    """Admit, step up, hold or refuse this cart. Decides; spends nothing.
 
-    Pure with respect to the ledger: an ALLOW here does not charge the mandate. The caller
-    records that with mandate.record_admission(), and until it does this cart is not counted
-    against the cumulative cap.
+    Pure with respect to the ledger AND the mandate: an ALLOW here neither claims the nonce
+    nor charges the cumulative cap. admit() does both, and until it runs this cart is not
+    counted against anything.
     """
     env, failures = verify(conn, raw, signature, key_id=key_id, now=now,
                            expected_principal=expected_principal)
@@ -160,7 +166,7 @@ def decide(conn: sqlite3.Connection, raw: bytes, signature: bytes, cart: Cart, *
         result.risk_factors.extend(provenance.explain_drift(drift))
 
     # Plane 4: Population (Ring/Velocity detection)
-    vel_risk = population.check_velocity(conn, env.agent_id, env.principal_id, now=now)
+    vel_risk = population.check_velocity(conn, env.agent_id, now=now)
     if vel_risk.score > 0.0:
         result.risk = min(1.0, result.risk + vel_risk.score * 0.5)
         result.risk_factors.extend(vel_risk.reasons)
