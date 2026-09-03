@@ -10,7 +10,7 @@ or how to stop the merchant's own agents from paying twice.
 
 <br>
 
-![tests](https://img.shields.io/badge/tests-198%20functions%20%C2%B7%20229%20cases-2f7d4f?style=for-the-badge)
+![tests](https://img.shields.io/badge/tests-254%20functions-2f7d4f?style=for-the-badge)
 ![planes](https://img.shields.io/badge/planes-8%20of%208%20built-1f5f8b?style=for-the-badge)
 ![baselines](https://img.shields.io/badge/baselines-11%20measured-1f5f8b?style=for-the-badge)
 ![attacks](https://img.shields.io/badge/adversary%20lab-11%20attacks-a8321d?style=for-the-badge)
@@ -18,13 +18,13 @@ or how to stop the merchant's own agents from paying twice.
 ![python](https://img.shields.io/badge/python-3.11%20|%203.12%20|%203.13-3776ab?style=flat-square)
 ![next](https://img.shields.io/badge/Next.js-16-000?style=flat-square)
 ![licence](https://img.shields.io/badge/licence-MIT-555?style=flat-square)
-![deploy](https://img.shields.io/badge/deploy-one%20service%20%C2%B7%20live%20or%20replay-2f7d4f?style=flat-square)
+![deploy](https://img.shields.io/badge/deploy-one%20image%20%C2%B7%20one%20URL-2f7d4f?style=flat-square)
 ![latency](https://img.shields.io/badge/decision%20p99-under%202%20ms-1f5f8b?style=flat-square)
 
 <br>
 
 ```bash
-make run           # one command · one port · http://127.0.0.1:8000
+make run           # one command · one port · http://127.0.0.1:8000/tour
 ```
 
 [**Run it**](#run-it-in-60-seconds) · [The problem](#the-problem) · [Why nothing else closes it](#why-nothing-that-exists-already-closes-this) · [How it works](#how-kavach-answers) · [**Does it work?**](#does-it-actually-work) · [**Ship it**](#running-it-in-production) · [Try to break it](#how-to-disbelieve-all-of-this) · [Envelope](#operating-envelope)
@@ -69,6 +69,13 @@ make run           # one command · one port · http://127.0.0.1:8000
 > call** — every learned component is a trained model running in process. A decision costs
 > **~1 ms**, not a provider round trip, and no outage anywhere else can turn into a payments
 > outage here. `make latency` measures it on your machine.
+>
+> **You do not have to take any of this on trust.** [`/tour`](#run-it-in-60-seconds) is five
+> minutes in which you write the mandate, watch an agent overreach it, watch the ladder
+> refuse by arithmetic, **approve the ambiguous case on your own phone**, **make a real
+> Razorpay test payment** whose order carries the decision's hash into Razorpay's own
+> dashboard, read why the resulting fact is `DERIVED_PROBABLE` rather than certain, and then
+> **try to tamper with the evidence** and watch verification break at the exact row.
 
 ---
 
@@ -82,18 +89,31 @@ make run           # seeds the ledger, builds the UI, serves everything on :8000
 No Docker, no database server, no network, no API keys. One process, one port — the Python
 API mounts the built UI at `/`, so there is no second server and no CORS.
 
-The same command with four environment variables set — `KAVACH_MODE=live` and your Razorpay
-credentials — runs the identical decision path against a real account. There is no separate
-"production build": see [running it in production](#running-it-in-production).
+Add `KAVACH_MODE=live` and Razorpay **test** credentials and the same command takes real
+payments through Razorpay Checkout on the same decision path. `docker compose up --build`
+does the whole thing in a container; see [deploying](documents/11-deploy.md).
 
-**Then open these four screens, in this order:**
+**Then open [`/tour`](http://127.0.0.1:8000/tour) and press start.** Ten steps, five
+minutes, nothing to configure — it resets the ledger first, so every run begins identically.
 
-| | Screen | What it proves |
+| | | What you actually do |
 |---|---|---|
-| 1 | [`/dashboard/gate`](http://127.0.0.1:8000/dashboard/gate) | **Edit a mandate and watch admission run.** Break the signature, expire the window, change a category — the same Ed25519 verification that admits a good envelope refuses yours |
-| 2 | [`/dashboard/truth`](http://127.0.0.1:8000/dashboard/truth) | **Watch a fact being derived**, one event at a time. Rail state and obligation state separate in front of you |
-| 3 | [`/dashboard/adversary`](http://127.0.0.1:8000/dashboard/adversary) | **Eleven attacks against the real decision code**, in an isolated sandbox. Not a recording |
-| 4 | [`/dashboard/proof`](http://127.0.0.1:8000/dashboard/proof) | **Recompute the hash chain**, and read its stated limits |
+| 00:30 | **Give an agent authority** | Write Priya's mandate: a purpose in her own words, a cap per order, the categories she delegates. Ed25519-signed |
+| 01:00 | **Watch it shop** | A bench agent filters the store to those categories, matches products to the purpose text, fills a cart |
+| 01:30 | **Watch it overreach** | It reads "printer paper" as needing a printer: **₹7,499 against a ₹5,000 cap**. Every item in scope, signature valid |
+| 02:00 | **Watch Kavach refuse** | The eleven-rung ladder runs; **Caps** fails by integer arithmetic and the model is never consulted. `SKIPPED` is not a pass |
+| 02:30 | **Decide the grey case yourself** | A desk lamp passes every deterministic check. Kavach asks Priya — **scan the QR and approve on your own phone**. Approval re-runs admission at the moment of the tap |
+| 03:00 | **Make a real payment** | A genuine Razorpay **TEST** order whose `notes.kavach_admission_hash` carries the decision into Razorpay's own dashboard. Pay it |
+| 03:30 | **Read what Kavach believes** | The payment is `DERIVED_PROBABLE`, not certain — it was fetched, not signed. The upgrade a webhook would buy is shown, labelled *simulated* |
+| 04:00 | **Break the evidence** | Edit one amount; verification fails at that exact sequence number and halts after it. The live ledger is re-verified beside the result |
+| 04:30 | **Without Kavach ∥ with Kavach** | The same seven actions, two lanes, one sandbox run. The legitimate ones pass in both |
+| 05:00 | **The thesis** | Over live numbers from your own ledger |
+
+Or go straight to a surface: [`/shop`](http://127.0.0.1:8000/shop) ·
+[`/duel`](http://127.0.0.1:8000/duel) · [`/dashboard`](http://127.0.0.1:8000/dashboard) ·
+[`/dashboard/mcp`](http://127.0.0.1:8000/dashboard/mcp) ·
+[`/dashboard/adversary`](http://127.0.0.1:8000/dashboard/adversary) ·
+[`/dashboard/proof`](http://127.0.0.1:8000/dashboard/proof)
 
 <details>
 <summary><b>Other commands</b> — benchmarks, MCP server, development</summary>
@@ -109,6 +129,8 @@ make latency       # measure decision-path latency and single-core throughput
 make mcp           # run the MCP server over stdio
 make dev           # API on :8000 + Next dev server on :3000, in one process group
 make site          # landing page only, static, on :4173
+make docker-build  # the one image: builds the UI, trains both models, runs both benchmarks
+make docker-run    # that image on :8000, credentials from .env, ledger on a volume
 ```
 
 `make dev` starts **both** processes deliberately. The console reads live state and invents
@@ -118,10 +140,16 @@ correct behaviour rather than a bug.
 Point any MCP client at Kavach instead of `razorpay-mcp-server`:
 
 ```jsonc
-{ "mcpServers": { "kavach": { "command": "kavach-mcp-server" } } }
+{ "mcpServers": { "kavach": {
+  "command": "kavach-mcp-server",
+  "args": ["--toolsets", "payments,refunds", "--read-only"]
+} } }
 ```
 
-Same tool names, same arguments. The tools return financial **facts**, and they can refuse.
+Same tool names, same arguments, **the same `--toolsets` and `--read-only` flags with the
+same semantics**. Read-only additionally compiles a policy the governor refuses writes
+under, so a stale client that still calls `create_refund` is stopped by the permission tier
+rather than by a missing tool. The tools return financial **facts**, and they can refuse.
 
 </details>
 
@@ -469,8 +497,10 @@ each will land behind already exists.
 | Razorpay MCP server | tool-name parity; Kavach is a drop-in swap | ✅ **Wired** |
 | NPCI UAP agent registry | agent identity | ⏳ **Awaiting the rail** — no public API as of Aug 2026; the field mapping is documented and the adapter is one client |
 | UPI Reserve Pay agent mandate | delegation envelope | ⏳ **Awaiting the rail** — an Ed25519 envelope stands in field-for-field; everything above it (caps, scope, revocation, replay) is the code that ships either way |
-| WhatsApp / SMS step-up | re-consent channel | ⏳ **Channel not connected** — the step-up decision, its payload and its audit record are produced; sending is one adapter |
-| Storefront and buyer agents | the attack and load generator | 🧪 **Bench, by design** |
+| Razorpay Standard Checkout + `notes` | taking the money, and carrying the decision into Razorpay's own entity | ✅ **Wired** — handler signature verified server-side with the key secret; `notes.kavach_admission_hash` is visible from the Razorpay dashboard |
+| Re-consent channel | asking the principal | ✅ **Connected** — a single-use token, a QR, and a phone-first page at `/approve`. Approval re-runs admission at the moment of the tap. WhatsApp/SMS would be one more adapter behind the same token |
+| Storefront | where a delegated agent actually arrives | ✅ **Built** — `/shop`, on the entailment corpus's own vocabulary |
+| Buyer agent | the attack and load generator | 🧪 **Bench, by design** — deterministic, no LLM on the path (ADR-017); its trace is templated from the picks it made |
 
 ### Where Kavach sits relative to Razorpay's stack
 
@@ -485,6 +515,24 @@ each will land behind already exists.
 ---
 
 ## Running it in production
+
+### Deploying it: one image, one URL
+
+```bash
+docker compose up --build          # http://127.0.0.1:8000, credentials from .env
+```
+
+The image is two stages: Node builds the static export, Python installs the package and
+then **trains both estimators and runs both benchmarks inside the build**. The model
+artefacts are gitignored on purpose — a pickled estimator committed to a repo is one nobody
+can reproduce — so an image that exists has reproduced the numbers in `evals/`, and a model
+that stops beating its baselines fails the build rather than shipping.
+
+`render.yaml` and `fly.toml` deploy that image with a disk mounted at `/data`; Cloud Run
+takes it as-is. Health check `/api/health`, metrics `/api/metrics`, webhook receiver
+`/api/webhooks/razorpay`. Full procedure, every environment variable, the persistence
+trade-off and the **plainly stated fact that there is no authentication**:
+[`documents/11-deploy.md`](documents/11-deploy.md).
 
 ### Four wires, no fork
 
@@ -559,9 +607,17 @@ the test suite, and every row with a screen is reachable from `make run`.
 | MCP server — 10 tools, Razorpay-compatible names | ✅ **Built** | 9 read · 1 write |
 | Hash-chained proof, replay, dispute pack | ✅ **Built** | recomputed live |
 | Adversary Lab — 11 attacks on the real code | ✅ **Built** | 6 tests |
-| Operator console — 17 screens, live stream, review queue | ✅ **Built** | 24 tests |
+| Operator console — 18 screens, live stream, review queue | ✅ **Built** | 24 tests |
+| Kavach Bazaar — storefront, mandate, bench agent, 6 scenarios | ✅ **Built** | 8 tests; every advertised verdict asserted against the trained model |
+| Cross-device step-up — token, QR, phone page, re-admission on tap | ✅ **Built** | 9 tests |
+| Razorpay Checkout — real TEST order, signature, polled truth | ✅ **Built** | 9 tests |
+| The duel — two lanes, one sandbox run, derived counters | ✅ **Built** | 5 tests |
+| Tamper demonstration — edit a copy, verification breaks | ✅ **Built** | 4 tests |
+| MCP over HTTP — the same function objects the stdio server serves | ✅ **Built** | 6 tests |
+| Guided five-minute tour + demo reset | ✅ **Built** | driven end to end in a browser |
+| Deployment — one image, one port, models trained at build | ✅ **Built** | [`documents/11-deploy.md`](documents/11-deploy.md) |
 
-<sub><b>Totals:</b> 198 test functions · 229 cases · 11 adversary scenarios · 11 benchmark baselines across two corpora, on Python 3.11, 3.12 and 3.13 in CI.</sub>
+<sub><b>Totals:</b> 254 test functions · 11 adversary scenarios · 11 benchmark baselines across two corpora, on Python 3.11, 3.12 and 3.13 in CI. Plus a scripted judge session that drives the whole five-minute path in a real browser and asserts 34 things a judge should see.</sub>
 
 ---
 
