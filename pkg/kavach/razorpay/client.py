@@ -106,10 +106,28 @@ class Razorpay:
         return self._call("POST", "/orders", {"amount": amount_minor, "currency": "INR",
                                               "receipt": receipt, "notes": notes or {}})
 
-    def create_payment_link(self, amount_minor: int, description: str) -> dict:
-        return self._call("POST", "/payment_links", {
+    def fetch_order(self, order_id: str) -> dict:
+        return self._call("GET", f"/orders/{order_id}")
+
+    def order_payments(self, order_id: str) -> dict:
+        return self._call("GET", f"/orders/{order_id}/payments")
+
+    def create_payment_link(self, amount_minor: int, description: str, *,
+                            reference_id: str | None = None,
+                            notes: dict | None = None) -> dict:
+        body: dict = {
             "amount": amount_minor, "currency": "INR", "description": description,
-            "notify": {"sms": False, "email": False}, "reminder_enable": False})
+            "notify": {"sms": False, "email": False}, "reminder_enable": False}
+        # Razorpay enforces uniqueness on reference_id, which is exactly the property a
+        # cart id wants: a retried link for the same cart is refused by the rail itself.
+        if reference_id:
+            body["reference_id"] = reference_id
+        if notes:
+            body["notes"] = notes
+        return self._call("POST", "/payment_links", body)
+
+    def fetch_payment_link(self, link_id: str) -> dict:
+        return self._call("GET", f"/payment_links/{link_id}")
 
     def fetch_payment(self, payment_id: str) -> dict:
         return self._call("GET", f"/payments/{payment_id}")
@@ -146,6 +164,19 @@ def _shape(path: str) -> str:
         parts.append("<id>" if any(p.startswith(x) for x in
                                    ("pay_", "rfnd_", "order_", "plink_")) else p)
     return "/".join(parts)
+
+
+def verify_checkout_signature(order_id: str, payment_id: str, signature: str,
+                              secret: str) -> bool:
+    """Standard Checkout's handler signature: HMAC-SHA256 over `order_id|payment_id` with the
+    API key secret. It proves Razorpay bound THIS payment to THIS order; it carries no
+    amount and no status, which is why the payment entity is still fetched and ingested
+    as an unsigned observation afterwards."""
+    if not (secret and signature and order_id and payment_id):
+        return False
+    expected = hmac.new(secret.encode(), f"{order_id}|{payment_id}".encode(),
+                        hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, signature)
 
 
 def verify_webhook(raw_body: bytes, signature: str, secret: str) -> bool:
