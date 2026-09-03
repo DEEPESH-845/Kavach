@@ -1,0 +1,1100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  context.xml — a complete, self-contained description of the Kavach repository,
+  written for an LLM that has never seen the tree and must reason about it precisely.
+
+  Ground rules used while writing this file:
+    * Everything here was read out of the source, not inferred from the README.
+    * Where the README and the code disagree, both are stated and the code wins.
+      See the discrepancies section near the end.
+    * Numbers are quoted from evals/*.json and from constants in the source.
+  Regenerate by re-reading: pkg/kavach/**, apps/**, web/**, documents/**, Makefile.
+-->
+<kavach-context version="2" generated-for="llm-onboarding" repo="Kavach" package-version="0.1.0">
+
+<!-- ==================================================================== -->
+<summary>
+  <one-line>
+    Kavach is a merchant-side trust layer for agentic commerce: it verifies AI agents
+    arriving at checkout (INBOUND / "Gate") and governs AI agents moving money out of a
+    merchant's account (OUTBOUND / "Rail"), emitting hash-chained, replayable proof of
+    every decision either way.
+  </one-line>
+
+  <thesis>
+    Two questions nothing in the current agentic-payments stack asks:
+      INBOUND  — is the agent at the till the one this signed mandate delegates to, and does
+                 its cart match what the principal actually authorised (not just how much)?
+      OUTBOUND — is this new intent financially the SAME OBLIGATION as money already in flight?
+    Existing controls (Razorpay idempotency keys, AP2 mandates, Stripe Issuing caps, UPI
+    Reserve Pay, MCP --read-only) all bound a REPLAY or an AMOUNT. None bounds a semantically
+    new intent that is financially a duplicate, and none bounds WHAT a delegated agent buys.
+    Canonical line used throughout the repo: "an idempotency key protects a retried request;
+    nothing protects a re-decided one."
+  </thesis>
+
+  <second-thesis>
+    A rail state and an obligation state are different things and must never be collapsed
+    into one `status` field. Razorpay marks a refund "processed" before the ARN/RRN arrives
+    from the gateway; the customer may not be credited for 5–10 business days. An agent that
+    reads `status == "processed"` and reports "done" is wrong. truth.py returns both states
+    plus the events that justify them, and refuses to emit a state no event supports.
+  </second-thesis>
+
+  <context>
+    Hackathon/portfolio project targeting Razorpay (Indian PA/PG). Submitted under
+    "Track 05 (Open)" but written in Track 01's quality-bar vocabulary (ADR-012).
+    Currency is INR only; all money is integer minor units (paise). Language: Python 3.11+
+    backend, TypeScript/Next.js 16 frontend (static export). Datastore: SQLite (WAL).
+    Default runtime mode is `replay` (a recorded Razorpay cassette); `live` is opt-in.
+  </context>
+</summary>
+
+<!-- ==================================================================== -->
+<how-to-run>
+  <entrypoint-command>make run</entrypoint-command>
+  <make-targets>
+    <t name="install">`.venv` + `pip install -e ".[dev]"`</t>
+    <t name="test">`pytest tests/`</t>
+    <t name="lint">`ruff check pkg/ tests/ apps/` (line-length 96, rules E,F,I,UP,B,SIM)</t>
+    <t name="fmt">`ruff check --fix`</t>
+    <t name="bench">`python apps/benchmark.py` — regenerates the refund corpus, trains the
+      duplicate-risk model, benchmarks it against B0–B4, writes data/risk_model.pkl and
+      evals/risk_report.json. ASSERTS; exits non-zero if the model loses.</t>
+    <t name="gate-bench">`python apps/gate_benchmark.py` — cart corpus, trains entailment,
+      benchmarks G0–G5, writes data/entailment_model.pkl and evals/gate_report.json. ASSERTS.</t>
+    <t name="mcp">`python apps/mcp_server.py` — MCP server over stdio.</t>
+    <t name="seed">`python apps/demo_data.py` — rebuilds kavach.db by running the REAL pipeline.</t>
+    <t name="ui">`cd web &amp;&amp; npm install &amp;&amp; npm run build` → web/out (static export)</t>
+    <t name="api">`python apps/api_server.py` (127.0.0.1:8000)</t>
+    <t name="dev">API on :8000 + `next dev` on :3000 in one process group</t>
+    <t name="run">seed + ui + api — one command, one port; `make demo` is a kept alias</t>
+    <t name="latency">`python apps/latency.py` — decision-path latency, fails past 25 ms p95</t>
+    <t name="scenarios">`python -m kavach.services.scenarios` — all adversary scenarios headless</t>
+    <t name="site">build UI and serve statically on :4173 (no API — the console will show
+      its "API is not reachable" state, by design)</t>
+    <t name="check">install + lint + test + bench + gate-bench (what CI runs)</t>
+    <t name="clean">removes build artefacts and kavach.db (keeps the corpus)</t>
+  </make-targets>
+
+  <environment-variables>
+    <var name="KAVACH_MODE" default="replay">`live` calls the real Razorpay API with your
+      credentials and appends to data/cassette.jsonl; `replay` reads that tape back.</var>
+    <var name="RAZORPAY_KEY_ID" /><var name="RAZORPAY_KEY_SECRET">An explicitly-passed blank
+      credential means "no credential" and must NOT fall back to the environment — the client
+      uses `is None` checks, not truthiness, for exactly this reason.</var>
+    <var name="RAZORPAY_WEBHOOK_SECRET">Missing secret ⇒ verification fails closed.</var>
+    <var name="KAVACH_DB" default="kavach.db">Path to the SQLite event log.</var>
+    <var name="KAVACH_KILL_SWITCH" default="unset">"1"/"true"/"on" suspends autonomous money
+      movement: every refund intent ESCALATEs to a human. Read at Policy construction.</var>
+    <var name="NEXT_PUBLIC_KAVACH_API">Frontend override for the API base URL.</var>
+  </environment-variables>
+
+  <ci file=".github/workflows/ci.yml">
+    job `check` on Python 3.11/3.12/3.13: ruff → pytest → apps/benchmark.py →
+    apps/gate_benchmark.py (model quality regressions break the build like a failing test).
+    job `ui` on Node 22: `npm ci` → `tsc --noEmit` → `npm run build` (a route that stops
+    prerendering fails CI).
+  </ci>
+</how-to-run>
+
+<!-- ==================================================================== -->
+<repository-layout>
+<![CDATA[
+apps/                       runnable entrypoints, one per binary
+  api_server.py             FastAPI HTTP API + static UI mount (the single demo process)
+  mcp_server.py             stdio MCP server entrypoint
+  webhook_server.py         stdlib HTTPServer webhook receiver
+  reconciler.py             polling reconciliation worker
+  demo_data.py              seeds kavach.db through the real decision pipeline
+  benchmark.py              → kavach.intelligence.evaluate:main
+  gate_benchmark.py         → kavach.intelligence.evaluate_gate:main
+  latency.py                decision-path latency measurement / regression tripwire
+
+pkg/kavach/                 the library (setuptools package root is `pkg`)
+  __init__.py               layering contract in the docstring; __version__ = "0.1.0"
+  money.py                  parse_inr / format_inr — the only money parser
+  eventlog.py               append-only, hash-chained event log (the spine)
+  truth.py                  events → FinancialFact (rail state vs obligation state)
+  ledger.py                 open obligations + write-ahead intent log
+  governor.py               outbound authority ladder + bounded execution
+  proof.py                  hash chain verification and its stated limits
+  reconciliation.py         settles APPROVED-but-unresolved intents against the provider
+  webhook.py                HMAC-verified webhook ingestion handler
+  gate/
+    envelope.py             Ed25519 delegation envelope: signature, window, nonce, revocation
+    mandate.py              Cart/CartLine, scope + cap arithmetic, admission recording
+    provenance.py           lexical goal-drift score over untrusted context
+    population.py           agent velocity over the intents table
+    admission.py            inbound verdict by expected-loss argmin
+  intelligence/
+    features.py             duplicate-risk feature contract
+    model.py                Model NamedTuple (vec, scaler, clf, threshold, names, design_fn)
+    corpus.py               synthetic refund-intent corpus (duplicates as paraphrases)
+    evaluate.py             outbound benchmark B0–B4, writes evals/risk_report.json
+    entailment.py           Gate's "does the cart entail the purpose" estimator
+    cart_corpus.py          synthetic cart corpus with attack/negative families
+    evaluate_gate.py        inbound benchmark G0–G5, writes evals/gate_report.json
+  services/                 THE single decision path shared by MCP, HTTP and the seeder
+    decisions.py            outbound pipeline: risk row → governor → record + event
+    dashboard.py            command-centre aggregates and the decision stream
+    financials.py           payments/refunds/obligations/truth traces (all derived)
+    intents.py              intent listings + the one unified decision view
+    review.py               human approve/reject of escalated intents (no provider call)
+    dispute.py              self-contained JSON dispute pack
+    gate.py                 HTTP-facing inbound admission + demo principal key + UI stages
+    scenarios.py            Adversary Lab: 11 attacks against the real code, sandboxed
+  razorpay/client.py        REST client, live|replay, cassette recording, HMAC verify
+  mcp/server.py             10 MCP tools with Razorpay-compatible names
+
+web/                        Next.js 16 / React 19 static export (landing page + console)
+tests/                      pytest, one file per module (24 files)
+documents/                  01..10 design docs, ADRs, threat model, evals method
+evals/                      risk_report.json, gate_report.json (benchmark output)
+data/                       intents.jsonl, cassette.jsonl, risk_model.pkl, entailment_model.pkl
+kavach.db                   the seeded SQLite ledger (regenerated by `make seed`)
+]]>
+</repository-layout>
+
+<!-- ==================================================================== -->
+<core-invariants>
+  <i id="1">Nothing below a layer may import anything above it. Order (strongest guarantee
+    first): eventlog → truth → ledger → intelligence → governor → mcp/http. Enforced
+    socially (CONTRIBUTING.md), not mechanically (ADR-015).</i>
+  <i id="2">A fact with no event behind it is structurally impossible. truth.derive() raises
+    on an empty event list and every FinancialFact carries a non-empty `evidence` list of
+    event seqs.</i>
+  <i id="3">A learned model may only ever move a decision toward MORE caution. It never
+    determines state, amount, authorisation or admission (ADR-004, ADR-006). A missing model
+    RAISES the floor (outbound: risk not assessed; inbound: no ALLOW is reachable at all).</i>
+  <i id="4">No float touches money anywhere. Amounts are integer minor units named
+    `*_minor` end-to-end, including across the HTTP boundary and into the frontend; division
+    to rupees happens once, at render time (web/lib/format.ts).</i>
+  <i id="5">There is exactly ONE decision path. MCP, HTTP and the demo seeder all call
+    `services/`. A "just for the dashboard" evaluator is explicitly forbidden — the seed
+    refuses to stage an execution the governor did not allow, so a screenshot of the console
+    is a screenshot of the system's behaviour.</i>
+  <i id="6">Derived numbers are recomputed, never stored. Cumulative mandate spend, open
+    exposure, and every dashboard tile are queries. A counter column would be a second copy
+    that drifts (ADR-016).</i>
+  <i id="7">Decisions are pure functions of (events, now, policy). Nothing reads the wall
+    clock during a derivation; `now` is always passed in. This is what makes a decision
+    replayable to the same verdict months later during a dispute.</i>
+  <i id="8">The frontend never invents data — no fallback object, no `?? 0`. An unreachable
+    API renders an error state, because zeros in a payments dashboard get believed.</i>
+</core-invariants>
+
+<!-- ==================================================================== -->
+<data-model>
+  <table name="events" file="pkg/kavach/eventlog.py" nature="append-only, hash-chained">
+    <columns>
+      seq INTEGER PK AUTOINCREMENT ·
+      source TEXT (webhook | api_response | poll | agent_intent | seed | gate | governor | review) ·
+      external_id TEXT ·
+      entity_type TEXT (payment | refund | order | payout | intent | mandate) ·
+      entity_id TEXT ·
+      parent_entity_id TEXT NULL (payment_id for a refund; target_id for an intent) ·
+      event_type TEXT (refund.processed, api.create_refund, governor.decided.deny, gate.admitted, review.approved …) ·
+      payload TEXT (raw JSON, json.dumps(sort_keys=True), never mutated) ·
+      occurred_at INTEGER (epoch s, from the source) ·
+      received_at INTEGER (epoch s, when we saw it) ·
+      sig_verified INTEGER 0/1 (HMAC checked, for webhooks) ·
+      previous_event_hash TEXT NULL ·
+      event_hash TEXT ·
+      UNIQUE (source, external_id)
+    </columns>
+    <indexes>idx_events_entity(entity_type, entity_id, occurred_at, seq);
+      partial idx_events_parent(parent_entity_id) WHERE NOT NULL</indexes>
+    <hash-formula>
+      sha256( previous_event_hash?
+              || "source:external_id:entity_type:entity_id:event_type:payload:occurred_at:sig_verified"
+              || parent_entity_id? )
+      — payload is the exact stored JSON string with sorted keys; parent_entity_id is
+      appended only when present. proof.py deliberately re-implements this rather than
+      calling append()'s helper, so a disagreement between writer and verifier is itself the
+      finding.
+    </hash-formula>
+    <idempotency>append() is INSERT OR IGNORE inside a SAVEPOINT and returns
+      (seq, is_new). A redelivered webhook is harmless.</idempotency>
+    <ordering>for_entity() orders by (occurred_at, seq), NOT arrival — Razorpay webhooks do
+      arrive out of order and a state machine fed arrival order walks backwards.</ordering>
+    <connection>connect(path, same_thread=True) opens WAL, foreign_keys=ON,
+      isolation_level=None (autocommit) and applies the schema. `same_thread=False` is only
+      for callers that give each unit of work its own connection (the HTTP API).</connection>
+  </table>
+
+  <table name="intents" file="pkg/kavach/ledger.py" nature="write-ahead intent log (mutable status)">
+    intent_id TEXT PK · agent_id · session_id (a NEW session is exactly how a duplicate is
+    born) · tool · target_type (payment|order) · target_id · amount_minor INTEGER ·
+    reason_text TEXT · created_at INTEGER · status TEXT · decision TEXT (JSON snapshot) ·
+    result_id TEXT NULL. Index on (target_type, target_id, created_at).
+    <statuses source="pkg/kavach/services/decisions.py">
+      PROPOSED · APPROVED · EXECUTED · FAILED · "ESCALATE" (ESCALATED constant) ·
+      "DENY" (DENIED constant). REVIEW_STATUSES = ("ESCALATE",);
+      REFUSED_STATUSES = ("DENY",); UNRESOLVED_STATUSES = ("APPROVED","FAILED") — the
+      reconciler's queue.
+    </statuses>
+    <note>ledger.record() raises ValueError on a duplicate intent_id: history is immutable.
+      The mutable `decision` column is why decisions are ALSO written as hash-chained
+      events — a decision that lives only here is a decision nobody can prove.</note>
+  </table>
+
+  <table name="gate_issuers" file="pkg/kavach/gate/envelope.py">key_id TEXT PK, public_key BLOB
+    (raw 32-byte Ed25519). Configured out of band; never self-asserted by the envelope.</table>
+  <table name="gate_nonces">nonce TEXT PK, mandate_id, claimed_at — claimed once, forever.</table>
+  <table name="gate_revocations">mandate_id TEXT PK, revoked_at, reason — read at decision
+    time, never cached ("a cached revocation list is a revocation that does not work").</table>
+
+  <derived-object name="FinancialFact" file="pkg/kavach/truth.py" frozen="true">
+    entity_type, entity_id, rail_state (Rail), confidence (Confidence), obligation_open bool,
+    amount_minor int, currency, reason (one sentence of why), evidence list[int] (event seqs,
+    never empty), as_of, unresolved_for (seconds since the last state-changing event),
+    arn (bank reference; the strongest credit signal observable).
+    `to_agent()` is the agent-facing shape — deliberately has no field that can be read as
+    "done" when it is not; it exposes `obligation: OPEN|CLOSED` and
+    `settled_to_customer: bool(arn) and not obligation_open`.
+  </derived-object>
+</data-model>
+
+<!-- ==================================================================== -->
+<module name="pkg/kavach/money.py">
+  <purpose>The only money parser. Floats never touch the money path.</purpose>
+  <api>
+    parse_inr(str|int|float|Decimal) -> int minor units. Rejects: bool (explicitly, because
+    bool subclasses int), non-finite, negative, fractional paise, and anything above
+    MAX_MINOR_UNITS = 100_000_000_00 (₹100 crore). Raises MoneyError (subclass of ValueError).
+    format_inr(int) -> "1234.56" string; TypeErrors on non-int.
+  </api>
+  <property-tests>tests/test_properties.py uses hypothesis over float inputs.</property-tests>
+</module>
+
+<module name="pkg/kavach/truth.py" role="TRUTH plane · deterministic · zero AI">
+  <enums>
+    Rail = INITIATED | ACCEPTED | PROCESSING | CONFIRMED | SETTLED | FAILED_TERMINAL |
+           REVERSED | AMBIGUOUS   (all observable from Razorpay's position; NPCI/issuer-side
+           conditions collapse to AMBIGUOUS with a stated reason — ADR-003)
+    Confidence = DERIVED_CERTAIN (a signature-verified event states it directly) |
+                 DERIVED_PROBABLE (inferred, or from an unverified source) |
+                 UNKNOWN (contradicted, or stale past tolerance)
+  </enums>
+  <status-maps>
+    _REFUND:  created→ACCEPTED, pending→PROCESSING, processed→PROCESSING, failed→FAILED_TERMINAL
+    _PAYMENT: created→INITIATED, authorized→ACCEPTED, captured→CONFIRMED, refunded→REVERSED,
+              failed→FAILED_TERMINAL
+    _RANK (INITIATED0 ACCEPTED1 PROCESSING2 CONFIRMED3 SETTLED4) exists ONLY to detect
+    regression: a later event ranking lower than an earlier one is a CONTRADICTION, not an
+    update, and collapses the fact to AMBIGUOUS/UNKNOWN with obligation_open=True.
+    _STALE_SECONDS = {refund: 6h, payment: 15m}; default 1h.
+    _TERMINAL = {FAILED_TERMINAL, REVERSED, SETTLED, CONFIRMED}. CONFIRMED's membership was a
+    live bug when absent: a captured payment aged into AMBIGUOUS after 15 minutes, so the
+    governor read payment_captured=False and DENIED every refund on any older payment.
+  </status-maps>
+  <derive-algorithm>
+    derive(events, *, now) folds events in causal order. For each event it reads the entity
+    body (`payload.&lt;entity&gt;.entity` for webhooks, flat for API responses), maps `status`,
+    appends the event seq to `evidence`, tracks last_change, and lifts amount/currency/arn.
+    Confidence is set per event: DERIVED_CERTAIN iff sig_verified else DERIVED_PROBABLE.
+    Then, in order:
+      1. contradiction → AMBIGUOUS/UNKNOWN/open.
+      2. `credited` shortcut: a refund in PROCESSING carrying an ARN is credited. This is
+         checked BEFORE the staleness rule, otherwise credited refunds age into AMBIGUOUS
+         and open exposure grows forever (Razorpay sends no further event after 'processed').
+      3. staleness: non-terminal, not credited, and unresolved &gt; tolerance → AMBIGUOUS.
+      4. THE load-bearing judgement — refund obligation_open = NOT (PROCESSING AND arn).
+         'processed' without an ARN is DISPATCH, not CREDIT. With an ARN the state is
+         re-labelled CONFIRMED and the obligation closes. FAILED_TERMINAL closes the
+         obligation too (no credit will occur on that refund).
+         For payments: obligation_open = state in {INITIATED, ACCEPTED}.
+  </derive-algorithm>
+</module>
+
+<module name="pkg/kavach/ledger.py" role="open-object ledger">
+  <functions>
+    init(conn) · record(conn, Intent, decision) — write-ahead, durable BEFORE execution ·
+    settle(conn, intent_id, status, result_id=None) · prior_intents(target_type, target_id) —
+    everything ANY agent asked for against this target, in ANY session ·
+    fact_for(entity_type, entity_id, now) — derive or None ·
+    open_obligations(now) over MONEY_ENTITIES = (payment, refund, order, payout) ·
+    open_against_payment(payment_id, now) — reads the refund→payment link back out of the
+    log (parent_entity_id) rather than keeping a second copy ·
+    exposure(payment_id, now) — open refund amounts PLUS EXECUTED intents whose result_id is
+    not among the refunds we hold any event for. That extra term is the webhook-lag window
+    where a naive agent double-refunds; the observed-set check prevents double counting.
+  </functions>
+</module>
+
+<module name="pkg/kavach/governor.py" role="OUTBOUND policy · the authority ladder">
+  <policy>
+    Policy(allow_write=True, max_auto_refund_minor=1_000_00 (₹1,000),
+           session_cap_minor=5_000_00, daily_cap_minor=25_000_00, risk_threshold=0.5,
+           kill_switch=from KAVACH_KILL_SWITCH). Frozen dataclass; there is deliberately NO
+           API that edits it ("a limit an operator can raise from the screen it is failing
+           on is not a limit"). Callers that have a trained model construct
+           Policy(risk_threshold=model.threshold) — the estimator's frozen train threshold.
+  </policy>
+  <actions>Action = ALLOW | ESCALATE (queued for a human; not a refusal) | DENY (never
+    executable; no human waves it through here).</actions>
+  <authority-order>
+    1. Accounting invariants  → DENY, first and unarguable:
+         · payment not captured → "there are no funds to refund"
+         · exposure + amount &gt; payment_amount → refunds may not exceed the captured amount
+    2. Permission tier        → DENY if not policy.allow_write
+    3. Kill switch            → ESCALATE (deliberately not DENY: halting agents must not
+                                strand a legitimate refund, it must put a human in front of it)
+    4. Truth-plane confidence → ESCALATE if any open obligation on this payment is UNKNOWN
+                                ("we cannot assert what we would be duplicating")
+    5. Duplicate-risk model   → ESCALATE if risk_score &gt;= policy.risk_threshold. ESCALATE ONLY.
+    6. Exposure caps          → ESCALATE on per-refund limit, session cap, daily cap
+    _escalate() never downgrades a DENY; _deny() replaces the reason list outright.
+    A clean pass yields ALLOW with "no open obligation matches this intent and all caps are
+    satisfied".
+  </authority-order>
+  <decision-shape>Decision{action, reasons[], evidence[] (event seqs from the truth plane),
+    risk_score, risk_explain[], exposure_minor}; to_dict() renames to
+    {action, reasons, evidence_events, duplicate_risk, risk_factors, open_exposure (rupees)}.</decision-shape>
+  <execution-split>
+    reserve(conn, intent, decision) — must run inside BEGIN EXCLUSIVE. Records the intent +
+    decision; ALLOW settles to APPROVED and returns {"executed": False, "reserved": True}.
+    execute_provider(conn, client, intent, decision) — the external call, deliberately
+    separate so the DB lock is released first. Sends
+    idempotency_key = f"kavach-{intent_id}". On RazorpayError: FAILED if not retriable, else
+    left APPROVED (the reconciler's job). On any other exception: FAILED, then re-raise —
+    an obligation is never leaked. On success: EXECUTED with result_id = refund id.
+    new_intent(...) is the refund-shaped helper; new_gate_intent(...) takes an arbitrary
+    tool/target.
+  </execution-split>
+</module>
+
+<module name="pkg/kavach/proof.py" role="tamper-EVIDENCE, stated honestly">
+  scan(conn) walks the whole chain once and returns {ok, events, checked, broken_at, detail,
+  head}. verify_event_chain → (bool, human message). verify_range(seqs) answers whether cited
+  events sit inside the verified prefix (a single event cannot be verified alone).
+  chain(limit, before) returns a newest-first window with per-row `verified` plus `status`
+  and `claims()`.
+  claims() ships with every proof response so the UI cannot overstate by omission:
+    proves — the ordered log has not been altered since it was written (SHA-256, chained)
+    does_not_prove — WHO wrote an event (that is the webhook HMAC, recorded as sig_verified)
+    limit — an attacker with write access could rewrite the chain from the edit forward;
+            externally anchoring the head would close that and is NOT implemented.
+</module>
+
+<module name="pkg/kavach/webhook.py + apps/webhook_server.py">
+  stdlib BaseHTTPRequestHandler on POST /webhooks/razorpay. Requires X-Razorpay-Signature;
+  verifies HMAC-SHA256 over the RAW body with RAZORPAY_WEBHOOK_SECRET (constant-time,
+  fail-closed on missing secret/signature). Then parses, derives entity_type from the event
+  name prefix, extracts payload[entity_type].entity.id, sets parent_entity_id from
+  entity.payment_id for refunds, and appends with sig_verified=True, external_id from
+  X-Razorpay-Event-Id (falling back to "webhook:{id}:{event}") — so redelivery is idempotent.
+  401 missing/invalid signature · 400 malformed · 500 ingest failure · 200 OK.
+</module>
+
+<module name="pkg/kavach/reconciliation.py + apps/reconciler.py">
+  reconcile_pending_intents(conn, client, tolerance_seconds=60, now=None): finds intents in
+  status APPROVED older than the cutoff, fetches client.payment_refunds(target_id), and
+  matches on notes.intent_id (which governor.execute_provider writes). Match → settle
+  EXECUTED with the refund id; no match → settle FAILED. Only handles
+  tool == "create_refund" and target_type == "payment"; anything else logs a warning and is
+  skipped. The worker loops on --interval (default 30s) with --tolerance (default 60s).
+</module>
+
+<module name="pkg/kavach/razorpay/client.py" role="transport · stdlib only">
+  Two modes. `live` performs real HTTPS calls (Basic auth, 15s timeout) and RECORDS every
+  interaction to data/cassette.jsonl, so `replay` is a recording of reality rather than a
+  mock written to agree with us. Replay is SEQUENTIAL, not keyed: identical repeated calls
+  are the entire point of this project, and a keyed cache would collapse the naive agent's
+  two refunds into one and hide the bug. Path comparison is structural (`_shape` replaces
+  pay_/rfnd_/order_/plink_ ids with &lt;id&gt;) so a re-recorded cassette still replays.
+  Endpoints: create_order, create_payment_link, fetch_payment, fetch_payments, fetch_refund,
+  payment_refunds, create_refund(payment_id, amount_minor, idempotency_key ≥10 chars, notes).
+  RazorpayError carries .status/.body/.path and .retriable (5xx or 429 only — retrying an
+  idempotent-unsafe 4xx is how duplicates get created). CassetteMismatch when the tape drifts.
+  verify_webhook(raw_body, signature, secret) — HMAC-SHA256 over RAW bytes, hmac.compare_digest.
+</module>
+
+<!-- ==================================================================== -->
+<gate role="INBOUND · the merchant's half of agentic checkout">
+  <module name="pkg/kavach/gate/envelope.py">
+    <envelope-fields>mandate_id, principal_id (the human delegating), agent_id, purpose
+      (free text — what entailment scores against), merchant_allowlist, categories,
+      per_txn_cap_minor, cumulative_cap_minor, not_before, not_after, nonce, issued_at.</envelope-fields>
+    <failures>BAD_SIGNATURE · UNKNOWN_ISSUER · EXPIRED · NOT_YET_VALID · REPLAYED_NONCE ·
+      PRINCIPAL_MISMATCH · MALFORMED · REVOKED. Typed because "a bare False cannot be
+      audited, explained to a merchant, or counted in an eval".</failures>
+    <verify-order>
+      1. look up the issuer public key by key_id (unknown → UNKNOWN_ISSUER)
+      2. Ed25519 verify over the RAW BYTES, BEFORE parsing (verifying a round-tripped
+         structure would make key order load-bearing and invite someone to "fix" it by
+         relaxing the check)
+      3. parse (malformed → MALFORMED); `_minor` rejects bool/non-int/negative amounts
+      4. collect ALL of: not_before, not_after, principal binding, revocation
+      5. only if nothing failed, optionally CLAIM the nonce (INSERT OR IGNORE, rowcount==1)
+      Claiming earlier would let anyone burn a legitimate mandate's nonce with a wrong clock
+      or wrong principal — replay protection turned into a DoS primitive.
+      claim_nonce=False makes it an INSPECTION: everything else is still checked, the mandate
+      is not spent, and the answer therefore carries NO replay protection and must never gate
+      money on its own.
+      The Envelope is returned ONLY when nothing failed.
+    </verify-order>
+  </module>
+
+  <module name="pkg/kavach/gate/mandate.py">
+    Cart{cart_id, merchant_id, lines: tuple[CartLine]} · CartLine{sku, description, category,
+    unit_amount_minor, quantity=1, liquid=False}. `total_minor` is DERIVED on both, never
+    stored (a stored total can disagree with its lines, and the disagreement is what an
+    attacker aims at). The price field is `unit_amount_minor`, not `amount_minor`, to stop a
+    silent factor-of-quantity bug.
+    The Cart is NOT a trust boundary: `category` and `liquid` are the MERCHANT'S catalogue
+    facts, not claims by the arriving agent — which is exactly why they can be relied on.
+    Violation = EMPTY_CART | MERCHANT_NOT_ALLOWED | CATEGORY_OUT_OF_SCOPE |
+                PER_TXN_CAP_EXCEEDED | CUMULATIVE_CAP_EXCEEDED.
+    admissible() returns ALL violations (a merchant debugging an integration should learn
+    everything in one round-trip), is pure, and fails CLOSED on an empty category scope
+    (an empty scope permits nothing, not everything). An empty cart is a malformed request
+    wearing a pass, so it is a violation.
+    spent(mandate_id) sums payload.total_minor over prior `gate.admitted` events —
+    RECOMPUTED from the log on every call (ADR-016). record_admission() appends
+    entity_type="mandate", event_type="gate.admitted",
+    external_id=f"admission:{cart_id}" (so a retried admission counts once, inheriting
+    eventlog's uniqueness), sig_verified=True (true here because verify() checked Ed25519).
+  </module>
+
+  <module name="pkg/kavach/gate/provenance.py">
+    score_drift(mandate_purpose, cart_text, untrusted_context) -> [0,1]. MECHANISM, stated
+    exactly: word-set overlap (tokens &gt; 3 chars, lowercased) between cart and untrusted
+    context, MINUS the mandate purpose's own vocabulary, divided by |cart words|. Lexical,
+    not learned. Measured cost: family F2 (goal drift) recall 0.550 — the weakest plane, and
+    named as weakest rather than averaged into a headline. Safe to ship weak here ONLY
+    because the score is advisory and can never authorise.
+    explain_drift(): &lt;0.2 nothing · &lt;0.6 "minor correlation…" · else "high correlation …:
+    goal drift detected".
+  </module>
+
+  <module name="pkg/kavach/gate/population.py">
+    check_velocity(conn, agent_id, now, window_seconds=3600) -> VelocityRisk.
+    Counts rows in `intents` for that agent inside the window: &gt;50 → score 1.0 "extreme
+    velocity"; &gt;20 → 0.6 "high velocity"; else 0.0. That is the WHOLE mechanism: there is no
+    identity graph, no community detection and no GBM, and the module docstring says so
+    rather than implying otherwise. Ring detection is the named upgrade path and needs
+    columns the ledger does not have (device, address, token, principal), which is also why
+    the function takes no principal_id — a parameter that changed nothing was removed.
+  </module>
+
+  <module name="pkg/kavach/gate/admission.py" role="the inbound verdict">
+    <verdicts>ALLOW · STEP_UP (re-consent from the principal — the buyer's side) ·
+      HOLD (merchant review — the merchant's side) · DENY.
+      _CAUTION ranks ALLOW0 &lt; STEP_UP1 &lt; HOLD2 &lt; DENY3 and is used ONLY to break
+      expected-loss ties toward the safer option.</verdicts>
+    <ladder>
+      1. envelope.verify() fails → DENY with the typed failures (nonce untouched)
+      2. mandate.admissible() violations → DENY with per-violation English reasons
+      3. model is None → STEP_UP. ALLOW is reachable ONLY through a model that actually read
+         the cart: the deterministic layer cannot tell whether a perfectly in-scope,
+         in-budget cart is what the principal asked for — that is the entire reason this
+         plane exists (ADR-006/ADR-017).
+      4. risk = entailment model score; then FUSION, caution-only:
+           risk = min(1.0, risk + provenance.score_drift(...))
+           risk = min(1.0, risk + population.check_velocity(...).score * 0.5)
+      5. verdict = argmin over expected_losses(), ties broken toward more caution.
+    </ladder>
+    <expected-loss>
+      Costs (merchant-supplied, every rate a STATED ASSUMPTION, reported with every result):
+        fraud_loss_share=1.0 · margin_share=0.15 · step_up_minor=4_000 (₹40) ·
+        hold_minor=15_000 (₹150) · step_up_catch_rate=0.70 · hold_catch_rate=0.95
+      at_risk = cart_total * fraud_loss_share
+        ALLOW   = risk * at_risk
+        STEP_UP = step_up_minor + risk * (1 - step_up_catch_rate) * at_risk
+        HOLD    = hold_minor    + risk * (1 - hold_catch_rate)    * at_risk
+        DENY    = (1 - risk) * cart_total * margin_share      ← DENY is NOT free, which is
+                  why it cannot be the safe default.
+    </expected-loss>
+    <where-the-nonce-is-spent>
+      decide() verifies WITHOUT claiming the nonce and charges nothing — it is a genuine dry
+      run, and calling it repeatedly costs nothing. admit() is the wrapper that, on ALLOW
+      ONLY, claims the nonce (returning DENY/REPLAYED_NONCE if it was claimed concurrently)
+      and calls mandate.record_admission() to charge the cumulative cap. A mandate is
+      therefore single-use across ADMISSIONS, not across questions. admit() is the call a
+      tool surface should make; decide() alone admits nothing.
+    </where-the-nonce-is-spent>
+  </module>
+</gate>
+
+<!-- ==================================================================== -->
+<intelligence role="learned components · advisory only">
+  <module name="pkg/kavach/intelligence/model.py">
+    Model is a NamedTuple(vec: TfidfVectorizer, scaler: StandardScaler,
+    clf: LogisticRegression, threshold=0.5, names: tuple[str,...], design_fn: Callable|None).
+    Both `names` AND `design_fn` are needed for a second estimator to reuse the tuple —
+    names alone would let an entailment model load without complaint and then score the
+    wrong thing (pinned by tests/test_model.py).
+    score(row) → P(class 1). explain(row, k=4) → per-decision attribution over STANDARDISED
+    features (unscaled, log_time_gap sits near 9 for every row and swamps the attribution).
+    save() persists a plain dict {vec, scaler, clf, threshold, names} — NOT the NamedTuple
+    (pickling the class binds it to __main__ when trained as a script) and NOT design_fn
+    (a pickled callable binds the artefact to an import path). load(path, design_fn=…) fails
+    loudly on an artefact predating feature-name persistence.
+    fit(train): TF-IDF (1,2)-grams, min_df=2, sublinear_tf, fitted on TRAIN text only;
+    StandardScaler on relational features; LogisticRegression(max_iter=4000,
+    class_weight="balanced"). Artefact: data/risk_model.pkl.
+  </module>
+
+  <module name="pkg/kavach/intelligence/features.py" role="duplicate-risk feature contract">
+    FEATURES = max_text_sim, dup_evidence, min_amount_delta, amount_exact_match,
+    log_time_gap, frac_diff_session, n_prior, open_ratio, open_count, any_result_unknown,
+    amount_share. `dup_evidence` = max over priors of similarity * (1 - amount_delta) — the
+    duplicate signature. eligible(rows) keeps only rows with ≥1 prior intent on the same
+    payment: the task is only DEFINED where a duplicate is possible, and scoring first-ever
+    intents let an earlier model win by learning "does this payment have history" (ADR-014).
+    Nothing reaches forward in time.
+    design(): relational features (scaled) hstacked with TF-IDF of the reason TEXT itself.
+    Text matters because "item arrived damaged" and "item arrived damaged - second unit in
+    the same order" are highly similar to each other and to the prior, yet one is a duplicate
+    and one is a separate obligation.
+  </module>
+
+  <module name="pkg/kavach/intelligence/corpus.py" role="synthetic refund-intent corpus">
+    7 obligation kinds (duplicate_charge, item_damaged, shipping_fee, not_delivered,
+    size_return, price_match, late_delivery), each with a share-of-payment range and 4–6
+    PARAPHRASES. Design constraints that make the eval mean anything:
+      1. duplicates are paraphrases, never string copies (otherwise exact equality wins);
+      2. hard negatives share payment, window and vocabulary and differ only in WHICH
+         obligation they name — including a "second identical unit" negative with an
+         IDENTICAL amount, so amount-matching cannot solve it;
+      3. duplicate amounts are deliberately NOT a reliable tell (same, re-decided slice, or
+         a partial remainder);
+      4. the split is TEMPORAL and payment-disjoint, not random.
+    DUPLICATE_RATE = 0.12 — a STATED ASSUMPTION, not a measurement; sensitivity is reported.
+    `result_known` models the webhook-lag window (≈55% unknown).
+    `python -m kavach.intelligence.corpus` writes data/intents.jsonl.
+  </module>
+
+  <module name="pkg/kavach/intelligence/evaluate.py" role="outbound benchmark">
+    REVIEW_BUDGET = 0.20 of ELIGIBLE intents (≈11% of all agent traffic). Fixed-budget rather
+    than cost-weighted because at ₹50 a review "escalate everything" is arithmetically
+    cheapest and operationally absurd (ADR-014). Thresholds are chosen on TRAIN by quantile
+    and frozen ("picking it on test is how benchmarks lie").
+    Baselines: B0 escalate everything · B1 exact text match · B2 rule amount+open+24h ·
+    B3 same learner blinded to text · B4 the shipped model.
+    Reports precision, recall, AP, escalation rate, leaked rupees, plus the arithmetic recall
+    ceiling at the budget and a 5/10/20/30% budget sweep.
+    Hard asserts (these are the CI gate): within budget · AP &gt; 0.75 · beats every feasible
+    baseline on leaked rupees · text earns its place over B3.
+    Writes data/risk_model.pkl (with the frozen threshold) and evals/risk_report.json.
+  </module>
+
+  <module name="pkg/kavach/intelligence/entailment.py" role="THE load-bearing AI of Gate">
+    Question: does the cart satisfy the PURPOSE the principal delegated? AP2, UPI Reserve Pay
+    and Stripe Issuing all bound HOW MUCH a delegated agent may spend; none bounds WHAT IT
+    MAY BUY. "weekly groceries under ₹2,000" is satisfied, to the rupee, by ₹1,800 of gift cards.
+    FEATURES = purpose_sim_max, purpose_sim_mean, purpose_sim_value_weighted,
+    unsupported_value_share, liquid_value_share, max_line_share, cap_utilisation,
+    max_quantity, n_lines, log_total.
+    `category_match_rate` is deliberately ABSENT: every cart reaching this model already
+    passed admissible(), so it is the constant 1.0 — a column of no information and a
+    misleading one to show a merchant.
+    The PURPOSE STRING IS DELIBERATELY EXCLUDED from the TF-IDF text block (only ten purpose
+    archetypes exist in the corpus, so reading purposes directly would let the model memorise
+    mandate identity). All purpose interaction is forced through the similarity features.
+    Artefact: data/entailment_model.pkl; load() reattaches this module's design_fn.
+  </module>
+
+  <module name="pkg/kavach/intelligence/cart_corpus.py" role="synthetic cart corpus">
+    28 catalogue items as (description, category, group, unit_minor, liquid); 10 mandates as
+    (purpose, categories, cap, entailed groups). Categories are COARSE and purposes are FINE
+    — the gap IS the thesis (a supermarket files gift cards under `grocery`).
+    Attack families: F1_liquidity · F2_drift · F3_quantity · F4_cap_hugging.
+    Negative families: N0_plain · N1_no_overlap (legit but zero lexical overlap) ·
+    N2_liquid_ok (a gift card the purpose asked for) · N3_near_cap · N4_many_lines —
+    each defeats exactly one feature, so no single feature can decide the task.
+    Constraints: every cart passes admissible() by construction; every attack ITEM and every
+    attack SIGNATURE also appears legitimately; a failed draw returns None rather than
+    clamping (clamping would make attack carts systematically cheaper and hand the model a
+    free amount signal). VIOLATION_RATE = 0.15, a stated assumption.
+    temporal_split drops any test mandate that appears in train.
+  </module>
+
+  <module name="pkg/kavach/intelligence/evaluate_gate.py" role="inbound benchmark">
+    STEP_UP_BUDGET = 0.20 of carts. Population: carts under a VALID envelope that already
+    pass every deterministic check (ADR-014 in its Gate form).
+    G0 step up everything · G1 lexical overlap · G2 category+cap rule (AP2/Reserve Pay/Stripe
+    Issuing reduced to what they enforce — it flags NOTHING by construction, and that zero is
+    the finding, not a strawman) · G3 hand-written red flags (liquid share, bulk quantity ≥5,
+    ≥90% cap fill — the best rule an engineer writes without a model; ADR-011) ·
+    G4 same learner blinded to the cart's words · G5 the shipped model.
+    Reports per-family recall and a budget sweep. Asserts: within budget · AP &gt; 0.60 ·
+    beats every feasible baseline INCLUDING G3 ("if it cannot, the claim that purpose cannot
+    be enforced by rules is wrong") · AP &gt; G4 + 0.05.
+    Note printed in the output: G1 and G3 exceed the budget because a rule with few distinct
+    output values cannot be tuned to an arbitrary rate — a property of coarse rules, not a
+    handicap imposed on them.
+  </module>
+</intelligence>
+
+<!-- ==================================================================== -->
+<services role="the single decision path; MCP, HTTP and the seeder all call these">
+  <module name="services/decisions.py" role="THE outbound pipeline">
+    Pipeline: intent → truth → exposure → duplicate risk → governor → record → event.
+    risk_row(conn, intent, now) builds the estimator's feature row (priors = intents already
+    recorded against the same target; nothing reaches forward in time). This lives here and
+    nowhere else — it used to be inline in mcp/server.py, so an API wanting a score had to
+    import a private helper or invent its own, and an invented one scores a different
+    question under the same name.
+    score_risk() returns (None, []) when there is no model — "not assessed", which the
+    governor treats as a reason for caution, never a reason to proceed. With a model but no
+    priors it returns (0.0, ["no prior intent on this target…"]) because the estimator is
+    only defined where a duplicate is possible.
+    evaluate(): decides WITHOUT writing anything (so the API has a genuine dry run and the
+    adversary lab does not move the ledger). payment_captured is `rail_state == "CONFIRMED"`,
+    and this is now the ONLY definition of "captured" in the tree.
+    record(): SAVEPOINT-wrapped — governor.reserve() plus an eventlog append of
+    `governor.decided.{allow|escalate|deny}` (entity_type="intent", parent = the target,
+    sig_verified=False because it is OUR assertion, not a signed message from the rail).
+    A decision recorded without its event, or vice versa, is a hole in the audit trail.
+    evaluate_and_record(): the whole pipeline. It does NOT call Razorpay — execution is a
+    separate deliberate step, which is precisely the state the reconciler exists to resolve.
+  </module>
+
+  <module name="services/dashboard.py">
+    overview(): exposure (open_minor/open_count/oldest_seconds), governed (intents, amount,
+    executed, last_24h), refused (denied, escalated, protected_minor = amount on DENY+ESCALATE,
+    duplicate_flagged = intents whose recorded decision carried duplicate_risk ≥ 0.5),
+    review_queue, unresolved_outcomes, agents (active, admission_rate), integrity (chain
+    verification + event count), by_status. Nothing is stored or seeded: "a metric that
+    cannot go down is a decoration".
+    stream(limit, before): the decision stream, newest first, CURSORED on created_at (offset
+    paging would re-show or skip rows as the head moves).
+  </module>
+
+  <module name="services/financials.py">
+    listing/detail for payment|refund, obligations(), truth_trace(). Every row is a DERIVED
+    fact — there is no payments table — so every response carries the event seqs it came from
+    and a note saying "nothing here is a stored status field".
+    truth_trace() re-derives after each event (rather than instrumenting derive()) so the
+    derivation stays pure and the trace's last row IS the fact the governor read. It also
+    ships the provenance vocabulary (observed / derived / inferred / policy) from the BACKEND
+    so the frontend cannot relabel an inference as an observation.
+  </module>
+
+  <module name="services/intents.py">
+    listing (status/agent/target filters), review_queue, unresolved, get, agents(),
+    agent_detail(), and detail() — ONE function assembling the seven things a dispute needs:
+    the intent, the truth it was decided against, the risk scored, the governor's verdict,
+    the provider outcome, the audit events, and proof they are intact. It is one call rather
+    than seven endpoints because the VALUE is that the parts line up. Cited evidence is
+    fetched by the seqs the decision RECORDED, not re-derived now — "a dispute is about what
+    was known then".
+  </module>
+
+  <module name="services/review.py">
+    act(conn, intent_id, action=approve|reject, reviewer, note). Approve moves ESCALATE →
+    APPROVED and writes a `review.approved` event naming the reviewer; reject moves it to
+    DENY. It NEVER calls Razorpay — putting a provider call behind an operator's click has a
+    duplicate refund as its failure mode; an APPROVED intent with no result is the
+    reconciler's job. Every response says `provider_call: "not attempted"` and what happens
+    next, so the UI cannot imply money moved.
+    A DENIED intent is NOT reviewable: DENY is an accounting invariant or a permission-tier
+    refusal and no reviewer releases those. Idempotent on (intent, action) via the event
+    log's (source, external_id) uniqueness — a double-clicked Approve is the most ordinary
+    way to create a duplicate.
+  </module>
+
+  <module name="services/dispute.py">
+    pack(intent_id) → a self-contained JSON artefact: subject, financial_truth,
+    risk_assessment (labelled "advisory only"), governor_decision with the authority order,
+    provider_outcome, audit_events, related_intents, proof (cited seqs, chain head, length,
+    intact) and a `verification` block describing the hash recomputation EXACTLY, so a third
+    party can re-verify without this codebase. JSON rather than PDF deliberately.
+  </module>
+
+  <module name="services/gate.py" role="inbound admission over HTTP + the demo principal">
+    DEMO_KEY_ID = "kavach-demo-principal"; the Ed25519 private key is DERIVED from
+    sha256(b"kavach/demo-principal/v1") — deterministic (a judge replaying a scenario gets
+    byte-identical envelopes) and never stored on disk. register_demo_issuer() trusts its
+    public half. What this is and is NOT: the signature check is REAL (a tampered envelope
+    genuinely fails Ed25519); what it does not prove is that the mandate came from a real
+    person — we minted it. Every response says so via `issuer.simulated: true`.
+    sign(body) json.dumps(sort_keys, compact) → (raw bytes, signature); the raw bytes travel
+    with the signature.
+    admit(..., tamper=True) signs and THEN mutates the body (×100 on per_txn_cap_minor), so
+    the forged-mandate scenario is genuinely forged rather than asserted.
+    _stages() derives the 10-rung UI ladder (signature, issuer, validity, binding, revocation,
+    replay, merchant, category, caps, purpose, admission) FROM WHAT THE DECISION PRODUCED —
+    never a fixed list of ticks on a timer. A rung that was not reached says SKIPPED (a
+    signature failure short-circuits parsing, so later envelope checks genuinely did not run);
+    a missing model says UNAVAILABLE.
+    inspect() verifies WITHOUT spending the nonce and returns the mandate plus spent/remaining
+    and its prior admissions.
+  </module>
+
+  <module name="services/scenarios.py" role="Adversary Lab · 11 attacks">
+    Every scenario builds its OWN in-memory SQLite, seeds at fixed epoch T = 1_700_000_000,
+    and runs the REAL decision code. Deterministic (the judge's run matches ours) and
+    isolated (the operator ledger cannot be inflated by the lab). Each scenario declares
+    `expect` BEFORE running and reports outcome HELD | BROKEN | MODEL_UNAVAILABLE.
+    <catalogue>
+      outbound-duplicate    high     expect ESCALATE|DENY  needs_model  duplicate refund across sessions
+      outbound-over-refund  critical expect DENY                        refund &gt; captured amount (prompt-injected)
+      outbound-unknown-state medium  expect ESCALATE|DENY              refund against an AMBIGUOUS obligation
+      inbound-legitimate    control  expect ALLOW          needs_model  the gate must admit what it should
+      inbound-category      high     expect DENY                       in-budget, out-of-scope (₹1,900 gold coin)
+      inbound-cap           high     expect DENY                       per-transaction cap breach
+      inbound-expired       medium   expect DENY                       lapsed mandate
+      inbound-forged        critical expect DENY                       cap raised after signing
+      inbound-revoked       high     expect DENY                       revoked mandate on a stolen device
+      inbound-replay        high     expect DENY          needs_model   one delegation spent twice
+      inbound-goal-drift    critical expect STEP_UP|HOLD|DENY needs_model  injection → liquid value
+    </catalogue>
+    Documented honesty in _outbound_duplicate's docstring: the estimator reads refund-reason
+    TEXT so it is only meaningful on refund-shaped text (an earlier grocery-worded version
+    scored 0.33 and the lab reported BROKEN), and it is sensitive to the gap between requests
+    (at an 11-minute gap the same pair scores 0.46, under threshold — the deterministic
+    layers still apply, but the model layer would let that one through). That limit is
+    exactly why the model may only escalate.
+    A scenario needing a model that is absent reports MODEL_UNAVAILABLE, not a pass.
+  </module>
+</services>
+
+<!-- ==================================================================== -->
+<mcp-surface file="pkg/kavach/mcp/server.py">
+  <why>ADR-005: same tool names as Razorpay's MCP, different return type. Swapping is one
+    line in an agent config — same tools, same arguments, same model, same prompt — so the
+    A/B is fair. razorpay-mcp returns {"id":"rfnd_…","status":"processing"}; Kavach returns a
+    decision, its reasons, and the events behind them.</why>
+  <server-instructions>The MCPServer is constructed with instructions telling the agent that
+    a refund with rail_state PROCESSING and obligation OPEN has NOT reached the customer, and
+    to call list_open_obligations or check_refund before creating a refund.</server-instructions>
+  <module-state>Opens KAVACH_DB at import (which is why it is transport, not logic), inits
+    ledger + envelope schemas, constructs a Razorpay client and Policy, loads
+    data/risk_model.pkl (setting Policy.risk_threshold to the model's frozen threshold) and
+    data/entailment_model.pkl if present.</module-state>
+  <tools>
+    <tool name="fetch_payment" kind="read">payment as a FinancialFact + open_refund_exposure</tool>
+    <tool name="fetch_refund" kind="read">refund as a FinancialFact (processed ≠ credited)</tool>
+    <tool name="list_open_obligations" kind="read">money in flight against a payment</tool>
+    <tool name="check_refund" kind="read">DRY RUN — the decision this refund WOULD get,
+      computed by services.decisions.evaluate, i.e. the identical code create_refund runs.
+      The thing the raw API cannot offer: you cannot ask Razorpay "would this be a
+      duplicate?". Returns {"would", …decision, "truth", "dry_run": true}.</tool>
+    <tool name="create_refund" kind="write" destructive="true" idempotent="false">
+      ingest payment if unknown → BEGIN EXCLUSIVE → decisions.evaluate → decisions.record
+      (reserve + a hash-chained `governor.decided.*` event) → commit → (on ALLOW only)
+      execute_provider outside the lock → ingest the resulting refund.</tool>
+    <tool name="approval_queue" kind="read">intents held for a human, with reasons</tool>
+    <tool name="audit_trail" kind="read">every intent against a payment and its outcome</tool>
+    <tool name="verify_audit_trail" kind="read">hash-chain verification</tool>
+    <tool name="verify_agent" kind="read">inspect a mandate WITHOUT spending its nonce
+      (base64 envelope + signature + key_id) — carries no replay protection by design</tool>
+    <tool name="admit_cart" kind="read">full inbound admission; CONSUMES the nonce; on ALLOW
+      charges the cumulative cap. Lines are {sku, description, category, amount (rupees per
+      unit), quantity, liquid}; category and liquid come from the MERCHANT'S catalogue.</tool>
+    (Read-only tools carry ToolAnnotations(read_only, non-destructive, idempotent);
+     create_refund is annotated destructive and non-idempotent because a second call with a
+     new intent is a second refund.)
+  </tools>
+  <console-script>kavach-mcp-server = kavach.mcp.server:main (stdio)</console-script>
+</mcp-surface>
+
+<!-- ==================================================================== -->
+<http-api file="apps/api_server.py" framework="FastAPI + uvicorn" port="8000">
+  <boundary>The only thing the browser talks to. A typed shell over the same services the MCP
+    surface uses — handlers validate, call ONE service function, and serialise. Any handler
+    that starts making decisions belongs in pkg/kavach.</boundary>
+  <errors>Every failure leaves as {"error": {code, message, …}} — three handlers
+    (HTTPException, RequestValidationError→422 with per-field problems, and a catch-all 500
+    that logs everything and discloses nothing but a reference id). One envelope, because two
+    shapes means the client writes two code paths and the second renders "[object Object]".</errors>
+  <db>One sqlite3 connection per request via a Depends contextmanager, opened with
+    same_thread=False (FastAPI runs a sync dependency's body and its teardown on different
+    threadpool threads, sequentially — never concurrently, and no connection is shared).</db>
+  <models>Loaded ONCE at startup; a model that fails to load stays absent rather than
+    retrying per request, because absent widens caution, which is the safe direction.</models>
+  <static>If web/out exists it is mounted at "/" (html=True) so the demo is one process and
+    one port with no CORS; a 404 serves the exported 404 page instead of Starlette's plain
+    text. CORS allows only localhost:3000 and :4173 for the dev server.</static>
+  <endpoints>
+    GET  /api/health              env truth: mode + note, db name, model availability, chain integrity, policy, ui flag
+    GET  /api/policy              limits, threshold source, the 6-rung authority order, mutable:false + why
+    GET  /api/overview            dashboard.overview
+    GET  /api/stream              dashboard.stream (limit≤200, cursor `before`)
+    GET  /api/intents             intents.listing (status/agent_id/target_id/limit/offset)
+    GET  /api/intents/{id}        intents.detail — the unified decision view (404 intent_not_found)
+    POST /api/governor/evaluate   EvaluateRequest; dry run unless commit=true (SAME code path)
+    GET  /api/review              intents.review_queue
+    POST /api/review/{id}         approve|reject → 404/409 mapped from ReviewError
+    GET  /api/reconciliation      intents.unresolved
+    GET  /api/entities/{type}     financials.listing; type ∈ (payment, refund) or 400
+    GET  /api/entities/{type}/{id} financials.detail
+    GET  /api/truth/{type}/{id}   financials.truth_trace (step-by-step derivation)
+    GET  /api/obligations         financials.obligations
+    GET  /api/agents, /api/agents/{id}
+    POST /api/gate/inspect        verify a mandate without spending it
+    POST /api/gate/admit          full admission; body.commit=false leaves the nonce unclaimed
+    GET  /api/proof/chain         windowed chain + status + claims
+    GET  /api/proof/verify        full scan + claims
+    GET  /api/dispute/{id}        dispute pack as a downloading JSON attachment
+    GET  /api/scenarios           the catalogue + model availability
+    POST /api/scenarios/{id}/run  run one attack
+    GET  /api/evaluations         evals/risk_report.json + evals/gate_report.json as written by CI
+    GET  /api/docs, /api/openapi.json
+  </endpoints>
+  <validation>Pydantic models with hard bounds: amounts are `int` bounded by
+    MAX_MINOR_UNITS; identifiers ≤128 chars and REJECT control characters (they land in a log
+    an operator reads, and a control char in one is an attempt to make a log line lie about
+    its shape); ≤100 cart lines; untrusted_context ≤8000 chars.</validation>
+</http-api>
+
+<!-- ==================================================================== -->
+<frontend dir="web" stack="Next.js 16 (app router, output: export) · React 19 · TypeScript strict · GSAP · Lenis · motion · lucide-react">
+  <build>`next build` → web/out; trailingSlash:true so every route emits
+    &lt;route&gt;/index.html (nothing resolves /dashboard to dashboard.html). NO assetPrefix — a
+    relative prefix cannot be correct at two path depths at once, and it broke every console
+    route's JS. Opening off disk degrades honestly (a `data-file` banner naming the command
+    to run) rather than rendering blank.</build>
+
+  <surfaces>
+    <surface route="/" name="landing page">A ten-chapter scroll narrative, defined once in
+      web/lib/chapters.ts (used for render order, the "06 / 10" header readout, and the jump
+      list): 01 THE COUNTER · 02 INTENT · 03 PRESSURE · 04 THE GRADIENT · 05 GOVERNOR ·
+      06 EXECUTION · 07 RECONCILIATION · 08 EVIDENCE · 09 PROOF · 10 ENTER.
+      Components: Smooth (one Lenis scroll authority driving GSAP), Chrome (spine/header/jump
+      list — the spine is the append-only log at page scale and doubles as the progress bar),
+      Hero, Divergence, Stage (three beats on one pinned canvas), Planes, Governor, Authority
+      (a faithful port of governor.decide, including that _deny clears reasons), Stream (a
+      faithful port of corpus.generate at 12%), ExpectedLoss (the admission argmin, playable),
+      Execution + Reconcile, Evidence, Proof + ProofChain + Foot, Handoff (three doors:
+      believe it / test it / verify it), Kinetic (word-level reveal).</surface>
+
+    <surface route="/dashboard/*" name="operator console">
+      Sidebar grouped by the QUESTION each group answers, not by entity type:
+        Overview  "What is happening?"        → Command Centre, Decision Stream
+        Money     "What is actually true?"    → Payments, Refunds, Obligations, Truth Explorer, Reconciliation
+        Agents    "Who is acting, and by whose authority?" → Agents, Agent Gate
+        Authority "What is allowed, and what needs a human?" → Risk Intelligence, Governor, Review Queue
+        Proof     "Can we prove what happened?" → Proof &amp; Audit
+        Lab       "Can we break it?"          → Adversary Lab, Evaluations, Settings
+      Routes on disk: adversary, agents, decisions, evaluations, gate, governor, obligations,
+      overview, payments, proof, reconciliation, refunds, review, risk, settings, stream, truth.
+      The environment badge reads /api/health, never a constant.
+    </surface>
+  </surfaces>
+
+  <lib>
+    api.ts     — the ONLY place the app knows a backend exists. ApiError carries status/code/
+                 fields/reference and a `remedy` sentence per status; a non-Kavach error shape
+                 (no {"error":…} envelope) is reported as unreachable, because that is what a
+                 static server with no API mounted actually is. NOTHING here invents data.
+    useApi.ts  — load/error/refresh + stale-response dropping. Deliberately not a state
+                 library: four needs, all of which fit in one file.
+    format.ts  — the ONLY place minor units become rupees.
+    data.ts    — everything the landing page ASSERTS, in one file, so tests/test_site.py can
+                 check it against evals/risk_report.json, governor.Policy, truth._STALE_SECONDS
+                 and the MCP tool decorators. ADR-007 does not stop at the edge of the repo.
+    motion.ts / scroll.ts / useScene.ts / magnetic.ts / chapters.ts / util.ts — shared motion
+                 tokens and scroll primitives so nine sections cannot develop an accent;
+                 reduced-motion is honoured throughout.
+    components/console/ui.tsx — the console's vocabulary of parts. Two carry meaning:
+                 &lt;Why&gt; (any refusal anywhere answers the same four questions in the same
+                 order) and &lt;Ladder&gt; (rungs rendered from what a decision produced; an
+                 unreached rung says SKIPPED rather than borrowing a tick from above).
+  </lib>
+</frontend>
+
+<!-- ==================================================================== -->
+<measured-results note="quoted verbatim from evals/*.json; regenerate with make bench / make gate-bench">
+  <outbound file="evals/risk_report.json" budget="0.20 of eligible intents" threshold="0.5132">
+    test exposure ₹2,25,311 · recall ceiling 1.0 · prevented ₹2,11,054 · duplicate rate assumption 0.12
+    <row name="B0 escalate everything"   P="0.167" R="1.000" AP="0.167" escalated="100%"  leaked="₹0"        within_budget="false"/>
+    <row name="B1 exact text match"      P="0.000" R="0.000" AP="0.167" escalated="0%"    leaked="₹225,311"  within_budget="true"/>
+    <row name="B2 rule amt+open+24h"     P="0.187" R="0.221" AP="0.171" escalated="19.7%" leaked="₹184,636"  within_budget="true"/>
+    <row name="B3 learned, no text"      P="0.659" R="0.779" AP="0.832" escalated="19.7%" leaked="₹61,105"   within_budget="true"/>
+    <row name="B4 learned + reads text"  P="0.813" R="0.961" AP="0.980" escalated="19.7%" leaked="₹14,257"   within_budget="true"/>
+    <sweep>5%→R 0.247 · 10%→R 0.513 · 20%→R 0.961 (P 0.813) · 30%→R 0.987 (P 0.582)</sweep>
+  </outbound>
+  <inbound file="evals/gate_report.json" budget="0.20 of carts" threshold="0.5162">
+    test exposure ₹2,62,532 · violation rate assumption 0.15
+    <row name="G0 step up everything"    P="0.149" R="1.000" AP="0.149" stepped="100%"  leaked="₹0"       within_budget="false"/>
+    <row name="G1 lexical overlap"       P="0.151" R="0.695" AP="0.154" stepped="68.8%" leaked="₹98,482"  within_budget="false"/>
+    <row name="G2 category + cap rule"   P="0.000" R="0.000" AP="0.149" stepped="0%"    leaked="₹262,532" within_budget="true"/>
+    <row name="G3 hand-written red flags" P="0.189" R="0.469" AP="0.207" stepped="37.1%" leaked="₹107,924" within_budget="false"/>
+    <row name="G4 learned, no text"      P="0.310" R="0.418" AP="0.393" stepped="20.2%" leaked="₹146,293" within_budget="false"/>
+    <row name="G5 learned + reads cart"  P="0.549" R="0.723" AP="0.744" stepped="19.7%" leaked="₹59,898"  within_budget="true"/>
+    <per-family-recall>F1_liquidity 1.000 (n=18) · F2_drift 0.550 (n=60) ·
+      F3_quantity 1.000 (n=29) · F4_cap_hugging 0.686 (n=70)</per-family-recall>
+    <sweep>5%→R 0.305 · 10%→R 0.514 · 20%→R 0.723 · 30%→R 0.853</sweep>
+  </inbound>
+  <latency source="apps/latency.py; README table">outbound p50 0.9 / p95 1.2 / p99 2.0 ms
+    (~1,100 decisions/s/core); inbound p50 1.4 / p95 1.7 / p99 1.8 ms (~730/s/core).
+    The script FAILS if either p95 exceeds CEILING_MS = 25 and refuses to run at all if the
+    estimators are absent (timing a path with the model missing would measure a defence that
+    is not running).</latency>
+</measured-results>
+
+<!-- ==================================================================== -->
+<tests dir="tests" runner="pytest -q" status="229 passing, 0 failing (verified in this tree)" fixtures="tests/conftest.py (fixed epoch T; `now` always explicit)">
+  <file name="test_eventlog.py">idempotent ingestion; a redelivered webhook is harmless</file>
+  <file name="test_truth.py">rail state is never readable as obligation state</file>
+  <file name="test_ledger.py">what money is still in flight</file>
+  <file name="test_governor.py">the model can only ever widen caution (ADR-006)</file>
+  <file name="test_admission.py">the authority ladder, tested by trying to break each rung
+    with the rung below it; a stub model stands in — "a policy that only behaves when the
+    model behaves is not a policy"</file>
+  <file name="test_envelope.py">adversarial: forged, tampered, truncated, expired, replayed,
+    revoked, malformed. "A signature check exercised only on valid input is untested."</file>
+  <file name="test_mandate.py">cap/scope arithmetic AT THE EDGES (off-by-one on a cap is a
+    mandate that silently permits one rupee more forever)</file>
+  <file name="test_cart_corpus.py">the corpus properties that stop it flattering the model</file>
+  <file name="test_entailment.py">the SAME cart scores high under one purpose and low under
+    another — the property that justifies a model existing at all</file>
+  <file name="test_model.py">names AND design_fn decoupling</file>
+  <file name="test_money.py, test_properties.py">money parsing incl. hypothesis</file>
+  <file name="test_proof.py, test_reconciliation.py, test_population.py, test_provenance.py"/>
+  <file name="test_razorpay_client.py">an unverified webhook never becomes evidence</file>
+  <file name="test_webhook.py">live HTTPServer round-trip incl. signature rejection</file>
+  <file name="test_concurrency.py, test_failure_injection.py">locking and error paths</file>
+  <file name="test_scenarios.py">every lab scenario's expected verdict, skipped (not passed)
+    when an estimator artefact is absent</file>
+  <file name="test_site.py">DRIFT GUARD — parses web/lib/data.ts as text and checks the
+    landing page's numbers and names against evals/risk_report.json, governor.Policy,
+    truth._STALE_SECONDS and the MCP tool decorators. Costs CI no Node.</file>
+  <file name="test_console_css.py">structural stylesheet rules (scoping/contrast), each of
+    which was a real bug before it was a test</file>
+  <gap>pkg/kavach/mcp/server.py has no test file — it opens a database at import, so it is
+    exercised by hand. Everything it now calls (services/decisions) is covered.</gap>
+</tests>
+
+<!-- ==================================================================== -->
+<adrs file="documents/08-decisions.md" note="condensed; read the file for the full text">
+  <adr id="001">Transform Kavach v1 (payer-side UPI recovery) rather than keep or kill it;
+    re-aim at the merchant side, where the naive consumer of a payment API is now an agent.</adr>
+  <adr id="002">Build nothing that requires Vulcan — we have no access, so any prototype
+    would measure a simulator we wrote ourselves.</adr>
+  <adr id="003">Canonical states must be observable from Razorpay's position; NPCI-side
+    conditions are AMBIGUOUS + a stated reason, never fabricated.</adr>
+  <adr id="004">LLM placement: rules → ML → decision policy → LLM. The LLM narrates and
+    disambiguates; it never determines state, amount, authorisation or duplicate risk.</adr>
+  <adr id="005">Ship as an MCP server with Razorpay-compatible tool names — the deployment
+    vector AND the reason the A/B is fair.</adr>
+  <adr id="006">A wrong model may only widen caution. Model unavailable → confidence UNKNOWN
+    → the policy floor rises to human approval.</adr>
+  <adr id="007">No metric ships before its experiment (enforced into the frontend by test_site).</adr>
+  <adr id="008">Concede idempotency keys, AP2 and Stripe explicitly in the README's first 200
+    words. The concession is the wedge: all of them bound a replay or an amount.</adr>
+  <adr id="009">TRUTH is the headline; GOVERNOR is the delivery mechanism, not the pitch —
+    caps and allowlists are being commoditised.</adr>
+  <adr id="010">The semantic duplicate-risk model is P0 and load-bearing AI.</adr>
+  <adr id="011">The baseline must be a STRONG baseline or the evaluation is worthless.</adr>
+  <adr id="012">Submit to Track 05 (Open), written in Track 01's quality-bar vocabulary.</adr>
+  <adr id="013">SQLite over Postgres+Redis+Docker; no torch; (originally) no React. Ceiling
+    stated: SQLite is single-writer and will not survive production ingest.</adr>
+  <adr id="014">Evaluate only where a duplicate is possible, at a FIXED review budget. Two
+    methodology errors found by running the harness, not by reasoning about it.</adr>
+  <adr id="015">Repository layout mirrors razorpay/razorpay-mcp-server (apps/ + pkg/ +
+    Makefile + documents/), each choice traceable to a public Razorpay repo. Go-only
+    conventions deliberately NOT transliterated.</adr>
+  <adr id="016">Gate reuses the event log as its evidence spine; cumulative spend is
+    recomputed, not counted. Ceiling stated: a scan per decision.</adr>
+  <adr id="017">Entailment ships without an LLM (TF-IDF + relational features), measured at
+    AP +0.351 over the blinded model; a missing model raises the floor to STEP_UP.</adr>
+  <adr id="018">The first sixteen commits are a CURATED history and say so; each was exported
+    to a clean tree and its own tests run there.</adr>
+  <adr id="019">The landing page is a Next.js app; ADR-013's "no React" clause is narrowed to
+    web/ only. `make check` and CI still run on Python alone.</adr>
+</adrs>
+
+<!-- ==================================================================== -->
+<threat-model file="documents/06-threat-model.md" summary="true">
+  Trust boundaries, in order of strength: (1) the webhook HMAC — the security boundary of the
+  whole system, and the only thing that produces DERIVED_CERTAIN confidence; (2) the Ed25519
+  delegation envelope over raw bytes; (3) the merchant's own catalogue (category/liquid are
+  merchant facts, which is why they can be relied on); (4) everything an agent says, which is
+  a claim and nothing more. Agent-supplied text (reason_text, cart descriptions, untrusted
+  context) is treated as DATA scored by advisory models, never as instructions — the
+  prompt-injection scenarios exist to demonstrate that an injected instruction cannot reach
+  past an accounting invariant.
+</threat-model>
+
+<!-- ==================================================================== -->
+<discrepancies note="documentation vs code; the code is authoritative. The three that were open have been closed, and are kept here so the history stays legible.">
+  <d id="1" state="RESOLVED" was="notable">
+    The README used to advertise plane 4 "Population" as a "heterogeneous identity graph,
+    community detection + GBM"; the implementation is, and always was, a velocity count.
+    Fixed by making every claim match the code rather than by pretending to build a graph:
+    pkg/kavach/gate/population.py now states the mechanism exactly and names what ring
+    detection would need, the unused `principal_id` parameter is gone, and the README plane
+    table, status table, mermaid diagram, "why AI is necessary" table and feature catalogue —
+    plus web/lib/data.ts, which the landing page renders — now say "agent velocity" and mark
+    ring detection as NOT built.
+  </d>
+  <d id="2" state="RESOLVED" was="minor-behavioural">
+    Fixed at the root rather than at the symptom. Two definitions of "captured" existed:
+    services/decisions.evaluate used `rail_state == "CONFIRMED"` while mcp/server.check_refund
+    used `not fact.obligation_open`, which also treats REVERSED / FAILED_TERMINAL / SETTLED
+    payments as captured — so the dry run could ALLOW what the committed decision DENIED.
+    Rather than patch the one expression, both MCP tools now call services/decisions:
+    check_refund runs decisions.evaluate and create_refund runs decisions.evaluate +
+    decisions.record. The duplicated `_risk`/`_payment_amount` helpers in mcp/server.py are
+    deleted, so the tool surface can no longer hold its own opinion about what "captured"
+    means or how a duplicate is scored. Side benefit: MCP-created decisions are now written
+    into the hash-chained log as `governor.decided.*` events, which they previously were not
+    — they only reached the mutable `intents.decision` column.
+    Verified: on a REVERSED payment both check_refund and create_refund now return DENY.
+  </d>
+  <d id="3" state="RESOLVED" was="minor">
+    admission.py's module docstring claimed decide() spends the nonce ("NOT SIDE-EFFECT
+    FREE"), which stopped being true when the claim moved into admit(). Both the module
+    docstring and decide()'s own docstring now state the real split: decide() verifies
+    without claiming and charges nothing; admit() claims the nonce and charges the cumulative
+    cap, and does both only on ALLOW.
+  </d>
+  <d id="4" state="open" severity="scope">
+    reconciliation only understands tool="create_refund" / target_type="payment"; any other
+    APPROVED intent is logged and left unresolved forever.
+  </d>
+  <d id="5" state="open" severity="cosmetic">
+    web/lib/data.ts still labels plane 3 Provenance `ai: 'learned'` at `~140 ms`, and plane 2
+    Intent at `~120 ms`. Provenance is lexical (its own module says so, and the README table
+    says "Heuristic, advisory"), and apps/latency.py measures the WHOLE inbound path at
+    p50 1.4 ms. The per-plane millisecond figures on the landing page are not measurements.
+  </d>
+  <d id="6" state="open-by-design" severity="stated-in-readme">
+    Self-declared ceilings, already documented but worth repeating for anyone reasoning about
+    production use: SQLite single-writer with no Postgres adapter written; the WhatsApp/SMS
+    step-up channel is not connected (the decision and its audit record are produced, sending
+    is one adapter); NPCI UAP and UPI Reserve Pay have no public API, so the Ed25519 envelope
+    is a field-for-field stand-in; both corpora are synthetic; the 12% duplicate base rate and
+    all four Costs rates are STATED ASSUMPTIONS; precision 0.813 means ~1 in 5 escalations
+    delays a legitimate refund; Gate F2 (goal drift) recall is 0.550.
+  </d>
+</discrepancies>
+
+<!-- ==================================================================== -->
+<working-notes audience="an LLM about to modify this repo">
+  <n>Put decision logic in pkg/kavach/services/ or lower. A FastAPI handler or an MCP tool
+    that starts deciding creates the second decision path this codebase is organised to
+    prevent — and that is exactly how the two definitions of "captured" appeared.</n>
+  <n>Never let a learned score make an outcome less cautious. If a change would let a model
+    turn ESCALATE into ALLOW or DENY into anything, it violates ADR-006 and
+    tests/test_governor.py and tests/test_admission.py will catch it — but the design
+    intent matters more than the test.</n>
+  <n>Never store a derived number. If you find yourself adding a counter column for
+    cumulative spend or open exposure, read ADR-016 first.</n>
+  <n>Any new money field is an integer named `*_minor`, parsed by money.parse_inr at the
+    boundary, and formatted only in web/lib/format.ts.</n>
+  <n>Any new event must go through eventlog.append with a deterministic external_id, so
+    replay is idempotent, and must set sig_verified=True ONLY when a real signature was
+    checked (webhook HMAC or Ed25519 envelope). Our own assertions are sig_verified=False.</n>
+  <n>Any new verdict, reason string or state must be citable: emit the event seqs behind it.
+    Reasons are templated from the evidence chain deliberately so they cannot hallucinate.</n>
+  <n>Do not describe a mechanism as more than it is. Two planes here are heuristics
+    (provenance, population) and say so in their own docstrings; if you strengthen one,
+    measure it in the benchmark before any document says so (ADR-007).</n>
+  <n>If you change a benchmark number, governor.Policy, a truth staleness tolerance, an enum
+    member or an MCP tool name, tests/test_site.py will fail until web/lib/data.ts agrees.</n>
+  <n>`make bench` and `make gate-bench` are ASSERTING benchmarks and run in CI: a model
+    quality regression breaks the build like a failing test.</n>
+  <n>The demo seed (apps/demo_data.py) anchors to wall time on purpose. A fixed epoch made
+    every seeded refund age past the 6-hour staleness tolerance and show as AMBIGUOUS. The
+    Adversary Lab, by contrast, keeps a fixed epoch T=1_700_000_000 because a judge
+    reproducing an attack must get byte-identical output.</n>
+</working-notes>
+
+</kavach-context>

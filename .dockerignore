@@ -1,0 +1,31 @@
+# secrets and local state never enter the image
+.env
+*.db
+*.db-wal
+*.db-shm
+data/*.pkl
+data/*.jsonl
+
+# build outputs are produced inside the build
+web/node_modules
+web/out
+web/.next
+web/tsconfig.tsbuildinfo
+.venv
+build
+dist
+*.egg-info
+
+# development residue
+.git
+.github
+.hypothesis
+.pytest_cache
+.ruff_cache
+.remember
+__pycache__
+*.pyc
+.DS_Store
+context.xml
+tests
+documents/assets

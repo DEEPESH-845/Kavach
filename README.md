@@ -240,7 +240,7 @@ Eight planes. **The order is a determinism gradient, and it is the central desig
 | ① | **Credential** | Ed25519 envelope, nonce/replay, cap arithmetic, validity window, scope | **No — deliberately** | forged, expired, revoked, replayed, out-of-scope mandates |
 | ② | **Intent** | Trained text model reading free-text SKUs: does the mandate's purpose entail this cart? | Learned, advisory | a gift card inside a groceries mandate |
 | ③ | **Provenance** | Drift scoring of the cart against the untrusted span the agent read | Heuristic, advisory | an agent hijacked by text hidden in a product review |
-| ④ | **Population** | Heterogeneous identity graph, community detection + GBM | Classical ML | mandate-farming rings, velocity, inhuman regularity |
+| ④ | **Population** | Velocity over the intent ledger: how many actions this agent took in an hour | Heuristic, advisory | a bot farm firing intents faster than any operator would |
 | ⑤ | **Truth** | Event log → state machine → `FinancialFact`. **Rail state ≠ obligation state** | **No — deliberately** | `processed` misread as *credited* |
 | ⑥ | **Obligation ledger** | Open-object accounting + write-ahead intent log | No | money in flight whose webhook hasn't landed |
 | ⑦ | **Duplicate risk** | Relational features **+ TF-IDF over the intent's reason text** | Learned, advisory | a re-decided refund every cap and key lets through |
@@ -277,8 +277,8 @@ Half of this system is deliberately **not** AI, and saying so is the point.
 | Cap enforcement, scope, replay | integer arithmetic + Ed25519 | **Yes — and they must.** An LLM near cap enforcement is malpractice |
 | Rail state, obligation state, evidence | state machine over an append-only log | **Yes — and they must.** Money truth is not a judgement call |
 | Action selection | expected-loss minimisation over merchant-supplied costs | **Yes.** Deterministic by design |
-| Velocity, regularity anomalies | gradient boosting | Yes — so ML, not an LLM |
-| Ring detection | community detection + GBM | Rules: badly. ML: well |
+| Velocity anomalies | a count over the intent ledger | **Yes — and it is rules today.** ML would buy regularity and burst shape; it is not built |
+| Ring detection | **not built** — the ledger records no device, address or token to build a graph over | Rules: badly. ML: well — once the attributes exist |
 | **Intent ⊨ cart entailment** | trained model reading free-text SKUs, in process | **No.** Open vocabulary over a catalog you don't control, free-text SKUs in three languages, new SKUs daily. A category blocklist fails on the first unlisted stored-value instrument |
 | **Injection / goal-drift detection** | drift scoring of the cart against the untrusted span | **No** — and the measured recall (0.550) says how much of it is still open |
 | **Semantic duplicate obligations** | learned model reading the reason text | **No.** *"refund the duplicate charge"* and *"refund the shipping fee"* name the same payment and different obligations |
@@ -307,7 +307,7 @@ flowchart TB
         P1["① CREDENTIAL<br/>Ed25519 · caps · scope"]
         P2["② INTENT<br/>purpose ⊨ cart?"]
         P3["③ PROVENANCE<br/>goal drift · injection"]
-        P4["④ POPULATION<br/>rings · velocity"]
+        P4["④ POPULATION<br/>agent velocity"]
         FUSE["FUSION<br/>caution-only combination"]
         DEC1["argmin expected loss<br/>ALLOW · STEP-UP · HOLD · DENY"]
     end
@@ -551,7 +551,7 @@ the test suite, and every row with a screen is reachable from `make run`.
 | ① Credential — Ed25519 envelope, caps, scope | ✅ **Built** | 44 tests |
 | ② Intent — entailment, liquidity, scope creep | ✅ **Built** | 13 tests |
 | ③ Provenance — goal drift, injection span | ✅ **Built** | 4 tests |
-| ④ Population — rings, velocity, regularity | ✅ **Built** | 3 tests |
+| ④ Population — agent velocity (rings **not** built; see the module) | ✅ **Built** | 3 tests |
 | Fusion, expected-loss admission, missing-model floor | ✅ **Built** | 22 tests |
 | ⑦ Duplicate-risk model | ✅ **Built** | benchmarked vs 5 baselines |
 | ⑧ Governor, permission tiers, bounded execution | ✅ **Built** | 10 tests |
@@ -602,7 +602,8 @@ Delegation envelope verification (Ed25519, nonce, replay, validity window) · ca
 in integers against a spend ledger · scope enforcement (merchant allowlist, category scope,
 principal binding) · revocation honoured mid-flight, never cached · intent–cart entailment ·
 liquidity-risk flagging · goal-drift scoring against the untrusted span the agent read ·
-ring detection over a heterogeneous identity graph · velocity and regularity features ·
+agent velocity over the intent ledger (ring detection is *not* built — see
+`gate/population.py` for what it would need) ·
 caution-only fusion (every plane may raise the risk, none may lower it) · expected-loss
 action selection · step-up decisions with their payload and audit record produced, the
 sending channel not yet connected.
