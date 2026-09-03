@@ -52,7 +52,8 @@ export async function openCheckout(opts: {
     order_id: opts.orderId,
     notes: opts.notes ?? {},
     // Test-mode conventions: any test card, or `success@razorpay` for UPI.
-    prefill: { name: 'Priya S.', email: 'priya@example.com', contact: '9999999999' },
+    prefill: { name: 'Priya S.', email: 'priya@example.com', contact: '+919812345678' },
+    readonly: { contact: true, email: true },
     theme: { color: '#e9e6de', backdrop_color: 'rgba(8,9,10,0.85)' },
     modal: { ondismiss: opts.onDismiss },
     handler: opts.onSuccess,

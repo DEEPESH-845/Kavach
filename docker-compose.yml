@@ -1,0 +1,23 @@
+# docker compose up --build   ->   http://127.0.0.1:8000
+#
+# Credentials come from .env (never baked into the image). Without them the container runs
+# in replay mode: every screen works, checkout reports itself unavailable rather than faking
+# a payment.
+services:
+  kavach:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      KAVACH_DB: /data/kavach.db
+      KAVACH_DEMO: "1"
+      PORT: "8000"
+    volumes:
+      - kavach-data:/data
+    restart: unless-stopped
+
+volumes:
+  kavach-data:

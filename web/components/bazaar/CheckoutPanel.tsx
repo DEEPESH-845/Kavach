@@ -50,7 +50,10 @@ export function CheckoutPanel({ focus }: { focus?: boolean }) {
       <p className="field__hint" style={{ marginTop: 0, marginBottom: 12 }}>
         Order <span className="mono">{c.order.order_id}</span> was created on Razorpay with{' '}
         <span className="mono">notes.kavach_admission_hash</span> = <span className="mono">{c.order.notes.kavach_admission_hash.slice(0, 16)}…</span>.
-        No real money moves. Test card <span className="mono">4111 1111 1111 1111</span>, any future expiry, any CVV; UPI <span className="mono">success@razorpay</span>.
+        No real money moves. Pay with <b>Netbanking → any bank → Success</b> (fastest), or the
+        domestic test card <span className="mono">5267 3181 8797 5449</span> (any future expiry,
+        any CVV, OTP <span className="mono">1234</span>). International test cards are refused by
+        this account.
       </p>
       {j.error ? <ErrorState error={j.error} compact /> : null}
       {modalError ? <p style={{ color: 'var(--oxide)', fontSize: 13 }}>{modalError}</p> : null}

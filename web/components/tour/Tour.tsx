@@ -47,7 +47,7 @@ const STEPS: Step[] = [
     drive: async () => { await journey.runAgent('stepup'); await journey.submit(); } },
   { id: 'payment', t: '03:00', title: 'A real payment, in test mode', kind: 'journey', focus: 'checkout',
     body: <>A compliant cart is admitted and the mandate charged. Kavach creates a <b>real Razorpay TEST order</b> whose notes carry the admission&apos;s hash — the decision is visible from Razorpay&apos;s own dashboard. Pay with a test card in the Checkout modal, or scan a Payment Link on a phone.</>,
-    action: 'Pay with card 4111 1111 1111 1111 (any future expiry, any CVV), or UPI success@razorpay.',
+    action: 'Pay with Netbanking → any bank → Success, or the domestic test card 5267 3181 8797 5449 (any future expiry, any CVV, OTP 1234).',
     drive: async () => {
       await journey.runAgent('legit');
       await journey.submit();

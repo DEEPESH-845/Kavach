@@ -1,0 +1,30 @@
+# Render Blueprint: one web service from the Dockerfile, a 1 GB disk for the ledger, and the
+# three secrets entered in the dashboard (sync: false keeps them out of this file).
+#
+#   Render -> New -> Blueprint -> this repository. The public URL is the demo URL; set the
+#   Razorpay webhook to https://<service>.onrender.com/api/webhooks/razorpay.
+services:
+  - type: web
+    name: kavach
+    runtime: docker
+    plan: starter
+    region: singapore
+    healthCheckPath: /api/health
+    autoDeploy: true
+    disk:
+      name: kavach-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: KAVACH_DB
+        value: /data/kavach.db
+      - key: KAVACH_DEMO
+        value: "1"
+      - key: KAVACH_MODE
+        value: live
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: RAZORPAY_WEBHOOK_SECRET
+        sync: false

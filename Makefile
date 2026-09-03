@@ -44,7 +44,7 @@ ui:  ## build the web UI into web/out
 
 .PHONY: api
 api:  ## run the API alone against the current database
-	$(PY) apps/api_server.py
+	KAVACH_DEMO=1 $(PY) apps/api_server.py
 
 .PHONY: dev
 dev:  ## development: API on :8000 and the Next dev server on :3000, together
@@ -55,7 +55,7 @@ dev:  ## development: API on :8000 and the Next dev server on :3000, together
 	@# usual way to end up staring at "Kavach API is not reachable": the console reads a
 	@# live backend, so the backend has to be up too.
 	@trap 'kill 0' EXIT INT TERM; \
-	  $(PY) apps/api_server.py & \
+	  KAVACH_DEMO=1 $(PY) apps/api_server.py & \
 	  (cd web && npm run dev) & \
 	  wait
 
@@ -63,10 +63,11 @@ dev:  ## development: API on :8000 and the Next dev server on :3000, together
 run: seed ui  ## THE ONE COMMAND: seed, build, and serve the whole product on :8000
 	@echo ""
 	@echo "  Kavach  ->  http://127.0.0.1:8000"
-	@echo "  landing    /            console    /dashboard"
-	@echo "  attacks    /dashboard/adversary    proof      /dashboard/proof"
+	@echo "  tour       /tour         shop       /shop         duel     /duel"
+	@echo "  console    /dashboard    mcp        /dashboard/mcp"
+	@echo "  attacks    /dashboard/adversary     proof      /dashboard/proof"
 	@echo ""
-	$(PY) apps/api_server.py
+	KAVACH_DEMO=1 $(PY) apps/api_server.py
 
 # `make demo` predates `make run` and is kept so older docs and muscle memory keep working.
 .PHONY: demo
@@ -84,6 +85,14 @@ scenarios:  ## run every adversary scenario headless and print the verdicts
 site: ui  ## build the landing page and serve it on :4173 (static only, no API)
 	@echo "  http://localhost:4173"
 	$(PY) -m http.server 4173 -d web/out
+
+.PHONY: docker-build
+docker-build:  ## build the one image (trains the models inside the build)
+	docker build -t kavach .
+
+.PHONY: docker-run
+docker-run:  ## run the image on :8000 with credentials from .env and a persistent volume
+	docker run --rm -p 8000:8000 -v kavach-data:/data --env-file .env kavach
 
 .PHONY: check
 check: install lint test bench gate-bench  ## everything CI runs
