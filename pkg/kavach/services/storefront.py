@@ -123,7 +123,17 @@ _SCENARIO = {s["id"]: s for s in SCENARIOS}
 
 
 def _words(text: str) -> set[str]:
-    return {w for w in re.findall(r"[a-z]+", text.lower()) if len(w) > 2}
+    """Lower-cased words, crudely singularised so 'notebooks' meets 'notebook'."""
+    out = set()
+    for w in re.findall(r"[a-z]+", text.lower()):
+        if len(w) > 2:
+            out.add(w[:-1] if w.endswith("s") and len(w) > 3 else w)
+    return out
+
+
+def _plurals(text: str) -> set[str]:
+    return {w[:-1] for w in re.findall(r"[a-z]+", text.lower())
+            if w.endswith("s") and len(w) > 3}
 
 
 def _line(sku: str, quantity: int = 1) -> dict[str, Any]:
@@ -162,9 +172,10 @@ def _base_plan(mandate: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]
                      f"the per-order cap, not what the purpose describes")
 
     lines = []
+    plurals = _plurals(mandate["purpose"])
     for p in picks:
-        plural = any(w.endswith("s") and w[:-1] in _words(p["description"]) for w in purpose)
-        qty = 2 if plural else 1
+        # 'pens' and 'notebooks' are more than one; 'paper' is a ream
+        qty = 2 if _words(p["description"]) & plurals else 1
         lines.append(_line(p["sku"], qty))
         trace.append(f"Matched {p['name']} to the purpose text · qty {qty} · "
                      f"{_rupees(p['unit_amount_minor'] * qty)}")

@@ -429,3 +429,157 @@ export const api = {
 
   evaluations: () => get<{ risk: Record<string, unknown> | null; gate: Record<string, unknown> | null; note: string }>('/evaluations'),
 };
+
+/* ── the buyer journey ──────────────────────────────────────────────────────── */
+
+export type Product = {
+  sku: string; name: string; description: string; category: string;
+  unit_amount_minor: number; liquid: boolean; blurb: string; review?: string;
+};
+
+export type Scenario = {
+  id: string; label: string; title: string; question: string; rung: string;
+  expects: Verdict[]; attack: boolean;
+};
+
+export type Storefront = {
+  merchant_id: string; categories: string[]; products: Product[]; scenarios: Scenario[];
+  principal: { id: string; name: string };
+  agent: { id: string; name: string; note: string };
+  mandate: Mandate;
+};
+
+export type CartLine = {
+  sku: string; description: string; category: string; unit_amount_minor: number;
+  quantity: number; liquid: boolean; name?: string;
+};
+
+export type Plan = {
+  mode: string; label: string; title: string; question: string; rung: string;
+  expects: Verdict[]; attack: boolean; lines: CartLine[]; total_minor: number;
+  untrusted_context: string; trace: string[]; merchant_id: string; agent_id: string;
+};
+
+export type StepUpView = {
+  token: string; status: 'PENDING' | 'APPROVED' | 'DENIED' | 'EXPIRED';
+  expires_at: number; seconds_left: number; agent_id: string; mandate_id: string;
+  purpose: string; merchant_id: string; amount_minor: number; per_txn_cap_minor: number;
+  items: { name: string; description: string; quantity: number; total_minor: number }[];
+  verdict: Verdict; reasons: string[]; purpose_risk: number | null;
+  resolved_at: number | null; resolved_by: string | null;
+  result: Record<string, unknown>;
+};
+
+export type StepUpCreated = {
+  token: string; expires_at: number; status: string; approve_path: string;
+  admission: Admission; ttl_seconds: number;
+};
+
+export type StepUpResolved = {
+  token: string; status: string; applied: boolean; outcome?: string; charged?: boolean;
+  audit_event_seq?: number; admission_event_seq?: number; spent_minor?: number;
+  what_happens_next?: string;
+};
+
+export type CheckoutStart = {
+  order_id: string; amount_minor: number; currency: string; key_id: string;
+  test_mode: boolean; notes: Record<string, string>; event_seq: number; note: string;
+};
+
+export type CheckoutStatus = {
+  order_id: string; cart_id: string; amount_minor: number; payment_id: string | null;
+  paid: boolean; test_mode: boolean;
+  link: { link_id: string; short_url: string } | null;
+  checkout_events: EventRow[]; signature_verified: boolean;
+  fact: Record<string, unknown> & { confidence?: string; rail_state?: string; because?: string } | null;
+  payment_events: EventRow[];
+  observed?: { source: string; signature: string; confidence: string };
+  preview_with_webhook: { simulated: boolean; confidence: string; rail_state: string; because: string; note: string } | null;
+  webhook_configured: boolean;
+  signature_event_seq?: number; payment_event_seq?: number;
+};
+
+export type DuelStep = {
+  n: number; kind: 'inbound' | 'outbound'; mode: string; title: string; question: string;
+  attack: boolean; amount_minor: number; lines?: CartLine[]; reason_text?: string;
+  agent_id?: string; session_id?: string;
+  ungoverned: { executed: boolean; amount_minor: number; note: string };
+  kavach: {
+    verdict: string; reasons: string[]; refused_by: string; stages?: Stage[];
+    purpose_risk?: number | null; duplicate_risk?: number | null; risk_factors?: string[];
+    executed_minor: number; truth?: Record<string, unknown> | null;
+  };
+  cumulative: DuelTotals;
+};
+
+export type DuelTotals = {
+  ungoverned_minor: number; kavach_minor: number; ungoverned_unauthorised_minor: number;
+  kavach_unauthorised_minor: number; protected_minor: number;
+};
+
+export type Duel = {
+  steps: DuelStep[]; totals: DuelTotals;
+  model_used: { entailment: boolean; duplicate_risk: boolean };
+  sandbox: { isolated: boolean; epoch: number; note: string };
+  lanes: { ungoverned: string; kavach: string }; generated_at: number;
+};
+
+export type TamperResult = {
+  target: { seq: number; field: string; original: unknown; mutated: unknown; event_type: string; entity: string };
+  before: ChainPage['status']; after: ChainPage['status'];
+  rows: { seq: number; event_type: string; source: string; entity: string; stored_hash: string;
+          recomputed_hash: string; verified: boolean; is_target: boolean; halted: boolean }[];
+  live: { untouched: boolean; status: ChainPage['status'] };
+  claims: Record<string, string>; note: string;
+};
+
+export type McpTool = { name: string; toolset: string; write: boolean; enabled: boolean; summary: string };
+export type McpTools = {
+  tools: McpTool[];
+  status: { tools: number; read_only: boolean; toolsets: string[]; mode: string };
+  suggested_target: { payment_id: string; amount_minor: number; order_id: string } | null;
+  seeded_targets: string[];
+  config: Record<string, unknown>;
+  parity: { toolsets: string[]; flags: string[]; note: string };
+};
+export type McpCall = {
+  tool: string; args: Record<string, unknown>; result: Record<string, unknown>;
+  elapsed_ms: number; write: boolean; toolset: string | null;
+};
+
+export type HealthPlus = Health & {
+  razorpay: { mode: string; credentials: boolean; checkout: boolean; checkout_note: string };
+  webhook: { configured: boolean; path: string; note: string };
+  mcp: { available: boolean; tools?: number; read_only?: boolean; mode?: string; reason?: string };
+  demo: { reset_enabled: boolean };
+  uptime_seconds: number;
+};
+
+export const journeyApi = {
+  health: () => get<HealthPlus>('/health'),
+  storefront: () => get<Storefront>('/storefront'),
+  plan: (mandate: Mandate, mode: string) => post<Plan>('/storefront/plan', { mandate, mode }),
+  admit: api.gateAdmit,
+  stepUp: (body: {
+    mandate: Mandate; cart_id: string; merchant_id: string; lines: CartLine[];
+    untrusted_context?: string;
+  }) => post<StepUpCreated>('/stepup', body),
+  stepUpView: (token: string) => get<StepUpView>(`/stepup/${encodeURIComponent(token)}`),
+  stepUpResolve: (token: string, action: 'approve' | 'deny', resolver = 'principal') =>
+    post<StepUpResolved>(`/stepup/${encodeURIComponent(token)}/resolve`, { action, resolver }),
+  checkoutStart: (body: {
+    cart_id: string; merchant_id: string; lines: CartLine[]; mandate_id: string; agent_id: string;
+  }) => post<CheckoutStart>('/checkout', body),
+  checkoutLink: (orderId: string) =>
+    post<{ link_id: string; short_url: string; reused: boolean }>(`/checkout/${encodeURIComponent(orderId)}/link`, {}),
+  checkoutConfirm: (body: { order_id: string; payment_id: string; signature: string }) =>
+    post<CheckoutStatus>('/checkout/confirm', body),
+  checkoutStatus: (orderId: string) => get<CheckoutStatus>(`/checkout/${encodeURIComponent(orderId)}`),
+  checkoutLatest: () => get<{ payment: McpTools['suggested_target'] }>('/checkout/latest'),
+  duel: () => get<Duel>('/duel'),
+  tamper: (seq?: number) => post<TamperResult>('/proof/tamper', seq ? { seq } : {}),
+  mcpTools: () => get<McpTools>('/mcp/tools'),
+  mcpCall: (tool: string, args: Record<string, unknown>) =>
+    post<McpCall>(`/mcp/${encodeURIComponent(tool)}`, { args }),
+  resetDemo: () => post<{ reset: boolean; counts: Record<string, number>; at: number }>('/demo/reset', {}),
+};

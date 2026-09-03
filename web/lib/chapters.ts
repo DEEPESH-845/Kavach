@@ -18,10 +18,11 @@ export const CHAPTERS: Chapter[] = [
   { id: 'gradient',   n: '04', name: 'THE GRADIENT' },
   { id: 'governor',   n: '05', name: 'GOVERNOR' },
   { id: 'execution',  n: '06', name: 'EXECUTION' },
-  { id: 'reconcile',  n: '07', name: 'RECONCILIATION' },
-  { id: 'evidence',   n: '08', name: 'EVIDENCE' },
-  { id: 'proof',      n: '09', name: 'PROOF' },
-  { id: 'enter',      n: '10', name: 'ENTER' },
+  { id: 'distance',   n: '07', name: 'THE DISTANCE' },
+  { id: 'reconcile',  n: '08', name: 'RECONCILIATION' },
+  { id: 'evidence',   n: '09', name: 'EVIDENCE' },
+  { id: 'proof',      n: '10', name: 'PROOF' },
+  { id: 'enter',      n: '11', name: 'ENTER' },
 ];
 
 export const LAST = CHAPTERS[CHAPTERS.length - 1].n;
