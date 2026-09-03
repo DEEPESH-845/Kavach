@@ -46,9 +46,9 @@ function plain(a: Admission, capMinor: number): string {
   return `Signature, window, scope and caps all pass, and the model reads this cart as what Priya asked for (purpose-mismatch risk ${fmtRisk(a.purpose_risk)}). The mandate is charged ${money(total)}.`;
 }
 
-export function Verdict({ focus }: { focus?: boolean }) {
+export function Verdict({ focus, expand }: { focus?: boolean; expand?: boolean }) {
   const j = useJourney();
-  const [more, setMore] = useState(false);
+  const [more, setMore] = useState(!!expand);
   const a = j.admission;
   if (!a || !j.mandate) return null;
   const cap = j.mandate.per_txn_cap_minor;

@@ -20,7 +20,7 @@ import { useScene } from '@/lib/useScene';
  * THE GROUND is the third piece, and the quietest: the page has three acts — it argues,
  * then it acts, then it proves — and the environment shifts by two or three points of
  * luminance across each boundary. Nobody notices a single transition. Everybody notices
- * that chapter 09 does not feel like chapter 02. It is two cross-fading fixed layers
+ * that chapter 10 does not feel like chapter 02. It is two cross-fading fixed layers
  * rather than a tweened colour, so the only property in flight is opacity.
  *
  * All three are hidden below the tablet breakpoint, where the spine becomes a top bar and

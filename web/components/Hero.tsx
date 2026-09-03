@@ -12,8 +12,8 @@ import { useMagnetic } from '@/lib/magnetic';
    getting older while you read is the entire complaint. */
 
 const HEAD: [string, boolean][] = [
-  ['Agents', false], ['now', false], ['stand', false], ['on', false],
-  ['both', true], ['sides', true], ['of', false], ['the', false], ['counter.', false],
+  ['The', false], ['authorization', false], ['layer', false], ['for', false],
+  ['agentic', true], ['commerce.', true],
 ];
 
 function AmbientField() {
@@ -136,7 +136,7 @@ export function Hero() {
       <div className="wrap hero__body">
         <motion.p className="eyebrow" initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                   transition={{ duration: T.slow, ease: E.reveal }}>
-          Merchant-side trust layer · agentic commerce
+          KAVACH · merchant-side trust layer · Razorpay Buildathon
         </motion.p>
 
         {/* words, not letters: letter-by-letter turns a thesis into an effect */}
@@ -158,10 +158,10 @@ export function Hero() {
 
         <motion.p className="lede" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: T.slow, ease: E.reveal, delay: 0.34 }}>
-          One walks up to checkout holding a mandate you cannot verify. One sits inside your
-          dashboard moving your money out. Razorpay shipped how an agent <em>pays</em>. Kavach
-          is the other half: how a merchant decides whether to <em>accept</em> one — and how to
-          stop its own agents from paying twice.
+          <em>Let AI agents act on your behalf without giving them unchecked authority.</em>{' '}
+          Agents now stand on both sides of the counter: one arrives at checkout holding a
+          mandate you cannot verify, one sits inside your dashboard moving money out. Razorpay
+          shipped how an agent <em>pays</em>. Kavach decides what it may do — and proves it.
         </motion.p>
 
         <motion.figure className="hero__cell" initial={{ opacity: 0, y: 16 }}
@@ -194,8 +194,8 @@ export function Hero() {
 
         <motion.div className="hero__acts" initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                     transition={{ duration: T.slow, ease: E.reveal, delay: 0.66 }}>
-          <SeamButton href="#divergence" primary>Follow the ₹5,000</SeamButton>
-          <SeamButton href="#proof">See the proof plane</SeamButton>
+          <SeamButton href="/tour" primary>See Kavach in action</SeamButton>
+          <SeamButton href="#divergence">Explore the architecture</SeamButton>
         </motion.div>
       </div>
       <p className="hero__cue" aria-hidden>scroll</p>

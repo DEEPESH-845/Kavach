@@ -20,7 +20,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import {
   Activity, BadgeCheck, Boxes, Bug, FileSearch, FlaskConical, Gauge, KeyRound,
   Landmark, Layers, Menu, PanelsTopLeft, RefreshCw, Settings,
-  ShieldCheck, Undo2, UserCheck, Waypoints, X,
+  ShieldCheck, TerminalSquare, Undo2, UserCheck, Waypoints, X,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useApi, usePoll } from '@/lib/useApi';
@@ -51,6 +51,7 @@ const NAV: { label: string; ask: string; items: Item[] }[] = [
     items: [
       { href: '/dashboard/agents', label: 'Agents', icon: <UserCheck size={15} /> },
       { href: '/dashboard/gate', label: 'Agent Gate', icon: <KeyRound size={15} /> },
+      { href: '/dashboard/mcp', label: 'MCP Console', icon: <TerminalSquare size={15} /> },
     ],
   },
   {

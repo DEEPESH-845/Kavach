@@ -22,26 +22,26 @@ import { useMagnetic } from '@/lib/magnetic';
 
 const DOORS = [
   {
-    href: '/dashboard',
+    href: '/tour',
     n: '01',
-    t: 'Open the console',
-    d: 'The command centre, the obligation ledger, and every decision Kavach has made — derived from the event log, not seeded.',
-    cta: 'Command centre',
+    t: 'Take the five-minute tour',
+    d: 'Give an agent a mandate, watch it overreach, watch Kavach intervene, approve the grey case on your phone, pay in Razorpay test mode, then try to tamper with the evidence.',
+    cta: 'Start the demo',
     primary: true,
   },
   {
-    href: '/dashboard/adversary',
+    href: '/shop',
     n: '02',
-    t: 'Attack it',
-    d: 'Eleven scenarios against the real decision code: duplicate refunds, forged mandates, replayed nonces, injected goal drift. Each states what it expects, then reports what happened.',
-    cta: 'Adversary lab',
+    t: 'Shop through an agent',
+    d: 'Kavach Bazaar: a storefront, Priya’s mandate, and a bench agent with six ways to shop — one honest, five that a cap alone would let through.',
+    cta: 'Open the Bazaar',
   },
   {
-    href: '/dashboard/proof',
+    href: '/dashboard',
     n: '03',
-    t: 'Verify it',
-    d: 'Recompute the hash chain over the whole event log, and read what it proves — alongside what it deliberately does not.',
-    cta: 'Proof & audit',
+    t: 'Run the merchant side',
+    d: 'The operator console: obligations, the review queue, the MCP tool surface, eleven adversary scenarios, and the hash chain recomputed in front of you.',
+    cta: 'Command centre',
   },
 ];
 
@@ -55,8 +55,8 @@ export function Handoff() {
   return (
     <section className="sec" id="enter" ref={ref}>
       <div className="wrap">
-        <p className="eyebrow">10 · ENTER</p>
-        <Kinetic text="Everything above is *checkable.*" />
+        <p className="eyebrow">11 · ENTER</p>
+        <Kinetic text="Everything above is *checkable* — by doing it." />
         <p className="lede">
           The console runs against the same governor, the same truth plane and the same
           estimators this page describes. Nothing in it is a mock, and where the environment

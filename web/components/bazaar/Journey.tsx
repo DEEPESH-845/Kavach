@@ -18,7 +18,7 @@ import { TruthPanel } from './TruthPanel';
 
 export type Focus = 'mandate' | 'store' | 'agent' | 'cart' | 'verdict' | 'stepup' | 'checkout' | 'evidence';
 
-export function Journey({ focus, compact }: { focus?: Focus; compact?: boolean }) {
+export function Journey({ focus, compact, expand }: { focus?: Focus; compact?: boolean; expand?: boolean }) {
   const j = useJourney();
   useEffect(() => { void journey.load(); return () => journey.stop(); }, []);
 
@@ -56,7 +56,7 @@ export function Journey({ focus, compact }: { focus?: Focus; compact?: boolean }
 
       {j.admission ? (
         <div className="bz-stage" style={{ paddingBottom: 40 }}>
-          <Verdict focus={focus === 'verdict'} />
+          <Verdict focus={focus === 'verdict'} expand={expand} />
           {j.stepup ? <StepUpPanel focus={focus === 'stepup'} /> : null}
           {j.checkout ? <CheckoutPanel focus={focus === 'checkout'} /> : null}
           {j.checkout?.status ? <TruthPanel focus={focus === 'evidence'} /> : null}

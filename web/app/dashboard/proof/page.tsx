@@ -22,6 +22,7 @@ import { count, hash, stamp } from '@/lib/format';
 import {
   Async, Badge, Card, Empty, GoLink, KV, PageHead, Section, Skeleton, Stat,
 } from '@/components/console/ui';
+import { Tamper } from '@/components/proof/Tamper';
 
 export default function ProofPage() {
   const [limit, setLimit] = useState(60);
@@ -76,6 +77,10 @@ export default function ProofPage() {
                 </div>
               </Card>
             </div>
+
+            <Section title="Break it yourself" note="the edit lands in a copy; verification fails at the exact row">
+              <Tamper onRestore={reload} />
+            </Section>
 
             <Section title="What this proves — and what it does not"
               note="shipped with every proof response, so it cannot be dropped from the UI">
