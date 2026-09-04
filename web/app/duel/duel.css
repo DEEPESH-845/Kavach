@@ -37,8 +37,12 @@ body:has(.duel) { overflow: auto; }
 .duel .dl-steps { display: grid; gap: 10px; }
 .duel .dl-step {
   display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1fr); gap: 10px;
-  align-items: stretch; opacity: .28; transition: opacity var(--t-norm);
+  align-items: stretch; transition: opacity var(--t-norm);
 }
+/* A step that has not played yet is dimmed, not greyed into illegibility: at .28 the
+   metadata measured 1.35:1, which is text nobody can read pretending to be a preview.
+   .62 keeps the "not yet" reading and stays above AA on this ground. */
+.duel .dl-step:not([data-on]) { opacity: .62; }
 .duel .dl-step[data-on] { opacity: 1; animation: dl-in 420ms var(--e-reveal) both; }
 @keyframes dl-in { from { transform: translateY(8px); opacity: .28; } to { transform: none; opacity: 1; } }
 .duel .dl-act { padding: 12px 14px; border-radius: 10px; background: var(--slab); border: 1px solid var(--seam); min-width: 0; }

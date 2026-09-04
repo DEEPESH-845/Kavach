@@ -18,7 +18,6 @@ export function ScenarioBar({ focus }: { focus?: boolean }) {
       <div className="bz-scen" role="radiogroup" aria-label="Agent scenario">
         {j.store.scenarios.map((s) => (
           <button key={s.id} type="button" role="radio" aria-checked={j.mode === s.id}
-            aria-pressed={j.mode === s.id}
             data-attack={s.attack && s.expects[0] === 'DENY' ? '' : undefined}
             data-stepup={s.expects[0] === 'STEP_UP' ? '' : undefined}
             title={s.question}
