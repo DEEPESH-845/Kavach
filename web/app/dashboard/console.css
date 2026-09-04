@@ -47,7 +47,11 @@
   --bone: #e9e6de;
   --bone-hover: #ffffff;
   --fog: #8d979c;
-  --fog2: #767f84;
+  /* #767f84 measured 4.49:1 on --slab and 3.88:1 on --raise-hover -- under AA for the
+     stat labels, notes and table metadata that use it, which is most of the small text on
+     these screens. #838c91 clears 4.6:1 on every ground in this file, including the
+     lightened hover wash, and keeps the same dimmed role. */
+  --fog2: #838c91;
 
   /* determinism. These are TEXT colours first — every one clears 4.5:1 against its own
      wash on this ground, so a badge reads as words and not only as a hue. */
