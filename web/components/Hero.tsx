@@ -6,6 +6,7 @@ import gsap from 'gsap';
 import { T, E, useStill } from '@/lib/motion';
 import { useScene } from '@/lib/useScene';
 import { useMagnetic } from '@/lib/magnetic';
+import { HeroCard } from '@/components/HeroCard';
 
 /* Layer 1 background · 2 ambient field · 3 the split cell · 4 typography · 5 nav · 6 cue.
    The only thing that moves on its own is the clock, because an obligation nobody closed
@@ -197,6 +198,9 @@ export function Hero() {
           <SeamButton href="/tour" primary>See Kavach in action</SeamButton>
           <SeamButton href="#divergence">Explore the architecture</SeamButton>
         </motion.div>
+
+        {/* the right column, which only exists above 1180px — see .hero__gl */}
+        <HeroCard />
       </div>
       <p className="hero__cue" aria-hidden>scroll</p>
     </section>

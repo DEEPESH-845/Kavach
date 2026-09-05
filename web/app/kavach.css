@@ -215,6 +215,38 @@ main  { padding-left: var(--rail); }
 }
 @keyframes breathe { 0%,100% { opacity: .35 } 50% { opacity: .9 } }
 
+/* ── the instrument: the hero's right column ──────────────────────────────────
+   Below 1180px there is no right column — the copy already fills the line — so the
+   element is absent and <HeroCard> never imports three.js at all. Above it, the
+   headline still spans the full measure and only the argument below it makes room,
+   which keeps the two-line display the layout was tuned for. */
+.hero__gl { display: none; }
+
+@media (min-width: 1180px) {
+  .hero__body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) clamp(300px, 30vw, 430px);
+    column-gap: clamp(28px, 3.5vw, 64px);
+  }
+  .hero__body > * { grid-column: 1; }
+  .hero .eyebrow, .hero .display { grid-column: 1 / -1; }
+  /* rows 3-5 are lede · cell · actions. Not `/ -1`: with no explicit rows that line
+     resolves to the start of the grid, and the element lands back on row 1. */
+  .hero__gl {
+    display: block; position: relative; grid-column: 2; grid-row: 3 / span 3;
+    align-self: center; aspect-ratio: 1 / 1.12;
+    cursor: grab; touch-action: pan-y;
+  }
+  .hero__gl:active { cursor: grabbing; }
+  /* the object sits in its own pool of light, or it reads as a sticker on the void */
+  .hero__gl::before {
+    content: ''; position: absolute; inset: -12%; pointer-events: none;
+    background: radial-gradient(50% 50% at 50% 48%,
+      color-mix(in srgb, var(--steel) 10%, transparent), transparent 70%);
+  }
+  .hero__gl canvas { position: absolute; inset: 0; }
+}
+
 /* ambient field: the same primitive, quiet, at the smallest scale */
 .hero__field {
   position: absolute; inset: 0; z-index: 1; overflow: hidden;
