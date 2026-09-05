@@ -50,7 +50,10 @@ ENV KAVACH_DB=/data/kavach.db \
     KAVACH_MODE=replay \
     KAVACH_DEMO=1 \
     PORT=8000
-VOLUME ["/data"]
+# No `VOLUME ["/data"]`: Railway rejects a Dockerfile that declares one ("use Railway
+# Volumes"). Every other target mounts /data explicitly anyway -- compose names the volume,
+# `docker run -v kavach-data:/data`, Fly [mounts], Render disk -- so the instruction bought
+# nothing but an anonymous volume per `docker run` without -v.
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=25s --retries=3 \

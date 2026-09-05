@@ -62,20 +62,26 @@ deterministically, with the wall clock of the moment it runs.
 3. Deploy. Health check is `/api/health`. The public URL is the demo: `/tour`, `/shop`,
    `/duel`, `/dashboard`.
 
-### Railway
+### Railway (this is what the live URL runs)
 `railway.json` declares the Dockerfile build, `/api/health` as the healthcheck, and
 `ON_FAILURE` restarts (the Trial and Free plans don't allow `ALWAYS`).
 
 ```bash
 railway login                       # opens a browser; new accounts get a 30-day/$5 trial,
                                      # no card required (verify with GitHub for full network access)
-railway init                        # create/select the project
-railway volume add --mount-path /data   # persists kavach.db across deploys
-railway variables --set KAVACH_MODE=replay   # or "live" once Razorpay keys are set below
-railway variables --set KAVACH_TRUST_PROXY=1 # safe here: Railway's edge is the only path in
-railway up                          # builds the Dockerfile and deploys
+railway init --name kavach          # create the project
+railway add --service kavach        # create the service, then link it:
+railway service kavach
+railway volume add --mount-path /data   # persists kavach.db across deploys (500 MB on Trial)
+railway variables --set KAVACH_MODE=replay \
+                  --set KAVACH_TRUST_PROXY=1 \
+                  --set KAVACH_DEMO=1 \
+                  --set KAVACH_DB=/data/kavach.db   # Railway's edge is the only path in
+railway up --ci                     # builds the Dockerfile and deploys, streaming the log
 railway domain                      # generates the public *.up.railway.app URL
 ```
+
+`railway volume add` takes no `--service`; link the service first, as above.
 
 For a real payment, add the same three secrets as Render/Fly:
 ```bash
@@ -155,10 +161,31 @@ curl https://<host>/api/metrics       # Prometheus text
 Then the five-minute path: `/tour` → **Start**. It resets the ledger (if `KAVACH_DEMO=1`),
 so every judge starts from the same state.
 
-## What was and was not verified on the development machine
+## What has actually been built and run
 
-Docker is **not installed** on the machine this was built on. Every step of the image was
-rehearsed in a clean virtual environment instead: `pip install .` from the same file set,
-both benchmarks, the seed, the entrypoint boot, `/api/health` and `/api/metrics`. The
-`docker build` itself was not executed there; the Dockerfile is deterministic (pinned
-bases, `npm ci`, seeded corpora) and every command in it is the one that was run by hand.
+Docker is not installed on the development machine, so the image was first built by
+**Railway's builder** — which is now the live deployment:
+
+**<https://kavach-production-0363.up.railway.app>** · `/tour` `/shop` `/duel` `/dashboard`
+
+`KAVACH_MODE=live` against Razorpay **test** keys, a 500 MB volume at `/data`,
+`KAVACH_TRUST_PROXY=1`, `KAVACH_DEMO=1`, no webhook secret (so webhooks stay fail-closed and
+polled payments stay `DERIVED_PROBABLE` — see above to turn that on).
+
+Verified against that deployment, not asserted: every read endpoint and every exported page;
+a real Razorpay TEST order created from the admitted cart; the step-up path minted, approved
+on the token and charged; all four attack carts DENIED; all eleven adversary scenarios HELD;
+the MCP duplicate-refund demo escalated without money moving; the hash chain intact after
+the tamper demonstration; and every console route rendered in a real browser with no console
+errors and live data on screen.
+
+### One Railway-specific constraint
+
+Railway refuses a Dockerfile that declares `VOLUME` (`dockerfile invalid: docker VOLUME at
+Line N is not supported, use Railway Volumes`). The instruction has been removed — every
+target mounts `/data` explicitly anyway (compose names the volume, `docker run -v`, Fly
+`[mounts]`, a Render disk), so nothing else changes.
+
+`railway.json` is Railway's deprecated Config-as-Code and keeps working until 2026-12-01;
+`railway config migrate --apply` writes the `.railway/railway.ts` replacement when that
+matters.

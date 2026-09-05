@@ -23,8 +23,12 @@ or how to stop the merchant's own agents from paying twice.
 
 <br>
 
+### [**▶ kavach-production-0363.up.railway.app/tour**](https://kavach-production-0363.up.railway.app/tour/)
+
+<sub>Live, in Razorpay <b>test mode</b>. Nothing to install; the five-minute path starts with one button.</sub>
+
 ```bash
-make run           # one command · one port · http://127.0.0.1:8000/tour
+make run           # or locally: one command · one port · http://127.0.0.1:8000/tour
 ```
 
 [**Run it**](#run-it-in-60-seconds) · [The problem](#the-problem) · [Why nothing else closes it](#why-nothing-that-exists-already-closes-this) · [How it works](#how-kavach-answers) · [**Does it work?**](#does-it-actually-work) · [**Ship it**](#running-it-in-production) · [Try to break it](#how-to-disbelieve-all-of-this) · [Envelope](#operating-envelope)
@@ -528,11 +532,16 @@ artefacts are gitignored on purpose — a pickled estimator committed to a repo 
 can reproduce — so an image that exists has reproduced the numbers in `evals/`, and a model
 that stops beating its baselines fails the build rather than shipping.
 
-`render.yaml` and `fly.toml` deploy that image with a disk mounted at `/data`; Cloud Run
-takes it as-is. Health check `/api/health`, metrics `/api/metrics`, webhook receiver
-`/api/webhooks/razorpay`. Full procedure, every environment variable, the persistence
-trade-off and the **plainly stated fact that there is no authentication**:
+`railway.json`, `render.yaml` and `fly.toml` deploy that image with a disk mounted at
+`/data`; Cloud Run takes it as-is. Health check `/api/health`, metrics `/api/metrics`,
+webhook receiver `/api/webhooks/razorpay`. Full procedure, every environment variable, the
+persistence trade-off and the **plainly stated fact that there is no authentication**:
 [`documents/11-deploy.md`](documents/11-deploy.md).
+
+The live instance above is that image on Railway: a 500 MB volume at `/data`, `KAVACH_MODE=live`
+against Razorpay **test** keys, `KAVACH_TRUST_PROXY=1` because Railway's edge is the only path
+in. `curl https://kavach-production-0363.up.railway.app/api/health` reports the mode, the
+credentials, the models and whether the hash chain is intact.
 
 ### Four wires, no fork
 
