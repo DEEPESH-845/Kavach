@@ -62,6 +62,34 @@ deterministically, with the wall clock of the moment it runs.
 3. Deploy. Health check is `/api/health`. The public URL is the demo: `/tour`, `/shop`,
    `/duel`, `/dashboard`.
 
+### Railway
+`railway.json` declares the Dockerfile build, `/api/health` as the healthcheck, and
+`ON_FAILURE` restarts (the Trial and Free plans don't allow `ALWAYS`).
+
+```bash
+railway login                       # opens a browser; new accounts get a 30-day/$5 trial,
+                                     # no card required (verify with GitHub for full network access)
+railway init                        # create/select the project
+railway volume add --mount-path /data   # persists kavach.db across deploys
+railway variables --set KAVACH_MODE=replay   # or "live" once Razorpay keys are set below
+railway variables --set KAVACH_TRUST_PROXY=1 # safe here: Railway's edge is the only path in
+railway up                          # builds the Dockerfile and deploys
+railway domain                      # generates the public *.up.railway.app URL
+```
+
+For a real payment, add the same three secrets as Render/Fly:
+```bash
+railway variables --set RAZORPAY_KEY_ID=rzp_test_… --set RAZORPAY_KEY_SECRET=…
+railway variables --set RAZORPAY_WEBHOOK_SECRET=…    # optional, see below
+railway variables --set KAVACH_MODE=live
+```
+Set the Razorpay webhook URL to `https://<service>.up.railway.app/api/webhooks/razorpay`.
+
+Railway's Trial/Free volume storage cap is 0.5 GB — comfortably above what a demo SQLite
+ledger needs. An unverified Trial account is network-restricted (limited egress/ports),
+which can block the outbound call to Razorpay's API in `live` mode; connect GitHub at
+`railway.com/verify` to lift that before switching out of `replay`.
+
 ### Fly.io
 ```bash
 fly launch --copy-config --no-deploy
