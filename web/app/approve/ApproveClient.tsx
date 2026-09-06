@@ -55,8 +55,8 @@ function Problem({ error }: { error: ApiError }) {
   return (
     <div className="ap-big" data-t={expired ? 'warn' : 'deny'}>
       {expired ? <Clock /> : <ShieldAlert />}
-      <h1>{expired ? 'This request has expired' : error.status === 404 ? 'This link is not one Kavach issued' : error.message}</h1>
-      <p>{expired ? 'The agent must ask again. Nothing was charged.' : error.status === 404 ? 'Approval links are single-use and carry a random token. Nothing was decided.' : error.remedy}</p>
+      <h1>{expired ? 'This request has expired' : error.status === 404 ? 'This is not a link Kavach issued' : error.message}</h1>
+      <p>{expired ? 'The agent will have to ask again. Nothing was charged.' : error.status === 404 ? 'Each approval link works once and carries a secret one-off code, so a guessed or reused link does nothing at all. Nothing was decided.' : error.remedy}</p>
     </div>
   );
 }
@@ -73,14 +73,14 @@ function Body({ v, left, pending, result, error, onDecide }: {
           {ok ? <CheckCircle2 /> : v.status === 'EXPIRED' ? <Clock /> : <XCircle />}
           <h1>{ok ? 'Approved' : v.status === 'EXPIRED' ? 'Expired' : 'Denied'}</h1>
           <p>
-            {ok ? `${money(v.amount_minor)} admitted against your mandate and charged. The agent may now pay.`
-              : v.status === 'EXPIRED' ? 'No answer arrived in time. Nothing was charged.'
-              : 'The cart is refused. Nothing was charged against your mandate.'}
+            {ok ? `${money(v.amount_minor)} approved and charged against what you authorised. The agent may now pay.`
+              : v.status === 'EXPIRED' ? 'No answer arrived in time, so nothing was charged.'
+              : 'Refused. Nothing was charged against what you authorised.'}
           </p>
           {result && !result.applied ? <p className="ap-ttl">Already {v.status.toLowerCase()} — this tap changed nothing.</p> : null}
           {(v.result?.audit_event_seq as number | undefined) ? <p className="ap-ttl">audit event seq {String(v.result.audit_event_seq)} · resolved by {v.resolved_by}</p> : null}
         </div>
-        <p className="field__hint" style={{ textAlign: 'center' }}>You can close this page. The desktop updates on its own.</p>
+        <p className="field__hint" style={{ textAlign: 'center' }}>You can close this page. The other screen updates by itself.</p>
       </>
     );
   }
@@ -105,9 +105,9 @@ function Body({ v, left, pending, result, error, onDecide }: {
         </div>
         <div style={{ padding: '10px 12px', borderRadius: 8, background: 'var(--amber-wash)', border: '1px solid var(--amber)' }}>
           <p style={{ margin: 0, fontSize: 12.5, color: 'var(--bone)' }}>
-            <b style={{ fontWeight: 500 }}>Why Kavach stopped:</b> your mandate says{' '}
-            <em style={{ fontStyle: 'normal', color: 'var(--amber)' }}>“{v.purpose}”</em>. The model is not sure this cart is that
-            {v.purpose_risk !== null ? ` (purpose-mismatch risk ${fmtRisk(v.purpose_risk)})` : ''}. Every cap and category passed.
+            <b style={{ fontWeight: 500 }}>Why you are being asked:</b> you said this money was for{' '}
+            <em style={{ fontStyle: 'normal', color: 'var(--amber)' }}>“{v.purpose}”</em>, and Kavach is not confident this cart matches
+            {v.purpose_risk !== null ? ` (mismatch score ${fmtRisk(v.purpose_risk)})` : ''}. Every spending limit and category was fine — this is a judgement call, so it is yours.
           </p>
         </div>
         {left !== null ? <p className="ap-ttl" style={{ margin: 0 }}>expires in {Math.floor(left / 60)}:{String(left % 60).padStart(2, '0')}</p> : null}
@@ -124,7 +124,7 @@ function Body({ v, left, pending, result, error, onDecide }: {
         </button>
       </div>
       <p className="field__hint" style={{ textAlign: 'center' }}>
-        Approving re-runs admission at this moment — a revoked or expired mandate is still refused. Only then is your mandate charged.
+        Approving re-runs every check from scratch, right now — if you have since cancelled your authorisation, or it has expired, it is still refused. Only then are you charged.
       </p>
     </>
   );

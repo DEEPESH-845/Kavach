@@ -34,7 +34,7 @@ export function MandateCard({ focus }: { focus?: boolean }) {
         <span className="bz-avatar" aria-hidden>PS</span>
         <div>
           <b>{j.store.principal.name}</b>
-          <span>principal · <span className="mono">{m.principal_id}</span></span>
+          <span>the buyer · <span className="mono">{m.principal_id}</span></span>
         </div>
         <span style={{ marginLeft: 'auto' }} className="badge badge--info"><KeyRound size={11} /> MANDATE</span>
       </div>
@@ -49,8 +49,8 @@ export function MandateCard({ focus }: { focus?: boolean }) {
         aria-describedby="bz-purpose-hint"
       />
       <p id="bz-purpose-hint" className="field__hint" style={{ marginTop: -6, marginBottom: 10 }}>
-        Free text. The entailment model scores every cart against this sentence, not against
-        the category list.
+        Write it however you like. Kavach reads every cart against <em>this sentence</em> — not
+        just against the category tags below. That is the check a spending limit cannot do.
       </p>
 
       <div className="bz-caps">
@@ -98,9 +98,9 @@ export function MandateCard({ focus }: { focus?: boolean }) {
         ))}
       </div>
       <p className="field__hint" style={{ marginTop: 8 }}>
-        Merchant <span className="mono">{m.merchant_allowlist[0]}</span> · agent{' '}
-        <span className="mono">{m.agent_id}</span> · signed Ed25519 by a simulated principal key;
-        the signature check is real.
+        Shop <span className="mono">{m.merchant_allowlist[0]}</span> · agent{' '}
+        <span className="mono">{m.agent_id}</span> · digitally signed with a stand-in key for the
+        demo — but the signature check itself is the real one.
       </p>
     </div>
   );
