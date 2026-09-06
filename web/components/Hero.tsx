@@ -7,14 +7,18 @@ import { T, E, useStill } from '@/lib/motion';
 import { useScene } from '@/lib/useScene';
 import { useMagnetic } from '@/lib/magnetic';
 import { HeroCard } from '@/components/HeroCard';
+import { Term } from '@/components/Term';
 
 /* Layer 1 background · 2 ambient field · 3 the split cell · 4 typography · 5 nav · 6 cue.
    The only thing that moves on its own is the clock, because an obligation nobody closed
    getting older while you read is the entire complaint. */
 
+/* "Agentic commerce" is the industry's word for this and nobody outside the industry
+   knows it. The headline says the same thing in words a merchant, a judge or a customer
+   can read at a glance; the lede below it does the positioning. */
 const HEAD: [string, boolean][] = [
   ['The', false], ['authorization', false], ['layer', false], ['for', false],
-  ['agentic', true], ['commerce.', true],
+  ['AI', true], ['that', true], ['spends', true], ['money.', true],
 ];
 
 function AmbientField() {
@@ -159,33 +163,35 @@ export function Hero() {
 
         <motion.p className="lede" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: T.slow, ease: E.reveal, delay: 0.34 }}>
-          <em>Let AI agents act on your behalf without giving them unchecked authority.</em>{' '}
-          Agents now stand on both sides of the counter: one arrives at checkout holding a
-          mandate you cannot verify, one sits inside your dashboard moving money out. Razorpay
-          shipped how an agent <em>pays</em>. Kavach decides what it may do — and proves it.
+          <em>AI agents have started spending money for people. Kavach decides what they are
+          allowed to do — and proves it afterwards.</em>{' '}
+          An <Term k="agent">agent</Term> now turns up on both sides of the counter: one arrives
+          at your checkout holding a <Term k="mandate">permission slip</Term> you have no way to
+          check, and one sits inside your own dashboard issuing refunds. Razorpay solved how an
+          agent <em>pays</em>. Kavach answers the question that comes first — <em>should it?</em>
         </motion.p>
 
         <motion.figure className="hero__cell" initial={{ opacity: 0, y: 16 }}
                        animate={{ opacity: 1, y: 0 }}
                        transition={{ duration: T.slow, ease: E.reveal, delay: 0.5 }}>
           <figcaption className="cell__caption">
-            refund <span className="mono">rfnd_Hx9pQ2</span> · one entity, two truths · the clock
-            runs from the last event
+            refund <span className="mono">rfnd_Hx9pQ2</span> — one refund, two different answers.
+            The gap between them is where the same ₹5,000 gets paid out twice.
           </figcaption>
           <div className="cell" data-open={open || undefined}>
             <div className="cell__half cell__half--l">
-              <p className="cell__label">rail state</p>
+              <p className="cell__label">what the <Term k="rail">rail</Term> says</p>
               <p className="cell__value mono" data-steel>PROCESSING</p>
-              <p className="cell__note">the gateway accepted it and dispatched it</p>
+              <p className="cell__note">Razorpay took the instruction and sent it onward</p>
               <p className="cell__clock mono">
                 settled by <span data-steel>seq 17</span> · webhook, HMAC verified
               </p>
             </div>
             <div className="cell__seam"><span className="cell__seam-line" /></div>
             <div className="cell__half cell__half--r">
-              <p className="cell__label">obligation state</p>
+              <p className="cell__label">what is still <Term k="obligation">owed</Term></p>
               <p className="cell__value mono" data-amber>OPEN · ₹5,000</p>
-              <p className="cell__note">no event states the customer was credited</p>
+              <p className="cell__note">nothing yet confirms the customer actually got the money</p>
               <p className="cell__clock mono">
                 open for <Clock /> · staleness tolerance 06:00:00
               </p>

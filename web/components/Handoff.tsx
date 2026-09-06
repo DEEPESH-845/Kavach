@@ -25,7 +25,7 @@ const DOORS = [
     href: '/tour',
     n: '01',
     t: 'Take the five-minute tour',
-    d: 'Give an agent a mandate, watch it overreach, watch Kavach intervene, approve the grey case on your phone, pay in Razorpay test mode, then try to tamper with the evidence.',
+    d: 'Hand an agent a budget, watch it try to spend beyond it, watch Kavach stop it, approve the borderline case on your phone, pay for real in test mode — then try to tamper with the evidence and see it caught.',
     cta: 'Start the demo',
     primary: true,
   },
@@ -33,14 +33,14 @@ const DOORS = [
     href: '/shop',
     n: '02',
     t: 'Shop through an agent',
-    d: 'Kavach Bazaar: a storefront, Priya’s mandate, and a bench agent with six ways to shop — one honest, five that a cap alone would let through.',
-    cta: 'Open the Bazaar',
+    d: 'A working shop, one buyer’s budget, and an agent with six ways to shop — one honest, and five that a simple spending limit would happily wave through.',
+    cta: 'Open the Shop',
   },
   {
     href: '/dashboard',
     n: '03',
     t: 'Run the merchant side',
-    d: 'The operator console: obligations, the review queue, the MCP tool surface, eleven adversary scenarios, and the hash chain recomputed in front of you.',
+    d: 'The merchant’s control room: what money is still owed, what is waiting on a human, the tools agents can call, eleven ways to attack the system, and the tamper-check run live in front of you.',
     cta: 'Command centre',
   },
 ];
@@ -58,9 +58,9 @@ export function Handoff() {
         <p className="eyebrow">11 · ENTER</p>
         <Kinetic text="Everything above is *checkable* — by doing it." />
         <p className="lede">
-          The console runs against the same governor, the same truth plane and the same
-          estimators this page describes. Nothing in it is a mock, and where the environment
-          is deterministic it says so on every screen.
+          Everything behind these three doors runs the same code this page has been describing —
+          the same rules, the same checks, the same models. Nothing is a mock-up. Where a screen
+          is showing a fixed demo instead of live data, it says so on the screen.
         </p>
 
         <div className="handoff__grid">

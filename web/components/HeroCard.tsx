@@ -7,12 +7,9 @@ import { useStill } from '@/lib/motion';
 /* THE INSTRUMENT.
  *
  * The hero argues about authority over a payment; the right column shows the thing the
- * authority is over. A card turns on its own axis inside a ring of the page's own split
- * cells — the same primitive as the ambient field, at a scale you can grab.
- *
- * Two motions, both clockwise, and each says something:
- *   · the card turns about Y (clockwise seen from above) — the instrument, always live
- *   · the cell ring turns about Z (clockwise on screen)  — the field watching it
+ * authority is over — one card, filling its frame, turning clockwise seen from above,
+ * and nothing else. It had a ring of orbiting cells around it and they cost the card a
+ * third of its size to say something the copy beside it already says.
  *
  * Colour follows the page's one rule: steel = provable, amber = learned/advisory,
  * bone = decided. The chip is amber because a mandate is a claim, not a proof.
@@ -23,13 +20,23 @@ import { useStill } from '@/lib/motion';
  */
 
 const CARD = { w: 3.36, h: 2.12, d: 0.13, r: 0.2 };
-const RING_R = 2.16;          // the cell ring, outside the card's swept corners (1.99)
-const FIT_R = 2.4;           // what the camera must always contain
 const TILT = -0.17;           // a shade from above, so the card reads as an object
+const SPIN = 0.38;            // rad/s — one revolution every 16.5s
+
+/* What the camera must contain, per axis, at the card's worst pose. Fitting a single
+   radius would have to assume the card is as tall as it is wide and would waste a third
+   of the column. The half-height is set by the EDGE-ON pose, not the flat one: turned
+   side-on, the card's near edge sits a half-width closer to the lens AND the tilt has
+   carried its top corner up with it, so it projects half again as tall as the card ever
+   is at rest. That is why the frame is near-square while the card is 3:2 — sized to the
+   flat pose, it clipped its own corners for a quarter of every revolution. */
+const FOV = 20;
+const HALF_W = 1.98;
+const HALF_H = 1.84;
 
 const C = {
   body: 0x1b2429, chip: 0xe0a340, steel: 0x7fa8c9,
-  bone: 0xe9e6de, seam: 0x3f4c53, dark: 0x090b0c,
+  bone: 0xe9e6de, dark: 0x090b0c,
 } as const;
 
 /** the page's rounded rectangle, as a 2D shape to extrude */
@@ -86,7 +93,7 @@ export function HeroCard() {
       el.appendChild(renderer.domElement);
 
       const scene = new THREE.Scene();
-      const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 100);
+      const camera = new THREE.PerspectiveCamera(FOV, 1, 0.1, 100);
 
       /* Image-based lighting is what separates "a shape" from "an object" — but the stock
          RoomEnvironment is a white room with emissive panels an order of magnitude
@@ -109,7 +116,7 @@ export function HeroCard() {
       panel(C.chip, 3.0, 7, -3, -5, -6);         // rim: advisory, behind and below
       // and a wide, weak one from the reader's own side, which is the only thing that
       // lifts a face square to the camera off black without becoming a highlight
-      panel(0xb9cddc, 0.5, 18, 0, 1, 9);
+      panel(0xb9cddc, 0.36, 13, 0, 1, 9);
       const pmrem = new THREE.PMREMGenerator(renderer);
       const env = pmrem.fromScene(envScene, 0.22);
       envScene.traverse((o) => {
@@ -127,9 +134,12 @@ export function HeroCard() {
          Two groups, because the turn must survive anything the reader does to the tilt. */
       const pivot = new THREE.Group();
       const spinner = new THREE.Group();
-      const ring = new THREE.Group();
       pivot.rotation.x = TILT;
-      pivot.add(spinner, ring);
+      /* The frame is sized by the tallest pose, which is a top corner swinging forward,
+         so a card at rest sits above the middle of it. Nudging the object down — not the
+         camera, which is the reader's to orbit — puts it back on the optical centre. */
+      pivot.position.y = -0.15;
+      pivot.add(spinner);
       scene.add(pivot);
 
       // ── the card ──────────────────────────────────────────────────────────────
@@ -142,8 +152,8 @@ export function HeroCard() {
 
       // lacquered plastic, not chrome: a dark base the clearcoat puts a sheen on
       const cardMat = new THREE.MeshPhysicalMaterial({
-        color: C.body, metalness: 0.24, roughness: 0.29,
-        clearcoat: 1, clearcoatRoughness: 0.11, envMapIntensity: 1,
+        color: C.body, metalness: 0.24, roughness: 0.34,
+        clearcoat: 1, clearcoatRoughness: 0.17, envMapIntensity: 1,
       });
       const card = new THREE.Mesh(body, cardMat);
       spinner.add(card);
@@ -209,24 +219,6 @@ export function HeroCard() {
       box(mChip, 0.3, 0.24, 0.012, 0.6, -0.2, -face - 0.002);
       for (let i = 0; i < 3; i++) box(mFine, 1.28 - i * 0.36, 0.026, 0.008, -0.72 + i * 0.18, -0.6 - i * 0.11, -face);
 
-      // ── the field: the ambient grid's cell, orbiting, plus the ring it rides ──
-      const cellEdges = new THREE.EdgesGeometry(new THREE.BoxGeometry(0.1, 0.15, 0.1));
-      const mQuiet = new THREE.LineBasicMaterial({ color: C.seam, transparent: true, opacity: 0.85 });
-      const mLoud = new THREE.LineBasicMaterial({ color: C.chip, transparent: true, opacity: 0.9 });
-      const N = 18;
-      for (let i = 0; i < N; i++) {
-        const a = (i / N) * Math.PI * 2;
-        const c = new THREE.LineSegments(cellEdges, i % 7 === 2 ? mLoud : mQuiet);   // one in seven diverged
-        c.position.set(Math.cos(a) * RING_R, Math.sin(a) * RING_R, 0);
-        c.rotation.z = a;
-        ring.add(c);
-      }
-      const hoop = new THREE.Mesh(
-        new THREE.TorusGeometry(RING_R, 0.0045, 6, 160),
-        new THREE.MeshBasicMaterial({ color: C.steel, transparent: true, opacity: 0.26 }),
-      );
-      ring.add(hoop);
-
       // ── camera, sized to the column rather than assumed ───────────────────────
       const fit = () => {
         const w = el.clientWidth, h = el.clientHeight;
@@ -235,10 +227,13 @@ export function HeroCard() {
         camera.aspect = w / h;
         const vFov = (camera.fov * Math.PI) / 180;
         const hFov = 2 * Math.atan(Math.tan(vFov / 2) * camera.aspect);
-        camera.position.z = FIT_R / Math.tan(Math.min(vFov, hFov) / 2);
+        // whichever axis runs out first decides the distance; the other gets the slack
+        camera.position.z = Math.max(
+          HALF_H / Math.tan(vFov / 2),
+          HALF_W / Math.tan(hFov / 2),
+        );
         camera.updateProjectionMatrix();
       };
-      camera.position.y = 0.24;
       fit();
       const ro = new ResizeObserver(fit);
       ro.observe(el);
@@ -264,10 +259,11 @@ export function HeroCard() {
       } else {
         /* One clock for the page: Lenis and every scrubbed timeline already run on the
            GSAP ticker, so the render does too rather than opening a second rAF. */
+        // the turn comes up to speed with the entrance rather than being already at it
+        const turn = { rate: 0 };
         const tick = (_t: number, dt: number) => {
           const d = Math.min(dt, 50) / 1000;        // a backgrounded tab must not lurch
-          spinner.rotation.y -= d * 0.44;           // clockwise, seen from above
-          ring.rotation.z -= d * 0.1;               // clockwise, seen from the front
+          spinner.rotation.y -= d * turn.rate;      // clockwise, seen from above
           controls.update();
           draw();
         };
@@ -280,14 +276,25 @@ export function HeroCard() {
         });
         io.observe(el);
 
-        /* The card arrives the way the rest of the hero arrives — after the headline,
-           on the same slow settle — and then never stops moving. */
+        /* The card arrives the way the rest of the hero arrives — after the headline, on
+           the same slow settle — coming out of a quarter turn so the entrance and the
+           endless turn are one continuous motion rather than a reveal and then a spin. */
         const intro = gsap.timeline({ delay: 0.62 })
-          .fromTo(el, { opacity: 0 }, { opacity: 1, duration: 1.1, ease: 'power2.out' }, 0)
-          .fromTo(pivot.rotation, { x: TILT - 0.62, z: 0.2 }, { x: TILT, z: 0, duration: 1.7, ease: 'expo.out' }, 0)
-          .fromTo(pivot.scale, { x: 0.74, y: 0.74, z: 0.74 }, { x: 1, y: 1, z: 1, duration: 1.6, ease: 'expo.out' }, 0)
-          .fromTo(ring.scale, { x: 1.28, y: 1.28, z: 1.28 }, { x: 1, y: 1, z: 1, duration: 2, ease: 'expo.out' }, 0.1)
-          .to(spinner.position, { y: 0.09, duration: 3.4, ease: 'sine.inOut', yoyo: true, repeat: -1 }, 1.4);
+          .fromTo(el, { opacity: 0 }, { opacity: 1, duration: 1.2, ease: 'power2.out' }, 0)
+          // the quarter turn goes on the pivot, never on the spinner: the ticker owns
+          // spinner.rotation.y, and a tween writing absolute values to the same property
+          // every frame is the two-authorities stutter this page is careful not to have
+          .fromTo(pivot.rotation,
+            { x: TILT - 0.5, y: 0.6, z: 0.16 }, { x: TILT, y: 0, z: 0, duration: 2, ease: 'expo.out' }, 0)
+          .fromTo(pivot.scale, { x: 0.82, y: 0.82, z: 0.82 }, { x: 1, y: 1, z: 1, duration: 1.8, ease: 'expo.out' }, 0)
+          .to(turn, { rate: SPIN, duration: 2.4, ease: 'power1.inOut' }, 0.9);
+
+        /* Its own tween, not a child of the entrance: a repeat:-1 child never ends, so
+           the timeline it sits in never reports itself finished — and the parallax below,
+           which waits for exactly that, would have been dead for the life of the page. */
+        const float = gsap.to(spinner.position, {
+          y: 0.09, duration: 3.4, ease: 'sine.inOut', yoyo: true, repeat: -1, delay: 2,
+        });
 
         /* Parallax the tilt, not the camera: the camera is the reader's now, and two
            authorities on one transform is the bug this page keeps not having. */
@@ -296,14 +303,17 @@ export function HeroCard() {
         const move = (e: PointerEvent) => {
           if (intro.isActive()) return;             // let the entrance finish uninterrupted
           const r = el.getBoundingClientRect();
-          tiltX(TILT + ((e.clientY - r.top - r.height / 2) / innerHeight) * 0.34);
-          tiltZ(((e.clientX - r.left - r.width / 2) / innerWidth) * -0.24);
+          // small on purpose: the roll is what decides HALF_W/HALF_H, and a card that
+          // swings far enough to graze the edges of its own column reads as an accident
+          tiltX(TILT + ((e.clientY - r.top - r.height / 2) / innerHeight) * 0.14);
+          tiltZ(((e.clientX - r.left - r.width / 2) / innerWidth) * -0.07);
         };
         addEventListener('pointermove', move, { passive: true });
 
         stop = () => {
           removeEventListener('pointermove', move);
           intro.kill();
+          float.kill();
           gsap.ticker.remove(tick);
           io.disconnect();
           ro.disconnect();
