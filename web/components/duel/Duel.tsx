@@ -65,9 +65,11 @@ export function Duel({ compact, autoplay = false }: { compact?: boolean; autopla
           <div>
             <h1>The same agent. The same seven actions. One difference.</h1>
             <p>
-              Left: the governance boundary bypassed — raw entity passthrough, every action executes.
-              Right: Kavach. Both lanes run in one fresh sandbox from identical inputs; the legitimate
-              actions pass in both, so the gap is entirely the attacks.
+              On the left, the agent talks straight to the payment system, the way it would today:
+              everything it asks for happens. On the right, the same requests go through Kavach.
+              The honest actions succeed on both sides — so every rupee of difference between the
+              two columns is an attack that only one of them stopped. Both columns come from a
+              single run of the real code, in a throwaway sandbox.
             </p>
           </div>
           <Controls playing={playing} shown={shown} total={total} onPlay={() => setPlaying(true)}

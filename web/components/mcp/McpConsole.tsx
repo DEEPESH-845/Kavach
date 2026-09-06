@@ -77,7 +77,7 @@ export function McpConsole({ compact }: { compact?: boolean }) {
       out.push({ say: '“Refund ₹50 of the payment I just made.”', tool: 'create_refund',
         write: true,
         args: { payment_id: real.payment_id, amount: '50',
-                reason: 'Goodwill refund on the order placed through the Bazaar',
+                reason: 'Goodwill refund on the order placed through the Shop',
                 session_id: 'sess_bazaar', agent_id: 'agent_cx_tier1' } });
     }
     out.push({ say: '“Has the log been tampered with?”', tool: 'verify_audit_trail', args: {} });
@@ -209,7 +209,7 @@ function Targets({ t }: { t: McpTools }) {
             <span className="mono" style={{ fontSize: 12, color: 'var(--bone)' }}>{real.payment_id}</span>
           </div>
           <p style={{ margin: 0, fontSize: 12.5, color: 'var(--fog)' }}>
-            {money(real.amount_minor)} paid through the Bazaar. A refund against it reaches Razorpay&apos;s
+            {money(real.amount_minor)} paid through the Shop. A refund against it reaches Razorpay&apos;s
             test API for real — a small partial amount, because a test account refunds out of its own balance.
           </p>
         </div>

@@ -132,15 +132,15 @@ export function tone(state: string | null | undefined): Tone {
 
 /** Status names are the code's vocabulary, not English. Say both. */
 const GLOSS: Record<string, string> = {
-  ALLOW: 'permitted, no human needed',
-  APPROVED: 'released for execution',
-  EXECUTED: 'the provider was called and returned a result',
-  ESCALATE: 'held for a human to decide',
-  DENY: 'refused; no human can release it here',
-  FAILED: 'the provider call failed',
-  PROPOSED: 'recorded, not yet decided',
-  STEP_UP: 're-consent required from the principal',
-  HOLD: 'held for merchant review',
+  ALLOW: 'allowed — no human needed',
+  APPROVED: 'cleared to go ahead',
+  EXECUTED: 'Razorpay was called and answered',
+  ESCALATE: 'paused for a human to decide',
+  DENY: 'refused — nobody here can override it',
+  FAILED: 'the call to Razorpay failed',
+  PROPOSED: 'written down, not yet decided',
+  STEP_UP: 'waiting for the buyer to confirm on their own device',
+  HOLD: 'waiting for the merchant to review',
 };
 
 export const gloss = (state: string) => GLOSS[state?.toUpperCase()] ?? '';
