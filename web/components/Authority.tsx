@@ -5,6 +5,7 @@ import { motion } from 'motion/react';
 import { POLICY, type Verdict } from '@/lib/data';
 import { inr, money } from '@/lib/util';
 import { T, E, settle } from '@/lib/motion';
+import { Term } from '@/components/Term';
 
 /* A faithful port of governor.decide. Authority runs strongest-first, Decision.reasons is a
    list that accumulates, and _deny clears it outright — all three of which the page has to
@@ -80,8 +81,8 @@ function decide(amountMinor: number, score: number, w: {
   return { action, reasons, rungs };
 }
 
-const RUNGS = ['accounting invariants', 'permission tier', 'truth confidence',
-               'duplicate-risk model', 'caps'];
+const RUNGS = ['bookkeeping rules', 'permission level', 'how certain we are',
+               'duplicate-risk AI', 'spending caps'];
 
 export function Authority() {
   const [amt, setAmt] = useState(800);
@@ -92,12 +93,16 @@ export function Authority() {
 
   return (
     <>
-      <motion.p className="eyebrow" {...settle}>05 — and what the model is allowed to do</motion.p>
-      <motion.h2 className="h2" {...settle}>A wrong model may only widen caution.</motion.h2>
+      <motion.p className="eyebrow" {...settle}>05 — and what the AI is allowed to do</motion.p>
+      <motion.h2 className="h2" {...settle}>
+        Even when the AI is wrong, it can only make Kavach more careful.
+      </motion.h2>
       <motion.p className="body" {...settle}>
-        The duplicate-risk model returns a number between 0 and 1. Drag it. It can raise the
-        decision toward a human, and it can do nothing else — no score unlocks a cap, an
-        invariant, or a permission tier.
+        Try it yourself. The duplicate-risk model gives every request a score between 0 (surely
+        new) and 1 (surely something we already owe). Drag it to 1 and watch the decision climb
+        toward a human. Drag it to 0 and watch nothing open up: no score can lift a spending cap,
+        overrule a <Term k="tier">permission level</Term>, or talk its way past the bookkeeping
+        rules. The AI can add caution. It cannot remove it.
       </motion.p>
 
       <motion.div className="rig" {...settle}>
@@ -117,13 +122,15 @@ export function Authority() {
           <fieldset className="ctl ctl__set">
             <legend className="ctl__label">state of the world</legend>
             <label className="chk"><input type="checkbox" checked={w.captured}
-              onChange={() => flip('captured')} /> the payment is captured</label>
+              onChange={() => flip('captured')} /> the payment was actually{' '}
+            <Term k="captured">captured</Term></label>
             <label className="chk"><input type="checkbox" checked={w.write}
-              onChange={() => flip('write')} /> the agent holds a write tier</label>
+              onChange={() => flip('write')} /> the agent is allowed to move money</label>
             <label className="chk"><input type="checkbox" checked={w.exposed}
               onChange={() => flip('exposed')} /> <span className="mono">₹48,000</span> is already refunded against it</label>
             <label className="chk"><input type="checkbox" checked={w.unknown}
-              onChange={() => flip('unknown')} /> an open obligation is <span className="mono">AMBIGUOUS</span></label>
+              onChange={() => flip('unknown')} /> we cannot tell what an earlier refund did{' '}
+            (<span className="mono">AMBIGUOUS</span>)</label>
           </fieldset>
           <p className="assume assume--ctx">
             <span className="mono">pay_Nx3f9K2</span> · ₹50,000 captured · this session has spent{' '}

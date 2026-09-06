@@ -71,7 +71,7 @@ export default function TruthPage() {
       <>
         <PageHead
           title="Truth Explorer"
-          sub="Raw events fold into one financial fact. This shows the fold happening — which event moved the state, what it changed to, and what no single event ever said."
+          sub="Lots of separate events add up to one financial fact. This screen shows that happening step by step — which event changed what, and, just as importantly, what no event ever actually said."
         />
         {lookup}
         <Section title="How to read it">
@@ -120,7 +120,7 @@ export default function TruthPage() {
             </Card>
           </Section>
 
-          <Section title="Derivation" note="each row re-derives the fact from every event up to and including it">
+          <Section title="Derivation" note="each row works the fact out again from every event up to that point">
             <Card flush>
               {t.steps.length === 0 ? <Empty title="No events" /> : (
                 <div className="chain">

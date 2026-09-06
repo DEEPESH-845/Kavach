@@ -4,7 +4,7 @@ import '@/app/dashboard/console.css';
 import './bazaar.css';
 
 export const metadata: Metadata = {
-  title: 'Kavach Bazaar — shop through an agent, safely',
+  title: 'Kavach Shop — shop through an agent, safely',
   description: 'Give an agent a mandate, watch it shop, watch Kavach decide, pay in Razorpay test mode, and inspect the evidence.',
 };
 
