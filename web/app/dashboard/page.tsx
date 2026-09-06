@@ -32,7 +32,7 @@ export default function CommandCentre() {
     <>
       <PageHead
         title="Command Centre"
-        sub="Kavach governs what agents do with money and proves every decision either way. Everything below is derived from the event log at the moment you asked."
+        sub="Kavach decides what AI agents are allowed to do with your money, and can prove every decision either way. Nothing below is stored as a summary — it is all worked out from the event log the moment you ask."
         actions={<GoLink href="/dashboard/adversary">Try to break it</GoLink>}
       />
 
@@ -109,7 +109,7 @@ export default function CommandCentre() {
 
             <Section
               title="Integrity"
-              note="the event log is hash-chained; this is a recomputation, not a stored flag"
+              note="every record is fingerprinted against the one before it — this recalculates the lot, it does not read a stored tick"
             >
               <Card>
                 <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -179,7 +179,7 @@ function OverviewSkeleton() {
           {Array.from({ length: 3 }, (_, i) => <div key={i} className="skeleton skeleton--stat" />)}
         </div>
       </Section>
-      <Section title="Integrity" note="the event log is hash-chained; this is a recomputation, not a stored flag">
+      <Section title="Integrity" note="every record is fingerprinted against the one before it — this recalculates the lot, it does not read a stored tick">
         <div className="skeleton skeleton--card" />
       </Section>
     </div>

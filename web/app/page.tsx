@@ -21,7 +21,7 @@ import type { Metadata } from 'next';
    module itself is not -- so it can name itself the ordinary way. The root layout
    deliberately does not, so that the console can name its own routes. */
 export const metadata: Metadata = {
-  title: 'Kavach — the authorization layer for agentic commerce',
+  title: 'Kavach — the authorization layer for AI that spends money',
 };
 
 /* ONE TRANSACTION, END TO END.

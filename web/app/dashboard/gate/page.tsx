@@ -120,7 +120,7 @@ export default function GatePage() {
     <>
       <PageHead
         title="Agent Gate"
-        sub="A delegated agent arrives at checkout holding a mandate its principal signed. Everything downstream is arithmetic on fields inside that mandate — so if the mandate is forged, expired, replayed or out of scope, none of the arithmetic means anything."
+        sub="An AI agent arrives at checkout holding a permission slip its owner signed. Every limit checked after this point is arithmetic on the numbers inside that slip — so if the slip is forged, out of date, reused, or for a different shop, none of that arithmetic means anything. This is where it gets checked. Edit any field below and watch the answer change."
         actions={
           <>
             <button className="btn btn--sm" onClick={() => { setMandate(DEFAULT_MANDATE()); admit.reset(); }}>
@@ -363,7 +363,7 @@ function Result({ admission: a }: { admission: Admission }) {
         ) : null}
       </Card>
 
-      <Section title="Raw admission" note="what the tool surface returns to the agent">
+      <Section title="Raw admission" note="exactly what an AI agent gets back from this check">
         <Json value={a} max={320} />
       </Section>
 

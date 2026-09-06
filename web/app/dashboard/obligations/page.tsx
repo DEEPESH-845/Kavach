@@ -25,7 +25,7 @@ export default function ObligationsPage() {
     <>
       <PageHead
         title="Obligation Ledger"
-        sub="Every entity Kavach holds whose obligation is still open — money owed, dispatched, or in flight but not yet credited. Recomputed from the event log on every request; there is no stored total that could drift from it."
+        sub="Everything Kavach still owes someone — money promised, sent, or somewhere in transit but not yet confirmed as received. Rebuilt from the event log on every request; there is no stored total that could drift from it."
       />
 
       <Async state={obs} skeleton={<Skeleton rows={7} />}>

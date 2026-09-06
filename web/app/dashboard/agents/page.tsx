@@ -29,7 +29,7 @@ function AgentList() {
     <>
       <PageHead
         title="Agents"
-        sub="Every agent identity that has raised an intent here, with what it asked for and what Kavach did about it."
+        sub="Every AI agent that has ever asked to do something here, what it asked for, and what Kavach did about it."
       />
       <Card flush>
         <Async state={list} skeleton={<Skeleton rows={5} />}
@@ -104,11 +104,11 @@ function AgentDetail({ id }: { id: string }) {
             <Stat label="Intents raised" value={count(a.intents)}
               note={`${money(a.requested_minor)} requested in total`} />
             <Stat label="Denied" value={count(a.denied)} tone={a.denied ? 'oxide' : 'bone'}
-              note="refused by an invariant or a permission tier" />
+              note="refused by a bookkeeping rule or by what this agent is allowed to do" />
             <Stat label="Escalated" value={count(a.escalated)} tone={a.escalated ? 'amber' : 'bone'}
               note="pushed to a human rather than guessed at" />
             <Stat label="Admitted without a human" value={pct(a.admission_rate, 0)}
-              note="a ratio of outcomes, not a trust score" />
+              note="just a tally of what happened, not a reputation score" />
           </div>
 
           <Section title="Intents" note="newest first">
