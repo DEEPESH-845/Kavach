@@ -17,12 +17,14 @@ gsap.registerPlugin(ScrollTrigger);
 
 const COL = { steel: '#7fa8c9', amber: '#e0a340', bone: '#e9e6de', seam: '#2f383d', iron: '#101315' };
 
+/* The five controls a serious team would already have. Each column: the control, the
+   thing it is designed to stop, and why this particular failure walks straight past it. */
 const CONTROLS = [
-  ['idempotency key', 'bounds a <em>replayed</em> request', 'the agent minted a new key'],
-  ['AP2 mandate', 'bounds <em>authorisation</em>', 'the human did authorise. Twice.'],
-  ['issuing spend cap', 'bounds the <em>amount</em>', '₹5,000 again, inside a ₹50,000 cap'],
-  ['MCP --read-only', 'bounds <em>which tools</em> exist', 'it legitimately needs create_refund'],
-  ['Thirdwatch', 'bounds <em>human</em> fraud signals', 'a good agent looks like a good agent'],
+  ['idempotency key', 'stops the <em>same request</em> arriving twice', 'this is a new request, with a new key'],
+  ['AP2 mandate', 'stops <em>unauthorised</em> spending', 'the customer did authorise it. Twice.'],
+  ['issuing spend cap', 'stops <em>too much</em> going out', '₹5,000 again, well inside a ₹50,000 cap'],
+  ['MCP --read-only', 'stops the agent <em>touching money</em>', 'issuing refunds is its actual job'],
+  ['Thirdwatch', 'stops <em>human</em> fraud patterns', 'a well-behaved agent looks well-behaved'],
 ];
 
 export function Stage() {
@@ -202,7 +204,7 @@ export function Stage() {
         <div className="stage__layer" data-phase="pressure">
           <div className="wrap stage__copy">
             <p className="eyebrow">03 — the controls that exist</p>
-            <h2 className="h2">Every one of them bounds the wrong thing.</h2>
+            <h2 className="h2">Every one of them guards a different door.</h2>
             <ul className="controls">
               {CONTROLS.map(([name, what, fail], i) => (
                 <li key={i} data-ctrl>
@@ -215,11 +217,11 @@ export function Stage() {
             <p className="counter-row">
               <span className="counter">
                 <span className="counter__n mono" ref={intents}>0</span>
-                <span className="counter__l">intents in flight</span>
+                <span className="counter__l">requests in flight</span>
               </span>
               <span className="counter">
                 <span className="counter__n mono" data-oxide ref={exposure}>₹0</span>
-                <span className="counter__l">unverified exposure · ₹5,000 each</span>
+                <span className="counter__l">money nobody can yet vouch for · ₹5,000 each</span>
               </span>
             </p>
           </div>
@@ -227,11 +229,11 @@ export function Stage() {
 
         <div className="stage__layer stage__layer--center" data-phase="refusal">
           <div className="refusal">
-            <p className="refusal__line">An idempotency key protects a <em>retried</em> request.</p>
-            <p className="refusal__line refusal__line--2">Nothing protects a <em>re-decided</em> one.</p>
+            <p className="refusal__line">Every control stops the <em>same request</em> twice.</p>
+            <p className="refusal__line refusal__line--2">None stops the same <em>debt</em> twice.</p>
             <p className="refusal__sub">
-              The question no control asks: is this new intent financially the same obligation as
-              something already in flight?
+              The question nothing on the market asks: is this brand-new request, in different
+              words, actually money we already owe and have already sent?
             </p>
           </div>
         </div>
@@ -239,11 +241,12 @@ export function Stage() {
         <div className="stage__layer" data-phase="gradient">
           <div className="wrap stage__copy">
             <p className="eyebrow">03 — the shape of the fix</p>
-            <h2 className="h2">Order the system by how much of it can be proven.</h2>
+            <h2 className="h2">Sort the system by how much of it can be proven.</h2>
             <p className="body body--tight">
-              Cryptography and integer arithmetic at the entrance. Accounting invariants at the
-              exit. The learned parts sit in the middle, where the ambiguity actually is — and they
-              may only ever move a decision toward <em>more</em> caution.
+              Signature checks and plain arithmetic at the entrance. Bookkeeping rules that
+              cannot be broken at the exit. The AI sits in the middle, where the genuine
+              ambiguity is — and it is only ever allowed to make the system <em>more</em>
+              careful, never less.
             </p>
           </div>
         </div>

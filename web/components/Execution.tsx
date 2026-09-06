@@ -4,6 +4,8 @@ import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { useScene } from '@/lib/useScene';
 import { INTENT_STATES } from '@/lib/data';
+import { Term } from '@/components/Term';
+import { ExecutionField } from '@/components/ExecutionField';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -29,30 +31,34 @@ gsap.registerPlugin(ScrollTrigger);
 
 const BEATS = [
   {
-    h: <>The reservation is <em>committed</em> before anything leaves.</>,
-    p: <>The decision runs inside <span className="mono">BEGIN EXCLUSIVE</span>. It writes{' '}
-       <span className="mono">APPROVED</span>, commits, and <em>then</em> releases the lock and
-       makes the call. A row saying money is about to move survives a crash. A row written
-       afterwards does not.</>,
+    h: <>Write down what you are about to do, <em>before</em> you do it.</>,
+    p: <>Kavach saves the decision to disk first, and only then calls Razorpay. If the machine
+       dies a millisecond later, that saved note survives and something knows ₹5,000 was about
+       to move. A note written <em>after</em> the call would not have been there to find. This
+       is called <Term k="write-ahead">writing ahead</Term>, and it is the difference between a
+       gap you can investigate and money that vanished silently.</>,
   },
   {
-    h: <>One request leaves. Its key is the <em>intent’s own id</em>.</>,
-    p: <>The idempotency key is <span className="mono">kavach-&lt;intent_id&gt;</span>, so a
-       retried request is the same request. A <em>re-decided</em> one is a different intent with
-       a different key — which is precisely why the duplicate had to be caught upstream of here,
-       and why no idempotency scheme could have caught it.</>,
+    h: <>One request leaves, tagged so it can never be sent twice.</>,
+    p: <>It carries an <Term k="idempotency">idempotency key</Term> built from this request’s own
+       id — <span className="mono">kavach-&lt;intent_id&gt;</span> — so if the network hiccups
+       and we send it again, Razorpay refunds once. Note what that does <em>not</em> cover: an
+       agent that asks again in different words is a new request with a new key. Which is exactly
+       why the duplicate had to be stopped further upstream, before it ever got here.</>,
   },
   {
-    h: <>The rail answers. That answer is <em>recorded</em>, not believed.</>,
-    p: <>A <span className="mono">201</span> carrying a refund id means the gateway accepted and
-       dispatched it. It does not mean the customer has the money. The response is ingested as an
-       event like any other, and the obligation stays open until something closes it.</>,
+    h: <>Razorpay answers. We <em>record</em> that answer — we don’t believe it.</>,
+    p: <>A success response carrying a refund id means the gateway accepted the instruction and
+       sent it onward. It does not mean the customer has the money. So the reply is filed as one
+       more piece of evidence, and the debt stays open until something actually proves it was
+       paid.</>,
   },
   {
-    h: <>Between the commit and the settle, the <em>process can die</em>.</>,
-    p: <>Then the ledger says <span className="mono">APPROVED</span> and nothing in it knows
-       whether ₹5,000 left the account. That gap does not close by trying harder, or by writing
-       the two rows in a cleverer order. It closes by going and looking.</>,
+    h: <>In the gap between those two steps, <em>the server can die</em>.</>,
+    p: <>Then our records say “about to pay” and nothing in them knows whether ₹5,000 actually
+       left. No amount of retrying or clever ordering closes that gap — it is a fact about
+       talking to another company over a network. It closes one way only: by going and
+       looking, which is what chapter 08 does.</>,
   },
 ];
 
@@ -141,6 +147,7 @@ export function Execution() {
   return (
     <section className="xb" id="execution" ref={ref}>
       <div className="xb__sticky">
+        <ExecutionField sectionRef={ref} />
         <div className="wrap xb__wrap">
           <p className="eyebrow">06 — the only place Kavach touches money</p>
 
@@ -167,15 +174,15 @@ export function Execution() {
             <div className="xb__side xb__side--them">
               <p className="xb__side-t mono">RAZORPAY</p>
               <p className="xb__them">
-                The rail. We do not control it, and nothing on this page pretends we can see
-                past it. The asymmetry below is the honest shape of the integration:
+                The payment rail. We do not own it, and nothing on this page pretends we can
+                see past it. What follows is the honest shape of that limit:
               </p>
               {/* Naming what we cannot observe is not an apology — it is the reason chapters 07 and 08
                   exists. `truth.py` returns these conditions as AMBIGUOUS with a stated reason
                   rather than inventing a value, and the empty half of this diagram is that
                   same refusal drawn at page scale. */}
               <ul className="xb__blind">
-                {['the NPCI leg', 'the customer’s bank', 'when the money actually lands']
+                {['the national payments network', 'the customer’s bank', 'when the money actually lands']
                   .map((t) => (
                     <li key={t}><span>{t}</span><span className="mono">not observable</span></li>
                   ))}
@@ -235,24 +242,26 @@ const FRAGS = [
 
 const R_BEATS = [
   {
-    h: <>Reality returns on <em>its own schedule</em>.</>,
-    p: <>The webhook arrives minutes or hours later. Its signature is checked over the raw
-       body, constant-time, before anything is parsed — and only then is it appended to the
-       log. An unverified webhook never becomes certain evidence; it becomes a recorded claim
-       from an unverified source.</>,
+    h: <>The truth arrives on <em>its own schedule</em>.</>,
+    p: <>Razorpay sends a <Term k="webhook">webhook</Term> — a “this happened” message — minutes
+       or hours later. Before Kavach reads a single word of it, it checks the{' '}
+       <Term k="hmac">signature</Term> proving the message really came from Razorpay. A message
+       that fails that check never becomes trusted evidence; it is filed as an unverified claim
+       and labelled as one.</>,
   },
   {
-    h: <>And when it does not arrive, we <em>go and look</em>.</>,
-    p: <>The reconciler sweeps intents left in <span className="mono">APPROVED</span> past the
-       tolerance, asks the rail directly for the refunds on that payment, and matches on the{' '}
-       <span className="mono">notes.intent_id</span> we attached on the way out. Matching on our
-       own id is a fact. Matching on amount and timestamp would be a guess.</>,
+    h: <>And when nothing arrives, we <em>go and look</em>.</>,
+    p: <>Anything still marked “about to pay” past its deadline gets swept up: Kavach asks
+       Razorpay directly which refunds exist on that payment, and matches them using the id{' '}
+       <em>we</em> attached on the way out. Matching on our own id is a fact. Matching on amount
+       and timestamp would be a guess — and guessing is how you refund twice.</>,
   },
   {
-    h: <>Three records. <em>One settled question.</em></>,
-    p: <>The intent settles to <span className="mono">EXECUTED</span> and stops being exposure.
-       The <em>obligation</em> does not close, because nothing has yet said the customer was
-       credited — and the difference between those two sentences is the entire product.</>,
+    h: <>Three records. <em>One question settled — and one still open.</em></>,
+    p: <>The request settles: the money did leave, and it stops counting as unknown exposure.
+       The <em>debt</em> does not close, because still nothing says the customer was credited.
+       Holding those two apart, instead of collapsing them into one “done”, is the entire
+       product.</>,
   },
 ];
 
@@ -319,7 +328,7 @@ export function Reconcile() {
     <section className="rc" id="reconcile" ref={ref}>
       <div className="rc__sticky">
         <div className="wrap rc__wrap">
-          <p className="eyebrow">08 — you do not trust the intent, you observe the outcome</p>
+          <p className="eyebrow">08 — don’t trust what you asked for; check what happened</p>
 
           <div className="rc__lane" aria-hidden>
             <span className="rc__hook mono">webhook · refund.processed · sig_verified</span>

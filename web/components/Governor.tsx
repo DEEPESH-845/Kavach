@@ -38,11 +38,11 @@ const INPUTS = [
    this intent: a duplicate-risk score over the threshold, and an amount over the
    autonomous limit. Neither can be waved through by the other. */
 const RUNGS = [
-  { n: '1', t: 'accounting invariants', s: 'captured · ₹5,000 ≤ ₹50,000', f: 'pass' },
-  { n: '2', t: 'permission tier',       s: 'write tier',                   f: 'pass' },
-  { n: '3', t: 'truth confidence',      s: 'DERIVED_CERTAIN',              f: 'pass' },
-  { n: '4', t: 'duplicate-risk model',  s: '0.95 ≥ 0.50',                  f: 'escalate' },
-  { n: '5', t: 'caps',                  s: 'autonomous limit',             f: 'escalate' },
+  { n: '1', t: 'bookkeeping rules',  s: 'captured · ₹5,000 ≤ ₹50,000', f: 'pass' },
+  { n: '2', t: 'permission level',   s: 'write tier',                   f: 'pass' },
+  { n: '3', t: 'how certain we are', s: 'DERIVED_CERTAIN',              f: 'pass' },
+  { n: '4', t: 'duplicate-risk AI',  s: '0.95 ≥ 0.50',                  f: 'escalate' },
+  { n: '5', t: 'spending caps',      s: 'autonomous limit',             f: 'escalate' },
 ] as const;
 
 const REASONS = [
@@ -126,7 +126,7 @@ export function Governor() {
           <p className="gov__q">What is this agent allowed to do?</p>
 
           <div className="gov__rig">
-            <p className="eyebrow gov__eyebrow">05 — four inputs, one order, strongest first</p>
+            <p className="eyebrow gov__eyebrow">05 — four inputs, five checks, strongest rule first</p>
 
             <ul className="gov__inputs">
               {INPUTS.map((i) => (
