@@ -27,7 +27,7 @@ export function CheckoutPanel({ focus }: { focus?: boolean }) {
     try {
       await openCheckout({
         keyId: c.order.key_id, orderId: c.order.order_id, amountMinor: c.order.amount_minor,
-        description: `Kavach Bazaar · ${j.cartId}`, notes: c.order.notes,
+        description: `Kavach Shop · ${j.cartId}`, notes: c.order.notes,
         onSuccess: (r) => { void journey.confirmCheckout(r); },
         onDismiss: () => setOpening(false),
       });

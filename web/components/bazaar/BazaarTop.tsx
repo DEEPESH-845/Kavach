@@ -21,7 +21,7 @@ export function BazaarTop({ current }: { current: 'shop' | 'tour' | 'duel' }) {
 
   return (
     <header className="bz-top">
-      <Link href="/" className="bz-mark"><span className="bz-glyph" aria-hidden /> KAVACH <small>BAZAAR</small></Link>
+      <Link href="/" className="bz-mark"><span className="bz-glyph" aria-hidden /> KAVACH</Link>
       <nav aria-label="Surfaces">
         <Link href="/tour" aria-current={current === 'tour' ? 'page' : undefined}>Tour</Link>
         <Link href="/shop" aria-current={current === 'shop' ? 'page' : undefined}>Shop</Link>

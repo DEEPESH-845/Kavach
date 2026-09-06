@@ -113,8 +113,8 @@ export function Stream() {
   return (
     <motion.div className="stream" ref={host} {...settle}>
       <div className="stream__head">
-        <p className="eyebrow">the same ladder, at volume</p>
-        <p className="stream__src mono">replay · seeded synthetic corpus · not production traffic</p>
+        <p className="eyebrow">the same five checks, running at speed</p>
+        <p className="stream__src mono">replay · made-up test data · not real traffic</p>
       </div>
 
       <ol className="stream__rows">
@@ -147,10 +147,10 @@ export function Stream() {
       </dl>
 
       <p className="stream__note">
-        The reason text and obligation kinds are the corpus’s own, the base rate is the report’s
-        stated <span className="mono">12%</span>, and the ladder — including the{' '}
-        <span className="mono">0.50</span> threshold — is <span className="mono">governor.Policy</span>’s.
-        A seam travels while a decision is open, and closes when the verdict lands.
+        These are invented refunds, not real ones — but the wording, the mix, and every rule
+        being applied come straight from the shipped code. Roughly{' '}
+        <span className="mono">12%</span> of them are money already owed. A line travels across
+        each row while the decision is open, and closes the moment the verdict lands.
       </p>
     </motion.div>
   );

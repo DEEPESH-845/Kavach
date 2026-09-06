@@ -15,6 +15,10 @@ export function ScenarioBar({ focus }: { focus?: boolean }) {
   return (
     <div className="card" data-focus={focus || undefined}>
       <div className="stat__label" style={{ marginBottom: 10 }}><Bot size={13} /> Put the agent to work</div>
+      <p className="field__hint" style={{ margin: '0 0 10px' }}>
+        Pick how the agent behaves. The small text on each is what Kavach <em>should</em> do:
+        allow it, ask the buyer first, or refuse.
+      </p>
       <div className="bz-scen" role="radiogroup" aria-label="Agent scenario">
         {j.store.scenarios.map((s) => (
           <button key={s.id} type="button" role="radio" aria-checked={j.mode === s.id}

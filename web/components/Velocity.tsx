@@ -68,11 +68,12 @@ export function Velocity() {
   return (
     <section className="vel" id="velocity" ref={ref}>
       <div className="wrap vel__copy">
-        <p className="eyebrow vel__brow">one intent, read end to end</p>
+        <p className="eyebrow vel__brow">one refund, read end to end</p>
         <Kinetic text="The next *nine hundred and twenty-five* do not get read." />
         <p className="body body--tight vel__foot">
-          {(DUP * 100).toFixed(0)}% of them carry an obligation that is already owed. The rest
-          are ordinary work, and a system that stops those has not helped anyone.
+          About {(DUP * 100).toFixed(0)}% of them ask for money that has already been sent. The
+          other {(100 - DUP * 100).toFixed(0)}% are ordinary, legitimate work — and a system that
+          blocks those has not helped anybody.
         </p>
       </div>
 
