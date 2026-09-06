@@ -213,30 +213,32 @@ export function Distance() {
               <p className="eyebrow">07 — the other side of the boundary</p>
               <Kinetic text="The only leg we can prove is *the short one.*" />
               <p className="body body--tight">
-                One hop is ours: the request out to the rail and the signed answer back, both
-                in our own log as <span className="mono">seq 17</span>. Everything past it
-                belongs to a clearing system we do not integrate with, on a schedule we do not
-                set. The five threads are where the ₹5,000 could be —{' '}
-                <span className="mono">truth.py</span> returns{' '}
-                <span className="mono" data-amber>AMBIGUOUS</span> rather than picking one.
+                One hop is ours: our request to Razorpay and its signed reply, both written into
+                our own log. Everything after that belongs to banks and clearing systems we have
+                no connection to, running on a schedule nobody tells us. The five threads on this
+                map are where your ₹5,000 might currently be. Kavach will not pick one and call
+                it the answer — it says{' '}
+                <span className="mono" data-amber>AMBIGUOUS</span>, out loud, and refuses to
+                guess.
               </p>
 
               <dl className="dist__key">
                 <div data-k="sure">
-                  <dt>observed</dt>
+                  <dt>we can see this</dt>
                   <dd><span className="dist__n">1</span> leg · signed at both ends</dd>
                 </div>
                 <div data-k="dark">
-                  <dt>not observable</dt>
-                  <dd><span className="dist__n">5</span> legs · no event names one</dd>
+                  <dt>we cannot see these</dt>
+                  <dd><span className="dist__n">5</span> legs · nothing reports on them</dd>
                 </div>
               </dl>
 
               <p className="assume">
-                One issuing bank on each of five continents, drawn to show the ratio rather
-                than a route — nothing in the log names a destination, so nothing here does
-                either. An agent that reads <span className="mono">processed</span> as{' '}
-                <em>credited</em> has narrated all five threads as if they were the first one.
+                One bank on each of five continents, drawn to show the proportion rather than a
+                real route — nothing in our log names a destination, so nothing here does either.
+                An agent that reads <span className="mono">processed</span> as{' '}
+                <em>the customer has the money</em> has just described all five of those unlit
+                threads as if they were the one lit one.
               </p>
             </div>
           </div>

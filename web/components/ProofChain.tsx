@@ -43,7 +43,7 @@ export function ProofChain() {
 
   return (
     <figure className="pc" ref={ref as React.Ref<HTMLElement>}>
-      <figcaption className="eyebrow">what each chapter left in the log</figcaption>
+      <figcaption className="eyebrow">what each step of this page wrote into the log</figcaption>
 
       <div className="pc__track">
         <div className="pc__rail" aria-hidden><i className="pc__rail-lit" /></div>
@@ -61,8 +61,15 @@ export function ProofChain() {
       </div>
 
       <p className="pc__note">
-        The head is recomputed in the console rather than printed here. A hash typed into a
-        static page proves nothing about the log it claims to cover.
+        The final fingerprint is recomputed live in the console, not printed here. A hash typed
+        into a static web page proves nothing about the records it claims to cover.
+      </p>
+
+      <p className="plain">
+        <b>What this does and does not prove</b>
+        A tamper-evident log proves that nobody quietly rewrote the history after the fact. It
+        does <em>not</em> prove the history was true when it was written — a mistake recorded
+        honestly is still a mistake. Kavach states both, in the same breath, below.
       </p>
 
       <dl className="pc__claims">

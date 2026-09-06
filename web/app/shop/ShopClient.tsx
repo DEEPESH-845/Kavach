@@ -2,6 +2,7 @@
 
 import { BazaarTop } from '@/components/bazaar/BazaarTop';
 import { Journey } from '@/components/bazaar/Journey';
+import { Term } from '@/components/Term';
 
 export function ShopClient() {
   return (
@@ -11,9 +12,12 @@ export function ShopClient() {
         <div>
           <h1>Priya gave an agent her card. Kavach decides what it may do with it.</h1>
           <p>
-            A mandate, a storefront, and a bench agent that shops within — or past — what it was
-            delegated. Every verdict below is the real admission path; every payment is Razorpay
-            test mode.
+            Priya writes down what her AI agent is allowed to buy and how much it may spend — a{' '}
+            <Term k="mandate">mandate</Term> — and signs it. Then she lets it loose in a real
+            shop. Pick one of the six ways it can behave below: one honest, five that a simple
+            spending limit would happily wave through. Kavach decides each one in front of you
+            and shows its reasoning. Payments run in Razorpay’s test mode, so no real money
+            moves.
           </p>
         </div>
       </div>
