@@ -7,6 +7,7 @@ import { useScene } from '@/lib/useScene';
 import { Kinetic } from '@/components/Kinetic';
 import { fade, inward, rise } from '@/lib/scroll';
 import { ProofChain } from '@/components/ProofChain';
+import { Term } from '@/components/Term';
 
 const LOG = [
   { seq: 'seq 12', src: 'webhook · refund.created',   says: <>rail → <span className="mono" data-steel>ACCEPTED</span></>,   trust: 'HMAC verified', cited: true },
@@ -26,12 +27,14 @@ export function Proof() {
   return (
     <section className="sec sec--proof" id="proof" ref={ref}>
       <div className="wrap">
-        <motion.p className="eyebrow" {...settle}>10 — the shared spine</motion.p>
+        <motion.p className="eyebrow" {...settle}>10 — the shared record</motion.p>
         <Kinetic text="Every fact cites the *events behind it.*" />
         <motion.p className="body" {...settle}>
-          Facts are derived from an append-only log, never asserted. A decision replayed against
-          the same events and the same clock returns the same verdict months later — which is what
-          a chargeback on an agent-initiated order actually requires.
+          Kavach never simply stores a conclusion. Every statement it makes is worked out, on the
+          spot, from an <Term k="append-only">append-only log</Term> — a record you can add to but
+          never edit or delete. Run the same decision again months later against the same events
+          and you get the same verdict, with the same reasons. That is what you need when a bank
+          asks you to justify a payment an AI made.
         </motion.p>
 
         <ProofChain />
@@ -55,20 +58,23 @@ export function Proof() {
         </motion.figure>
 
         <motion.p className="body" {...settle}>
-          The obligation is open because <em>no event closes it</em> — not because a model guessed.
+          The debt is still open because <em>nothing in the record closes it</em> — not because
+          some model had a hunch.
         </motion.p>
 
         <motion.dl className="facts" {...settle}>
-          <div><dt className="mono">DERIVED_CERTAIN</dt><dd>a signature-verified event states this directly</dd></div>
-          <div><dt className="mono">DERIVED_PROBABLE</dt><dd>inferred, or from an unverified source</dd></div>
-          <div><dt className="mono">UNKNOWN</dt><dd>contradicted, or stale past tolerance — never “unchanged”</dd></div>
+          <div><dt className="mono">DERIVED_CERTAIN</dt><dd>a signed, verified message says this in so many words</dd></div>
+          <div><dt className="mono">DERIVED_PROBABLE</dt><dd>worked out indirectly, or from a source we cannot verify</dd></div>
+          <div><dt className="mono">UNKNOWN</dt><dd>the evidence contradicts itself, or has gone silent too long — and Kavach says so rather than assuming nothing changed</dd></div>
         </motion.dl>
 
         <motion.div className="swap" {...settle}>
-          <p className="eyebrow">the deployment vector</p>
+          <p className="eyebrow">how you would actually install it</p>
           <p className="body body--tight">
-            Kavach ships as an MCP server with Razorpay-compatible tool names. Swapping is one
-            config line — same tools, same arguments. They return financial facts, and they can refuse.
+            Kavach ships as an <Term k="mcp">MCP</Term> server using the same tool names Razorpay’s
+            own already uses. Adopting it is one line of config — the agent’s code does not change
+            at all. The difference is what comes back: answers that separate what the rail did from
+            what the customer got, and tools that are allowed to say no.
           </p>
           <pre className="code mono"><code>{'{ "mcpServers": { "kavach": { "command": "kavach-mcp-server" } } }'}</code></pre>
           <ul className="tools">
@@ -81,9 +87,10 @@ export function Proof() {
             ))}
           </ul>
           <p className="assume">
-            Every one but <span className="mono">create_refund</span> is annotated read-only —
-            admission and verification move no money. <span className="mono">create_refund</span> is
-            the only tool that does, and the only one that can refuse.
+            Everything except <span className="mono">create_refund</span> is marked read-only:
+            checking and verifying move no money at all.{' '}
+            <span className="mono">create_refund</span> is the single tool that can, which is why
+            it is also the single tool that can refuse.
           </p>
         </motion.div>
       </div>
