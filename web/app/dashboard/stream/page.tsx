@@ -40,7 +40,7 @@ export default function StreamPage() {
     <>
       <PageHead
         title="Decision Stream"
-        sub="Every intent Kavach has governed, newest first. Each row opens the decision, the truth it was decided against, and the events that prove it."
+        sub="Every request Kavach has ruled on, newest first. Open any row to see the decision, what was known at the time, and the evidence behind it."
         actions={
           <>
             <button

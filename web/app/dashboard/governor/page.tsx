@@ -32,14 +32,14 @@ export default function GovernorPage() {
     <>
       <PageHead
         title="Governor"
-        sub="May this agent move this money, right now? Authority runs strongest first, and anything the model says can make the outcome more cautious and nothing else."
+        sub="One question: may this agent move this money, right now? The checks run strongest-rule-first, and anything the AI says can only make the answer more cautious — never less."
         actions={<GoLink href="/dashboard/review">Review queue</GoLink>}
       />
 
       <Async state={policy} skeleton={<Skeleton rows={6} />}>
         {(p) => (
           <>
-            <Section title="Order of authority" note="strongest first; nothing below a rung reaches past it">
+            <Section title="Order of authority" note="strongest rule first — once one stops a request, nothing weaker can overrule it">
               <div className="stack stack--tight">
                 {p.authority_order.map((rung) => (
                   <Card key={rung.rank}>
@@ -70,12 +70,12 @@ export default function GovernorPage() {
                 <Stat
                   label="Autonomous refund limit"
                   value={money(p.limits.max_auto_refund_minor as number, { round: true })}
-                  note="above this, a human approves — regardless of risk score"
+                  note="above this amount a human must approve, whatever the risk score says"
                 />
                 <Stat
                   label="Session cap"
                   value={money(p.limits.session_cap_minor as number, { round: true })}
-                  note="a new session is exactly how a duplicate is born, so sessions are capped"
+                  note="starting a fresh session is exactly how a duplicate gets through, so each session has its own limit"
                 />
                 <Stat
                   label="Daily cap"
@@ -85,7 +85,7 @@ export default function GovernorPage() {
                 <Stat
                   label="Risk threshold"
                   value={(p.limits.risk_threshold as number).toFixed(3)}
-                  note="at or above this the estimator escalates; it never denies"
+                  note="at or above this the model asks a human — it can never refuse on its own"
                 />
               </div>
             </Section>

@@ -7,7 +7,7 @@ export default function PaymentsPage() {
     <EntityView
       kind="payment"
       title="Payments"
-      sub="Not a payments table — a fold of the event log. Every row is derived at request time, and the exposure column is what is already committed against that payment but not yet closed out."
+      sub="Not a stored payments table — every row here is rebuilt from the event log as you load the page. “Exposure” is money already promised against that payment but not yet confirmed as delivered."
     />
   );
 }

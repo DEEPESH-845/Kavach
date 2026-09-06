@@ -33,7 +33,7 @@ export default function ProofPage() {
     <>
       <PageHead
         title="Proof & Audit"
-        sub="Every event carries a SHA-256 over its own immutable fields and its predecessor's hash. Verification recomputes the whole chain — it does not read a stored flag."
+        sub="Every record carries a fingerprint of itself and of the record before it, so editing any one of them breaks every fingerprint that follows. Pressing verify recalculates the entire chain from scratch — it does not just read a stored “verified” tick."
         actions={
           <button className="btn btn--sm" onClick={reload} disabled={chain.loading}>
             <RefreshCw size={12} /> Re-verify
@@ -78,12 +78,12 @@ export default function ProofPage() {
               </Card>
             </div>
 
-            <Section title="Break it yourself" note="the edit lands in a copy; verification fails at the exact row">
+            <Section title="Break it yourself" note="your edit lands in a copy, never the real log — and the check fails at exactly the row you touched">
               <Tamper onRestore={reload} />
             </Section>
 
             <Section title="What this proves — and what it does not"
-              note="shipped with every proof response, so it cannot be dropped from the UI">
+              note="these caveats travel with every proof the API returns, so this screen cannot quietly leave them out">
               <Card>
                 <KV rows={[
                   ['Proves', c.claims.proves],
@@ -96,7 +96,7 @@ export default function ProofPage() {
 
             <Section
               title="The chain"
-              note="newest first — each event's hash covers the one before it"
+              note="newest first — each record's fingerprint covers the one before it"
               actions={
                 <div className="chipbar">
                   {[60, 150, 200].map((n) => (

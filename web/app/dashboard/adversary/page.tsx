@@ -53,7 +53,7 @@ export default function AdversaryLab() {
     <>
       <PageHead
         title="Adversary Lab"
-        sub="Attacks against the real decision code, in an isolated sandbox. Every scenario states what it expects Kavach to do, then reports what Kavach actually did — so a regression shows up here as a failing scenario rather than a passing animation."
+        sub="Real attacks against the real decision code, run in a throwaway sandbox. Each one states up front what Kavach should do, then reports what it actually did — so a broken defence shows up here as a failing scenario rather than a passing animation."
         actions={
           <Async state={catalogue} skeleton={<span />}>
             {(c) => (

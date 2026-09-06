@@ -31,7 +31,7 @@ export default function EvaluationsPage() {
     <>
       <PageHead
         title="Evaluations"
-        sub="Written by the benchmarks in CI, not computed on request. A regression in model quality fails the build the same way a broken test does."
+        sub="These numbers are written by the test suite when the code is built, not calculated when you open this page. If model quality drops, the build fails — exactly like a broken test."
       />
 
       <Async state={evals} skeleton={<Skeleton rows={6} />}>
@@ -75,7 +75,7 @@ export default function EvaluationsPage() {
                   </Card>
 
                   <Section title="Against every feasible baseline"
-                    note="same split, same threshold budget — the comparison is the claim">
+                    note="same test data, same review budget for everyone — that is what makes the comparison fair">
                     <Card flush><ResultsTable rows={risk.results ?? []} /></Card>
                   </Section>
 
@@ -127,7 +127,7 @@ export default function EvaluationsPage() {
 
               {gate?.results?.length ? (
                 <Section title="Gate — cart entailment"
-                  note="does the cart entail the mandate's stated purpose?">
+                  note="is this cart really what the buyer asked for?">
                   <Card flush><ResultsTable rows={gate.results} /></Card>
                 </Section>
               ) : null}

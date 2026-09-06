@@ -218,7 +218,7 @@ function Truth({ d }: { d: DecisionDetail }) {
         <Card><Empty title="No fact for this target" body="Kavach holds no events for it, so the governor decided with no truth to read — which is itself a reason to refuse." /></Card>
       )}
 
-      <Section title="Cited evidence" note="the exact events the governor read, fetched by the seqs it recorded">
+      <Section title="Cited evidence" note="the exact events Kavach read, looked up by the record numbers it wrote down at the time">
         <Card flush>
           {d.truth.evidence.length ? <EventTable events={d.truth.evidence} />
             : <Empty title="No events were cited" body="There was no open obligation on this target to cite." />}
@@ -308,7 +308,7 @@ function Integration({ d }: { d: DecisionDetail }) {
             : <span style={{ color: 'var(--fog2)' }}>no provider call has been observed</span>],
         ]} />
       </Card>
-      <Section title="Provider events" note="what the rail told us about the result, after the fact">
+      <Section title="Provider events" note="what the payment provider told us afterwards about how it went">
         <Card flush>
           {d.integration.provider_events.length
             ? <EventTable events={d.integration.provider_events} />
@@ -380,7 +380,7 @@ function Proof({ d }: { d: DecisionDetail }) {
           the webhook, recorded separately as <code className="mono">sig_verified</code>.
         </p>
       </Card>
-      <Section title="Export" note="machine-readable, re-verifiable without this codebase">
+      <Section title="Export" note="machine-readable, and checkable by someone who does not have this software">
         <Card>
           <p style={{ margin: '0 0 12px', fontSize: 13 }}>
             The dispute pack carries the intent, the truth it was decided against, the risk

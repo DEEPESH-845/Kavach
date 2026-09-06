@@ -10,7 +10,7 @@ export default function McpPage() {
     <>
       <PageHead
         title="MCP Console"
-        sub="The exact tool functions kavach-mcp-server exposes over stdio, called over HTTP. Ask for a refund, then ask again with different words from a new session — and watch the same tool refuse the second one with the evidence it relied on."
+        sub="These are the exact tools an AI agent gets when it connects to Kavach — the same ones, called here from your browser. Ask for a refund. Then ask again in different words, from a fresh session, the way a confused agent would. Watch the second one get refused, with the evidence it used to decide."
       />
       <McpConsole />
     </>
