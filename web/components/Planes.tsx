@@ -28,11 +28,19 @@ export function Planes() {
     <section className="sec sec--planes" id="gradient" ref={ref}>
       <div className="wrap">
         <motion.p className="legend" {...settle}>
-          <span className="legend__k"><i data-swatch="steel" />deterministic — no model, ever</span>
-          <span className="legend__k"><i data-swatch="amber" />learned — advisory only</span>
-          <span className="legend__k"><i data-swatch="bone" />policy — chooses the action</span>
-          <span className="legend__k legend__hint">open a plane for what it cannot do</span>
+          <span className="legend__k"><i data-swatch="steel" />fixed rules — no AI, ever</span>
+          <span className="legend__k"><i data-swatch="amber" />AI — can advise, cannot decide</span>
+          <span className="legend__k"><i data-swatch="bone" />policy — makes the final call</span>
+          <span className="legend__k legend__hint">open any layer for what it cannot do</span>
         </motion.p>
+
+        <p className="plain">
+          <b>How to read this</b>
+          Eight layers of checking, in the order they run. Each row gives the layer’s name, what
+          it looks at, whether AI is involved, roughly how long it takes, and whether it is
+          already written. Click any row to see what that layer <em>cannot</em> do — because a
+          layer whose limits are hidden is a layer nobody should trust.
+        </p>
 
         <ol className="planes">
           {PLANES.map((p, i) => {
@@ -80,8 +88,8 @@ export function Planes() {
         </ol>
 
         <motion.p className="note" {...settle}>
-          Nothing below a layer imports anything above it. That ordering is also the determinism
-          gradient.
+          The order is strict: no layer is allowed to depend on one further down the list. That
+          is also the order of how provable each layer is — certainty first, judgement last.
         </motion.p>
         <motion.p className="note" {...settle}>
           <em>State, stated.</em>{' '}
@@ -90,8 +98,8 @@ export function Planes() {
             <> {plannedNs} are specified and not written yet — the design is in{' '}
               <span className="mono">documents/specs/</span>.</>
           )}{' '}
-          The latencies are per-plane <em>budgets</em>, not measurements; the only measured
-          numbers on this page are in <a className="link" href="#evidence">Evidence</a>.
+          The timings are <em>targets</em> we designed to, not stopwatch readings. The only
+          measured numbers on this page are in <a className="link" href="#evidence">Evidence</a>.
         </motion.p>
       </div>
     </section>

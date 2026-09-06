@@ -9,6 +9,7 @@ import gsap from 'gsap';
 import { useScene } from '@/lib/useScene';
 import { Kinetic } from '@/components/Kinetic';
 import { inward, rise } from '@/lib/scroll';
+import { Term } from '@/components/Term';
 
 /** Numbers travel to their value. Only the payoff column counts — four counters a row
  *  would be a slot machine, and the point is the rupees, not the animation. */
@@ -50,12 +51,23 @@ export function Evidence() {
   return (
     <section className="sec" id="evidence" ref={ref}>
       <div className="wrap">
-        <motion.p className="eyebrow" {...settle}>09 — measured, on a held-out split</motion.p>
+        <motion.p className="eyebrow" {...settle}>
+          09 — measured, on cases the model had never seen
+        </motion.p>
         <Kinetic text="Same human cost. Thirteen times less money out the door." />
         <motion.p className="body" {...settle}>
-          Every system below escalates the identical share of intents, because “escalate
-          everything” is otherwise optimal and operationally useless. Hold the friction fixed,
-          then count the rupees that leaked.
+          Any system can catch every duplicate by sending every request to a human — and no
+          merchant would run it. So this test forces all five systems to interrupt exactly the
+          same number of people, and then asks the only question left: with the same staff cost,
+          how much money still walked out the door?
+        </motion.p>
+        <motion.p className="plain" {...settle}>
+          <b>Reading the table</b>
+          <Term k="precision">Precision</Term> — of everything it flagged, how much really was a
+          duplicate (higher is fewer false alarms). <Term k="recall">Recall</Term> — of the real
+          duplicates, how many it caught (higher is less missed). <em>Escalated</em> — how often a
+          human is interrupted, held equal on purpose. <em>Leaked</em> — the money that got paid
+          twice anyway. That last column is the one that matters.
         </motion.p>
 
         <table className="results">
@@ -71,7 +83,7 @@ export function Evidence() {
           <tbody>
             {REPORT.results.map((r) => (
               <tr key={r.name} data-hero={('hero' in r && r.hero) || undefined}>
-                <td>{r.name}<span className="sr"> — {r.gloss}</span></td>
+                <td>{r.name}<small className="results__gloss">{r.gloss}</small></td>
                 <td>{r.precision.toFixed(3)}</td>
                 <td>{r.recall.toFixed(3)}</td>
                 <td>{pct(r.review_rate)}</td>
@@ -94,7 +106,9 @@ export function Evidence() {
         </motion.p>
 
         <motion.div className="sweep" {...settle}>
-          <p className="eyebrow">how much friction you are willing to buy</p>
+          <p className="eyebrow">
+            how many customers you are willing to interrupt — and what it buys you
+          </p>
           <div className="sweep__ctl" role="group" aria-label="Review budget">
             {REPORT.budget_sweep.map((b, i) => (
               <button key={b.budget} type="button" className="sweep__btn"
@@ -116,15 +130,18 @@ export function Evidence() {
         <motion.div className="limits" {...settle}>
           <h3 className="h3">What these numbers are not.</h3>
           <ul>
-            <li>Both corpora are <em>synthetic</em>. Built to be hard — paraphrased duplicates,
-              identical-amount hard negatives, held-out attack families — but not production traffic.</li>
-            <li>The 12% duplicate base rate is a <em>stated assumption</em>. No public figure exists;
-              the sensitivity sweep above is why it is stated rather than hidden.</li>
-            <li>Precision 0.813 means roughly <em>one in five escalations delays a legitimate
-              refund</em>. That cost is real, and it is why the system escalates rather than denies.</li>
-            <li><span className="mono">B1</span> scoring exactly zero is the corpus working as
-              designed: duplicates are paraphrases, so string equality is worthless and no model is
-              credited for beating a strawman.</li>
+            <li>The test data is <em>made up</em>. It was built to be hard — duplicates reworded
+              so no text match finds them, near-identical amounts designed to fool a rule — but it
+              is not real merchant traffic.</li>
+            <li>“12% of requests are duplicates” is an <em>assumption</em>, not a measurement. No
+              public figure exists. The slider above exists so you can see what happens if we
+              guessed wrong.</li>
+            <li>Precision 0.813 means roughly <em>one escalation in five delays a perfectly good
+              refund</em>. That is a real cost to a real customer, and it is why the system asks a
+              human rather than refusing outright.</li>
+            <li><span className="mono">B1</span> scoring zero is the test working as designed:
+              duplicates here are reworded, so matching text letter-for-letter finds nothing. We
+              get no credit for beating a deliberately weak opponent.</li>
           </ul>
         </motion.div>
       </div>

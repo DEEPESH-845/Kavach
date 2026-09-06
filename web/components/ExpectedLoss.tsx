@@ -5,6 +5,7 @@ import { motion } from 'motion/react';
 import { inr } from '@/lib/util';
 import { T, E, settle } from '@/lib/motion';
 import type { Admission } from '@/lib/data';
+import { Term } from '@/components/Term';
 
 /* gate/admission.decide: argmin expected loss over costs the merchant supplies.
 
@@ -32,18 +33,20 @@ export function ExpectedLoss() {
   return (
     <>
       <motion.hr className="rule" {...settle} />
-      <motion.p className="eyebrow" {...settle}>and how the deterministic half chooses</motion.p>
-      <motion.h3 className="h3" {...settle}>Four verdicts, one argmin.</motion.h3>
+      <motion.p className="eyebrow" {...settle}>and how the no-AI half chooses</motion.p>
+      <motion.h3 className="h3" {...settle}>Four options. It picks the cheapest mistake.</motion.h3>
       <motion.p className="body" {...settle}>
-        Gate picks the admission verdict by minimising expected loss over costs the{' '}
-        <em>merchant</em> supplies — not by thresholding a score. Move the risk and the cart
-        value and watch the winner change.
+        Blocking a good customer costs you a sale. Letting a bad one through costs you the cart.
+        So Kavach does not pick a verdict off a score threshold — it works out the{' '}
+        <Term k="expected-loss">average cost in rupees</Term> of all four options, using prices{' '}
+        <em>you</em> set, and takes the smallest bar. Move the two sliders and watch the winner
+        change.
       </motion.p>
 
       <motion.div className="rig rig--el" {...settle}>
         <div className="rig__controls">
           <label className="ctl">
-            <span className="ctl__label">entailment risk
+            <span className="ctl__label">how likely this cart is a problem
               <span className="mono ctl__val">{p.toFixed(2)}</span></span>
             <input type="range" min={0} max={1} step={0.01} value={p}
                    onChange={(e) => setP(+e.target.value)} />
@@ -70,14 +73,19 @@ export function ExpectedLoss() {
             ))}
           </ol>
           <p className="formula mono">EL(step_up) = c_step + p · (1 − r_step) · L</p>
+          <p className="assume">
+            Read it as: what asking the buyer costs you, plus what still slips through when
+            asking does not work.
+          </p>
         </div>
 
         <p className="assume">
-          <span className="mono">c_step ₹45</span> — message, plus the checkout it interrupts<br />
-          <span className="mono">c_hold ₹140</span> — review minutes, plus a delayed order<br />
-          <span className="mono">r_step 0.70</span> · <span className="mono">r_hold 0.95</span> — share of bad carts each actually catches<br />
-          <span className="mono">margin 18% of cart</span> — lost when a good cart is refused<br /><br />
-          Stated assumptions with no public source, recorded as assumptions — not measurements.
+          <span className="mono">c_step ₹45</span> — the message, plus the checkout it interrupts<br />
+          <span className="mono">c_hold ₹140</span> — a reviewer’s minutes, plus a delayed order<br />
+          <span className="mono">r_step 0.70</span> · <span className="mono">r_hold 0.95</span> — how many bad carts each option actually catches<br />
+          <span className="mono">margin 18% of cart</span> — the profit lost when a good cart is refused<br /><br />
+          These four prices are our estimates, not measurements. They are printed here so you
+          can disagree with them.
         </p>
       </motion.div>
     </>
