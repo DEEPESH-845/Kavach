@@ -23,7 +23,7 @@ export default function ReconciliationPage() {
     <>
       <PageHead
         title="Reconciliation"
-        sub="Intents that were committed to but whose provider result has not been observed. The reconciler polls Razorpay and settles each one as EXECUTED or FAILED; until it does, the amount stays counted as exposure."
+        sub="Requests Kavach committed to but has not yet seen the outcome of. It asks Razorpay directly and settles each one either way; until it does, the amount stays counted as exposure."
         actions={
           <button className="btn btn--sm" onClick={list.reload} disabled={list.loading}>
             <RefreshCw size={12} /> Refresh

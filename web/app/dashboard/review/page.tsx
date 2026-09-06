@@ -30,7 +30,7 @@ export default function ReviewPage() {
     <>
       <PageHead
         title="Review Queue"
-        sub="Intents the governor escalated rather than guess about. Each one says which rung of the authority ladder stopped it, and what the reviewer is being asked to decide."
+        sub="Requests Kavach refused to guess about, so it stopped and asked. Each one shows which check stopped it and exactly what you are being asked to decide."
         actions={
           <button className="btn btn--sm" onClick={queue.reload} disabled={queue.loading}>
             <RefreshCw size={12} /> Refresh
