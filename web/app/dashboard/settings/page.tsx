@@ -35,7 +35,7 @@ export default function SettingsPage() {
     <>
       <PageHead
         title="Settings"
-        sub="What this environment is running, and how to change it. Nothing on this screen is editable — see below for why."
+        sub="What this installation is running, and how to change it. Nothing here can be edited from the browser — see below for why that is deliberate."
       />
 
       <Async state={health} skeleton={<Skeleton rows={5} />}>
@@ -59,7 +59,7 @@ export default function SettingsPage() {
               </Card>
             </Section>
 
-            <Section title="Models" note="a missing model widens caution; it is never substituted">
+            <Section title="Models" note="if a model is missing, Kavach gets stricter — it never quietly swaps in another one">
               <div className="grid grid--2">
                 <Card>
                   <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 8 }}>

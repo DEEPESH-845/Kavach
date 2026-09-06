@@ -42,7 +42,7 @@ export default function RiskPage() {
     <>
       <PageHead
         title="Risk Intelligence"
-        sub="One estimator, one question: is this new intent financially the same obligation as something already in flight? It is not a fraud score, and it authorises nothing — the strongest thing it can do is push a decision toward a human."
+        sub="One model, one question: is this new request asking for money we have already sent? It is not a fraud score and it cannot approve anything — the strongest thing it can do is push a decision toward a human."
       />
 
       {modelLoaded === false ? (
@@ -72,13 +72,13 @@ export default function RiskPage() {
                 icon={<Gauge size={13} />}
                 label="Intents scored"
                 value={count(scored.length)}
-                note="the task is only defined where a prior intent exists on the same target"
+                note="the question only makes sense where something was already asked for on the same payment"
               />
               <Stat
                 label="At or above threshold"
                 tone={above.length ? 'amber' : 'bone'}
                 value={count(above.length)}
-                note="each was pushed toward a human; none was refused by the model alone"
+                note="each was sent to a human; the model refused nothing by itself"
               />
               <Stat
                 label="Decision threshold"
@@ -89,7 +89,7 @@ export default function RiskPage() {
                 label="Amount under flag"
                 tone={above.length ? 'amber' : 'bone'}
                 value={money(above.reduce((n, i) => n + i.amount_minor, 0), { round: true })}
-                note="requested by intents the estimator flagged"
+                note="asked for by the requests the model flagged"
               />
             </div>
 

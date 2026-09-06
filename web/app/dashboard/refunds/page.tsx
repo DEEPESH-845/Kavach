@@ -7,7 +7,7 @@ export default function RefundsPage() {
     <EntityView
       kind="refund"
       title="Refunds"
-      sub="Rail state and obligation state are shown separately because they are different facts. A refund can be PROCESSING on the rail with its obligation still OPEN — the gateway is done, the customer has not been paid."
+      sub="Two columns, because these are two different facts. A refund can be PROCESSING at the payment provider while what you owe the customer is still OPEN — the gateway has done its part; the customer has not got the money."
     />
   );
 }
