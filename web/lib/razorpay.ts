@@ -47,7 +47,7 @@ export async function openCheckout(opts: {
     key: opts.keyId,
     amount: opts.amountMinor,
     currency: 'INR',
-    name: 'Kavach Bazaar',
+    name: 'Kavach Shop',
     description: opts.description,
     order_id: opts.orderId,
     notes: opts.notes ?? {},

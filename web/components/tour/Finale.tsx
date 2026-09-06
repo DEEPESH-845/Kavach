@@ -52,7 +52,7 @@ export function Finale() {
       </div>
 
       <div className="fn-acts" data-reveal style={d(16)}>
-        <Link className="btn btn--primary" href="/shop">Open the Bazaar</Link>
+        <Link className="btn btn--primary" href="/shop">Open the Shop</Link>
         <Link className="btn" href="/dashboard">Operator console</Link>
         <Link className="btn" href="/duel">Run the duel again</Link>
         <Link className="btn btn--ghost" href="/#divergence">Read the argument</Link>
