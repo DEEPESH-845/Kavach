@@ -32,6 +32,7 @@ beating its baselines fails the build.
 | `KAVACH_DEMO` | no | `1` (image) | Enables `POST /api/demo/reset` and the **Reset demo** button. Set `0` outside a demo. |
 | `KAVACH_SEED_ON_START` | no | unset | `1` re-seeds on every start. |
 | `KAVACH_KILL_SWITCH` | no | unset | Suspends autonomous money movement (every refund intent goes to a human). |
+| `KAVACH_CORS_ORIGINS` | no | unset | Comma-separated extra browser origins allowed to call the API, e.g. `https://kavach-three-rust.vercel.app` when the UI is hosted on Vercel with `NEXT_PUBLIC_KAVACH_API` pointing here. Same-origin deploys need none. |
 | `KAVACH_RATE_LIMIT` | no | `60` | Per-client requests/minute on step-up, checkout, MCP, reset, tamper, webhook routes. |
 | `PORT` | no | `8000` | Set by Render and Cloud Run; honoured by the entrypoint. |
 

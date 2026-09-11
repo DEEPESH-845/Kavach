@@ -10,7 +10,7 @@ or how to stop the merchant's own agents from paying twice.
 
 <br>
 
-![tests](https://img.shields.io/badge/tests-254%20functions-2f7d4f?style=for-the-badge)
+![tests](https://img.shields.io/badge/tests-255%20functions-2f7d4f?style=for-the-badge)
 ![planes](https://img.shields.io/badge/planes-8%20of%208%20built-1f5f8b?style=for-the-badge)
 ![baselines](https://img.shields.io/badge/baselines-11%20measured-1f5f8b?style=for-the-badge)
 ![attacks](https://img.shields.io/badge/adversary%20lab-11%20attacks-a8321d?style=for-the-badge)
@@ -626,7 +626,7 @@ the test suite, and every row with a screen is reachable from `make run`.
 | Guided five-minute tour + demo reset | ✅ **Built** | driven end to end in a browser |
 | Deployment — one image, one port, models trained at build | ✅ **Built** | [`documents/11-deploy.md`](documents/11-deploy.md) |
 
-<sub><b>Totals:</b> 254 test functions · 11 adversary scenarios · 11 benchmark baselines across two corpora, on Python 3.11, 3.12 and 3.13 in CI. Plus a scripted judge session that drives the whole five-minute path in a real browser and asserts 34 things a judge should see.</sub>
+<sub><b>Totals:</b> 255 test functions · 11 adversary scenarios · 11 benchmark baselines across two corpora, on Python 3.11, 3.12 and 3.13 in CI. Plus a scripted judge session that drives the whole five-minute path in a real browser and asserts 34 things a judge should see.</sub>
 
 ---
 

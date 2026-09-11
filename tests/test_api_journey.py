@@ -196,3 +196,21 @@ def test_the_rate_limit_answers_429_with_the_error_envelope(client):
         assert r.json()["error"]["code"] == "rate_limited"
     finally:
         api_server._bucket = saved
+
+
+def test_cors_origins_from_env_are_allowed_and_tidied(tmp_path_factory):
+    """A hosted UI (Vercel) is a different origin; KAVACH_CORS_ORIGINS admits it. Pasted
+    whitespace and a trailing slash must not silently break the match, and a stranger's
+    origin still gets no header."""
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("KAVACH_DB", str(tmp_path_factory.mktemp("cors") / "cors.db"))
+        mp.setenv("KAVACH_CORS_ORIGINS", " https://ui.example.app/ ,https://two.example.app")
+        import apps.api_server as api
+        api = importlib.reload(api)
+        with TestClient(api.app) as c:
+            for origin in ("https://ui.example.app", "https://two.example.app"):
+                r = c.options("/api/health", headers={"Origin": origin,
+                                                       "Access-Control-Request-Method": "GET"})
+                assert r.headers.get("access-control-allow-origin") == origin
+            r = c.get("/api/health", headers={"Origin": "https://evil.example"})
+            assert "access-control-allow-origin" not in r.headers
