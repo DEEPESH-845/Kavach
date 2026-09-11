@@ -93,10 +93,13 @@ app = FastAPI(
 )
 
 # The dev server is a different origin; the built UI is same-origin and needs none of this.
+# KAVACH_CORS_ORIGINS (comma-separated) adds a UI hosted elsewhere, e.g. the Vercel export
+# whose NEXT_PUBLIC_KAVACH_API points here.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://127.0.0.1:3000",
-                   "http://localhost:4173", "http://127.0.0.1:4173"],
+                   "http://localhost:4173", "http://127.0.0.1:4173",
+                   *filter(None, os.environ.get("KAVACH_CORS_ORIGINS", "").split(","))],
     allow_credentials=False,
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type"],
