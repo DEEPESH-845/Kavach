@@ -15,3 +15,5 @@ dist/
 *.egg-info/
 data/cassette.jsonl
 data/intents.jsonl
+node_modules/
+.vercel
