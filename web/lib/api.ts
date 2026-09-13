@@ -523,6 +523,13 @@ export type StepUpView = {
   verdict: Verdict; reasons: string[]; purpose_risk: number | null;
   resolved_at: number | null; resolved_by: string | null;
   result: Record<string, unknown>;
+  notifications: StepUpDelivery[];
+};
+
+export type NotifyChannel = 'email' | 'sms' | 'whatsapp' | 'webhook';
+export type StepUpDelivery = {
+  id: number; channel: NotifyChannel; to: string; status: 'queued' | 'sent' | 'failed';
+  provider_id: string | null; error: string | null; created_at: number; updated_at: number;
 };
 
 export type StepUpCreated = {
@@ -625,6 +632,9 @@ export const journeyApi = {
     untrusted_context?: string;
   }) => post<StepUpCreated>('/stepup', body),
   stepUpView: (token: string) => get<StepUpView>(`/stepup/${encodeURIComponent(token)}`),
+  stepUpNotify: (token: string, body: { channel: NotifyChannel; to: string }) =>
+    post<{ id: number; channel: NotifyChannel; to: string; status: string }>(
+      `/stepup/${encodeURIComponent(token)}/notify`, body),
   stepUpResolve: (token: string, action: 'approve' | 'deny', resolver = 'principal') =>
     post<StepUpResolved>(`/stepup/${encodeURIComponent(token)}/resolve`, { action, resolver }),
   checkoutStart: (body: { cart_id: string; mandate_id: string }) =>

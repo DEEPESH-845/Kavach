@@ -230,3 +230,38 @@ def test_cors_preflight_allows_authorization(client):
         "Access-Control-Request-Headers": "authorization"})
     assert r.status_code == 200
     assert "authorization" in r.headers["access-control-allow-headers"].lower()
+
+
+def test_step_up_can_send_the_link_over_a_channel(client, monkeypatch):
+    from kavach.services import notify
+    monkeypatch.setenv("KAVACH_PUBLIC_URL", "https://kavach.example")
+    sent = []
+
+    def fake(to, msg, _payload):
+        sent.append((to, msg))
+        return "mid"
+    monkeypatch.setitem(notify.TRANSPORTS, "email", fake)
+    body, _ = _admit(client, "stepup", commit=False, nonce="n_notify", cart_id="cart_ntf")
+    r = client.post("/api/stepup", json={**body, "notify": {"channel": "email",
+                                                            "to": "priya@example.com"}})
+    assert r.status_code == 200, r.text
+    n = r.json()["notification"]
+    assert n["channel"] == "email" and n["to"] == "p…@example.com"
+    tok = r.json()["token"]
+    import time
+    for _ in range(50):
+        d = client.get(f"/api/stepup/{tok}").json()["notifications"]
+        if d and d[0]["status"] != "queued":
+            break
+        time.sleep(0.05)
+    assert d[0]["status"] == "sent" and d[0]["provider_id"] == "mid"
+    assert sent and f"https://kavach.example/approve/?t={tok}" in sent[0][1]["body"]
+
+    # re-send through the explicit route; an unconfigured channel is a 503 that says so
+    r = client.post(f"/api/stepup/{tok}/notify", json={"channel": "sms", "to": "+919876543210"})
+    assert r.status_code == 200
+    monkeypatch.delenv("KAVACH_PUBLIC_URL")
+    r = client.post(f"/api/stepup/{tok}/notify", json={"channel": "email", "to": "a@b.co"})
+    assert r.status_code == 503 and r.json()["error"]["code"] == "public_url_unset"
+    r = client.post(f"/api/stepup/{tok}/notify", json={"channel": "email", "to": "nope"})
+    assert r.status_code == 422 and r.json()["error"]["code"] == "invalid_recipient"

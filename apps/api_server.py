@@ -66,6 +66,7 @@ from kavach.services import (
     duel,
     financials,
     intents,
+    notify,
     ratelimit,
     review,
     scenarios,
@@ -192,6 +193,7 @@ def _open() -> Iterator[db.Connection]:
         envelope.init(conn)
         stepup.init(conn)
         checkout.init(conn)
+        notify.init(conn)
         migrations.apply(conn)
         yield conn
     finally:
@@ -451,6 +453,17 @@ class ReviewRequest(BaseModel):
 class PlanRequest(BaseModel):
     mandate: MandateRequest
     mode: str = Field(default="legit", min_length=1, max_length=32, pattern=r"^[a-z_]+$")
+
+
+class NotifyRequest(BaseModel):
+    channel: Literal["email", "sms", "whatsapp", "webhook"]
+    to: str = Field(min_length=1, max_length=320)
+
+
+class StepUpCreateRequest(AdmitRequest):
+    """Admission plus, optionally, where to send the approval link."""
+
+    notify: NotifyRequest | None = None
 
 
 class StepUpResolveRequest(BaseModel):
@@ -867,7 +880,7 @@ def _stepup_fail(e: stepup.StepUpError) -> HTTPException:
 
 
 @app.post("/api/stepup")
-def stepup_create(body: AdmitRequest, conn: Conn, _: AgentKey) -> dict[str, Any]:
+def stepup_create(body: StepUpCreateRequest, conn: Conn, _: AgentKey) -> dict[str, Any]:
     """Ask the principal. The verdict is re-derived here, never taken from the client: only
     a cart the gate itself steps up can produce a token."""
     now = int(time.time())
@@ -895,16 +908,47 @@ def stepup_create(body: AdmitRequest, conn: Conn, _: AgentKey) -> dict[str, Any]
                             admission_result=adm, now=now)
     except stepup.StepUpError as e:
         raise _stepup_fail(e) from None
-    return {**out, "approve_path": f"/approve/?t={out['token']}", "admission": adm,
-            "ttl_seconds": stepup.TTL}
+    approve_path = f"/approve/?t={out['token']}"
+    sent = None
+    if body.notify is not None:
+        sent = _notify(conn, out["token"], body.notify, approve_path, now)
+    return {**out, "approve_path": approve_path, "admission": adm,
+            "ttl_seconds": stepup.TTL, "notification": sent}
+
+
+def _notify(conn: db.Connection, token: str, req: NotifyRequest, approve_path: str,
+            now: int) -> dict[str, Any]:
+    view = stepup.view(conn, token, now)
+    try:
+        return notify.dispatch(conn, token=token, channel=req.channel, to=req.to, view=view,
+                               approve_path=approve_path, now=now,
+                               open_conn=lambda: connect(DB_PATH, same_thread=False))
+    except notify.NotifyError as e:
+        status = {"public_url_unset": 503, "channel_unconfigured": 503}.get(e.code, 422)
+        raise _fail(status, e.code, e.message) from None
+
+
+@app.post("/api/stepup/{token}/notify")
+def stepup_notify(token: str, body: NotifyRequest, conn: Conn, _: AgentKey) -> dict[str, Any]:
+    """Send (or re-send) the approval link for a pending request over a channel."""
+    now = int(time.time())
+    try:
+        view = stepup.view(conn, _token(token), now)
+    except stepup.StepUpError as e:
+        raise _stepup_fail(e) from None
+    if view["status"] != stepup.PENDING:
+        raise _fail(409, "already_resolved",
+                    f"this request is {view['status'].lower()}; nothing to send")
+    return _notify(conn, token, body, f"/approve/?t={token}", now)
 
 
 @app.get("/api/stepup/{token}")
 def stepup_view(token: str, conn: Conn) -> dict[str, Any]:
     try:
-        return stepup.view(conn, _token(token), int(time.time()))
+        view = stepup.view(conn, _token(token), int(time.time()))
     except stepup.StepUpError as e:
         raise _stepup_fail(e) from None
+    return {**view, "notifications": notify.deliveries(conn, token)}
 
 
 @app.post("/api/stepup/{token}/resolve")

@@ -256,6 +256,32 @@ The `mandate` body form — where the server signs as a demo principal — is re
 `demo_signing_disabled` unless `KAVACH_DEMO=1`, and the demo issuer is never registered on a
 production ledger.
 
+## Sending the step-up link to the principal
+
+A `STEP_UP` verdict mints a single-use token; the demo shows it as a QR. In production the
+same token goes out over a channel:
+
+```bash
+curl -X POST https://<host>/api/stepup -H "Authorization: Bearer kv_agent_…" \
+     -d '{"envelope": {…}, "cart_id": "…", "merchant_id": "…", "lines": [...],
+          "notify": {"channel": "whatsapp", "to": "+919876543210"}}'
+curl -X POST https://<host>/api/stepup/<token>/notify -H "Authorization: Bearer kv_agent_…" \
+     -d '{"channel": "email", "to": "priya@example.com"}'          # send, or send again
+curl https://<host>/api/stepup/<token>                              # …"notifications": [...]
+```
+
+| Channel | Needs | Notes |
+|---|---|---|
+| `email` | `KAVACH_SMTP_URL` | `smtp://user:pass@host:587?from=…` (STARTTLS) or `smtps://…:465`. Stdlib `smtplib`. |
+| `sms`, `whatsapp` | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_SMS` / `TWILIO_FROM_WHATSAPP` | One POST to Twilio's REST API. Recipients are E.164 numbers. |
+| `webhook` | `KAVACH_STEPUP_WEBHOOK_URL`, optional `KAVACH_STEPUP_WEBHOOK_SECRET` | Kavach POSTs `{to, message, token, approve_url, agent_id, principal_id, merchant_id, amount_minor, expires_at}`; `X-Kavach-Signature: sha256=<hmac>` when a secret is set. Run any channel behind it. |
+
+All channels need `KAVACH_PUBLIC_URL` (this deployment's public origin) to build the link.
+The message carries who is asking, for how much, at which merchant, and the link — never
+the mandate envelope. Delivery runs off the request path; the outcome (`sent`, `failed`
+with the provider's reason) is recorded and returned with the token, recipients masked.
+An unconfigured channel is a `503 channel_unconfigured` that names the variable.
+
 ## Verifying a deployment
 
 ```bash
