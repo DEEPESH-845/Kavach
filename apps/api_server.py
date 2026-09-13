@@ -29,6 +29,8 @@ allowed through CORS explicitly.
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import itertools
 import json
 import logging
@@ -72,7 +74,7 @@ from kavach.services import (
     tamper,
 )
 from kavach.services import gate as gate_service
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 log = logging.getLogger("kavach.api")
 
@@ -356,8 +358,40 @@ class MandateRequest(BaseModel):
     issued_at: int
 
 
+class SignedEnvelope(BaseModel):
+    """The bytes a principal signed, the signature, and which registered key to check with.
+    Base64 because the signature covers the RAW bytes: re-serialising JSON on this side
+    would make key order load-bearing."""
+
+    raw_b64: str = Field(min_length=1, max_length=16_000)
+    signature_b64: str = Field(min_length=1, max_length=256)
+    key_id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+
+    def decode(self) -> tuple[bytes, bytes, str]:
+        try:
+            raw = base64.b64decode(self.raw_b64, validate=True)
+            sig = base64.b64decode(self.signature_b64, validate=True)
+        except (binascii.Error, ValueError):
+            raise ValueError("raw_b64 and signature_b64 must be base64") from None
+        if len(sig) != 64:
+            raise ValueError("signature_b64 must decode to a 64-byte Ed25519 signature")
+        return raw, sig, self.key_id
+
+    @field_validator("raw_b64", "signature_b64")
+    @classmethod
+    def _b64(cls, v: str) -> str:
+        try:
+            base64.b64decode(v, validate=True)
+        except (binascii.Error, ValueError):
+            raise ValueError("must be base64") from None
+        return v
+
+
 class AdmitRequest(BaseModel):
-    mandate: MandateRequest
+    #: Exactly one of the two. `mandate` is the demo form (the server signs it as the demo
+    #: principal); `envelope` is what a real principal produced with their own key.
+    mandate: MandateRequest | None = None
+    envelope: SignedEnvelope | None = None
     cart_id: str = Field(min_length=1, max_length=128)
     merchant_id: str = Field(min_length=1, max_length=128)
     lines: list[CartLineRequest] = Field(max_length=100)
@@ -365,6 +399,47 @@ class AdmitRequest(BaseModel):
     #: false runs the ladder without claiming the nonce or charging the cumulative cap, so
     #: the same mandate can be explored repeatedly. Admission itself is unchanged.
     commit: bool = False
+
+    @model_validator(mode="after")
+    def _one_of(self) -> AdmitRequest:
+        if (self.mandate is None) == (self.envelope is None):
+            raise ValueError("send exactly one of `mandate` (demo, server-signed) or "
+                             "`envelope` (raw_b64, signature_b64, key_id)")
+        return self
+
+
+class InspectRequest(BaseModel):
+    mandate: MandateRequest | None = None
+    envelope: SignedEnvelope | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _bare_mandate(cls, data: Any) -> Any:
+        # The console posts the mandate itself; a bare body is the demo form.
+        if isinstance(data, dict) and "mandate_id" in data:
+            return {"mandate": data}
+        return data
+
+    @model_validator(mode="after")
+    def _one_of(self) -> InspectRequest:
+        if (self.mandate is None) == (self.envelope is None):
+            raise ValueError("send exactly one of `mandate` (demo, server-signed) or "
+                             "`envelope` (raw_b64, signature_b64, key_id)")
+        return self
+
+
+class IssuerRequest(BaseModel):
+    key_id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+    public_key_b64: str = Field(min_length=40, max_length=64)
+
+    def public_key(self) -> bytes:
+        try:
+            raw = base64.b64decode(self.public_key_b64, validate=True)
+        except (binascii.Error, ValueError):
+            raise ValueError("public_key_b64 must be base64") from None
+        if len(raw) != 32:
+            raise ValueError("public_key_b64 must decode to a 32-byte raw Ed25519 key")
+        return raw
 
 
 class ReviewRequest(BaseModel):
@@ -663,24 +738,50 @@ def agent_detail(agent_id: str, conn: Conn, _: ReadOnly) -> dict[str, Any]:
     return out
 
 
-@app.post("/api/gate/inspect")
-def gate_inspect(body: MandateRequest, conn: Conn, _: ReadOnly) -> dict[str, Any]:
-    """Verify a mandate without spending it. Carries no replay protection by design."""
+def _envelope_args(mandate: MandateRequest | None, signed: SignedEnvelope | None,
+                   conn: db.Connection) -> dict[str, Any]:
+    """The keyword arguments gate_service.admit/inspect take for either form. The demo
+    form only exists under KAVACH_DEMO=1: outside a demo the server signs nothing."""
+    if signed is not None:
+        try:
+            raw, sig, key_id = signed.decode()
+        except ValueError as e:
+            raise _fail(422, "invalid_request", str(e)) from None
+        principal = _principal_of(raw)
+        return {"signed": (raw, sig, key_id), "expected_principal": principal}
+    assert mandate is not None
+    if not demo.enabled():
+        raise _fail(403, "demo_signing_disabled",
+                    "this deployment does not sign mandates for callers; send `envelope` "
+                    "{raw_b64, signature_b64, key_id} signed by a registered principal key")
     gate_service.register_demo_issuer(conn)
-    return gate_service.inspect(conn, envelope_body=body.model_dump(), now=int(time.time()),
-                                expected_principal=body.principal_id)
+    return {"envelope_body": mandate.model_dump(), "expected_principal": mandate.principal_id}
+
+
+def _principal_of(raw: bytes) -> str | None:
+    """The principal the envelope names, so binding is checked; an unparsable envelope is
+    left to the verifier, which reports MALFORMED with everything else."""
+    try:
+        body = json.loads(raw.decode())
+        return str(body["principal_id"]) if isinstance(body, dict) else None
+    except (ValueError, KeyError, TypeError):
+        return None
+
+
+@app.post("/api/gate/inspect")
+def gate_inspect(body: InspectRequest, conn: Conn, _: ReadOnly) -> dict[str, Any]:
+    """Verify a mandate without spending it. Carries no replay protection by design."""
+    return gate_service.inspect(conn, now=int(time.time()),
+                                **_envelope_args(body.mandate, body.envelope, conn))
 
 
 @app.post("/api/gate/admit")
 def gate_admit(body: AdmitRequest, conn: Conn, _: AgentKey) -> dict[str, Any]:
-    gate_service.register_demo_issuer(conn)
     return gate_service.admit(
-        conn, envelope_body=body.mandate.model_dump(), cart_id=body.cart_id,
-        merchant_id=body.merchant_id,
-        lines=[line.model_dump() for line in body.lines],
-        now=int(time.time()), expected_principal=body.mandate.principal_id,
-        untrusted_context=body.untrusted_context,
-        model=_models.get("entailment"), charge=body.commit)
+        conn, cart_id=body.cart_id, merchant_id=body.merchant_id,
+        lines=[line.model_dump() for line in body.lines], now=int(time.time()),
+        untrusted_context=body.untrusted_context, model=_models.get("entailment"),
+        charge=body.commit, **_envelope_args(body.mandate, body.envelope, conn))
 
 
 # ------------------------------------------------------------------ proof
@@ -769,19 +870,28 @@ def _stepup_fail(e: stepup.StepUpError) -> HTTPException:
 def stepup_create(body: AdmitRequest, conn: Conn, _: AgentKey) -> dict[str, Any]:
     """Ask the principal. The verdict is re-derived here, never taken from the client: only
     a cart the gate itself steps up can produce a token."""
-    gate_service.register_demo_issuer(conn)
     now = int(time.time())
+    args = _envelope_args(body.mandate, body.envelope, conn)
     adm = gate_service.admit(
-        conn, envelope_body=body.mandate.model_dump(), cart_id=body.cart_id,
-        merchant_id=body.merchant_id, lines=[ln.model_dump() for ln in body.lines],
-        now=now, expected_principal=body.mandate.principal_id,
+        conn, cart_id=body.cart_id, merchant_id=body.merchant_id,
+        lines=[ln.model_dump() for ln in body.lines], now=now,
         untrusted_context=body.untrusted_context, model=_models.get("entailment"),
-        charge=False)
+        charge=False, **args)
     cart = {"cart_id": body.cart_id, "merchant_id": body.merchant_id,
             "lines": [ln.model_dump() for ln in body.lines],
             "untrusted_context": body.untrusted_context}
+    if body.envelope is not None:
+        # The verified fields for the phone page, plus the exact signed bytes so approval
+        # re-verifies what the principal signed rather than a re-serialisation.
+        if adm.get("envelope_failures"):
+            raise _fail(409, "not_step_up", "this envelope was refused: "
+                        + ", ".join(adm["envelope_failures"]))
+        mandate_body = {**json.loads(args["signed"][0].decode()),
+                        "_signed": body.envelope.model_dump()}
+    else:
+        mandate_body = body.mandate.model_dump()
     try:
-        out = stepup.create(conn, mandate_body=body.mandate.model_dump(), cart=cart,
+        out = stepup.create(conn, mandate_body=mandate_body, cart=cart,
                             admission_result=adm, now=now)
     except stepup.StepUpError as e:
         raise _stepup_fail(e) from None
@@ -989,6 +1099,36 @@ def keys_revoke(key_id: str, conn: Conn, _: Operator) -> dict[str, Any]:
     if not auth.revoke(conn, key_id, now=int(time.time())):
         raise _fail(404, "key_not_found", "no such active key")
     return {"revoked": True, "key_id": key_id}
+
+
+@app.get("/api/issuers")
+def issuers_list(conn: Conn, _: Operator) -> dict[str, Any]:
+    """The principal keys this deployment trusts to sign mandates."""
+    return {"items": [{"key_id": i["key_id"],
+                       "public_key_b64": base64.b64encode(i["public_key"]).decode(),
+                       "simulated": i["key_id"] == gate_service.DEMO_KEY_ID}
+                      for i in envelope.list_issuers(conn)]}
+
+
+@app.post("/api/issuers", status_code=201)
+def issuers_add(body: IssuerRequest, conn: Conn, _: Operator) -> dict[str, Any]:
+    try:
+        pub = body.public_key()
+    except ValueError as e:
+        raise _fail(422, "invalid_request", str(e)) from None
+    if body.key_id == gate_service.DEMO_KEY_ID:
+        raise _fail(409, "reserved_key_id", "that key id is reserved for the demo principal")
+    envelope.register_issuer(conn, body.key_id, pub)
+    return {"key_id": body.key_id, "public_key_b64": body.public_key_b64, "registered": True}
+
+
+@app.delete("/api/issuers/{key_id}")
+def issuers_remove(key_id: str, conn: Conn, _: Operator) -> dict[str, Any]:
+    if not re.match(r"^[A-Za-z0-9._:-]{1,128}$", key_id):
+        raise _fail(404, "issuer_not_found", "no such issuer")
+    if not envelope.remove_issuer(conn, key_id):
+        raise _fail(404, "issuer_not_found", "no such issuer")
+    return {"key_id": key_id, "removed": True}
 
 
 # ------------------------------------------------------------------ demo and metrics

@@ -451,7 +451,10 @@ export const api = {
     issuer?: { key_id: string; simulated: boolean };
   }>('/gate/inspect', mandate),
   gateAdmit: (body: {
-    mandate: Mandate; cart_id: string; merchant_id: string;
+    /** Demo form (the server signs it) — or `envelope`, the bytes a principal signed. */
+    mandate?: Mandate;
+    envelope?: { raw_b64: string; signature_b64: string; key_id: string };
+    cart_id: string; merchant_id: string;
     lines: { sku: string; description: string; category: string;
              unit_amount_minor: number; quantity: number; liquid: boolean }[];
     untrusted_context?: string; commit?: boolean;

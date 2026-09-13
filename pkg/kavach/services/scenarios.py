@@ -42,7 +42,7 @@ def _sandbox() -> db.Connection:
     conn = connect(":memory:")
     ledger.init(conn)
     envelope.init(conn)
-    gate_service.register_demo_issuer(conn)
+    gate_service.register_demo_issuer(conn, force=True)
     return conn
 
 
