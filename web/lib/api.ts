@@ -159,7 +159,8 @@ export type Health = {
   integrity: { chain_intact: boolean; events: number; broken_at: number | null };
   kill_switch: boolean;
   ui: boolean;
-  auth: { mode: 'required' | 'off'; scopes: string[] };
+  /* Absent from a backend older than the api_keys work; the console degrades, it does not crash. */
+  auth?: { mode: 'required' | 'off'; scopes: string[] };
   demo: { reset_enabled: boolean };
 };
 
