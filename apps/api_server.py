@@ -825,8 +825,8 @@ def mcp_tools(conn: Conn) -> dict[str, Any]:
         "suggested_target": checkout.latest_real_payment(conn),
         "duplicate_target": intents.duplicate_candidate(conn),
         "seeded_targets": [r["entity_id"] for r in conn.execute(
-            "SELECT DISTINCT entity_id FROM events WHERE entity_type='payment' AND "
-            "source='seed' ORDER BY seq DESC LIMIT 6")],
+            "SELECT entity_id, MAX(seq) AS last FROM events WHERE entity_type='payment' "
+            "AND source='seed' GROUP BY entity_id ORDER BY last DESC LIMIT 6")],
         "config": {"mcpServers": {"kavach": {"command": "kavach-mcp-server",
                                              "args": ["--toolsets", "payments,refunds"]}}},
         "parity": {"toolsets": list(m.TOOLSETS),

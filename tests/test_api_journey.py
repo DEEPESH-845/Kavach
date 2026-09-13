@@ -8,6 +8,7 @@ contract the storefront, the phone page and the tour are built against.
 from __future__ import annotations
 
 import importlib
+import os
 
 import pytest
 from fastapi.testclient import TestClient
@@ -18,8 +19,13 @@ T_MODEL_FREE_VERDICTS = {"ALLOW", "STEP_UP", "HOLD", "DENY"}
 @pytest.fixture(scope="module")
 def client(tmp_path_factory):
     with pytest.MonkeyPatch.context() as mp:
-        db = tmp_path_factory.mktemp("api") / "api.db"
-        mp.setenv("KAVACH_DB", str(db))
+        # KAVACH_TEST_PG runs the whole HTTP journey against Postgres; otherwise a file.
+        target = os.environ.get("KAVACH_TEST_PG") or str(tmp_path_factory.mktemp("api")
+                                                           / "api.db")
+        if target.startswith("postgres"):
+            from tests.conftest import fresh
+            fresh(target).close()
+        mp.setenv("KAVACH_DB", target)
         mp.setenv("KAVACH_DEMO", "1")
         mp.setenv("KAVACH_RATE_LIMIT", "1000")
         mp.delenv("KAVACH_MODE", raising=False)
