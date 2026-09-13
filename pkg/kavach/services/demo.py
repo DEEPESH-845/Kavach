@@ -21,7 +21,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from .. import db, governor, ledger
+from .. import db, governor, ledger, migrations
 from ..eventlog import append, connect
 from ..gate import envelope
 from ..intelligence import model as risk_model
@@ -98,6 +98,7 @@ def init_all(conn: db.Connection) -> None:
     envelope.init(conn)
     stepup.init(conn)
     checkout.init(conn)
+    migrations.apply(conn)
     gate_service.register_demo_issuer(conn)
 
 

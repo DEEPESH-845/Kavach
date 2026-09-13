@@ -46,7 +46,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
-from kavach import __version__, db, governor, ledger, proof, webhook
+from kavach import __version__, db, governor, ledger, migrations, proof, webhook
 from kavach.eventlog import connect
 from kavach.gate import envelope
 from kavach.intelligence import entailment
@@ -181,6 +181,7 @@ def _open() -> Iterator[db.Connection]:
         envelope.init(conn)
         stepup.init(conn)
         checkout.init(conn)
+        migrations.apply(conn)
         yield conn
     finally:
         conn.close()
