@@ -48,7 +48,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
-from kavach import __version__, db, governor, ledger, migrations, proof, webhook
+from kavach import __version__, auth, db, governor, ledger, migrations, proof, webhook
 from kavach.eventlog import connect
 from kavach.gate import envelope
 from kavach.intelligence import entailment
@@ -202,6 +202,63 @@ Conn = Annotated[db.Connection, Depends(_db_dep)]
 def _fail(status: int, code: str, message: str, **extra: Any) -> HTTPException:
     return HTTPException(status_code=status,
                          detail={"code": code, "message": message, **extra})
+
+
+# ------------------------------------------------------------------ authentication
+#
+# Three scopes, readonly < agent < operator, carried as `Authorization: Bearer kv_...`.
+# KAVACH_AUTH=off (the default only when KAVACH_DEMO=1) admits everyone as the anonymous
+# operator. The routes that never take a key are the ones whose credential is something
+# else: the webhook's HMAC, a step-up token, a Razorpay order id on the paying browser.
+
+_BEARER = re.compile(r"^Bearer\s+(\S+)$", re.I)
+ANONYMOUS = auth.Key("anonymous", "operator", "operator")
+
+
+def caller(request: Request, conn: Conn) -> auth.Key | None:
+    """The key behind this request, or None. Never raises; require() decides."""
+    m = _BEARER.match(request.headers.get("authorization", ""))
+    if not m:
+        return None
+    key = auth.verify(conn, m.group(1), now=int(time.time()))
+    request.state.key = key
+    return key
+
+
+Caller = Annotated[auth.Key | None, Depends(caller)]
+
+
+def require(scope: str):
+    """A dependency admitting only a key that holds at least `scope`."""
+    def dep(request: Request, key: Caller) -> auth.Key:
+        if auth.mode() == "off":
+            return key or ANONYMOUS
+        if key is None:
+            code = "invalid_key" if request.headers.get("authorization") else "missing_key"
+            raise _fail(401, code, "this endpoint needs an API key: send "
+                                   "`Authorization: Bearer kv_...`; mint one with "
+                                   "`python -m kavach keys create`")
+        if not auth.allows(key.scope, scope):
+            raise _fail(403, "insufficient_scope",
+                        f"this key holds the {key.scope} scope; {scope} is needed")
+        return key
+    return dep
+
+
+ReadOnly = Annotated[auth.Key, Depends(require("readonly"))]
+AgentKey = Annotated[auth.Key, Depends(require("agent"))]
+Operator = Annotated[auth.Key, Depends(require("operator"))]
+
+
+def demo_only() -> None:
+    """Lab, storefront and console-MCP surfaces exist only where KAVACH_DEMO=1 says so.
+    A 404 rather than a 403: outside a demo these routes are not something this
+    deployment has, and naming them would be an inventory for a stranger."""
+    if not demo.enabled():
+        raise _fail(404, "demo_disabled", "this surface is only mounted when KAVACH_DEMO=1")
+
+
+Demo = Annotated[None, Depends(demo_only)]
 
 
 @app.exception_handler(HTTPException)
@@ -394,7 +451,11 @@ def health(conn: Conn) -> dict[str, Any]:
                              if os.environ.get("RAZORPAY_WEBHOOK_SECRET") else
                              "no RAZORPAY_WEBHOOK_SECRET: webhooks are refused (fail-closed) "
                              "and payments observed by polling stay DERIVED_PROBABLE")},
-        "mcp": _mcp_status(),
+        "mcp": _mcp_status() if demo.enabled() else {
+            "available": False,
+            "reason": "the console MCP surface is a demo feature (KAVACH_DEMO=1); agents "
+                      "connect over stdio with kavach-mcp-server"},
+        "auth": {"mode": auth.mode(), "scopes": list(auth.SCOPES)},
         "demo": {"reset_enabled": demo.enabled()},
         "uptime_seconds": int(time.time() - STARTED_AT),
     }
@@ -409,7 +470,7 @@ def _mcp_status() -> dict[str, Any]:
 
 
 @app.get("/api/policy")
-def get_policy() -> dict[str, Any]:
+def get_policy(_: ReadOnly) -> dict[str, Any]:
     p = policy()
     m = _models.get("risk")
     return {
@@ -449,12 +510,12 @@ def get_policy() -> dict[str, Any]:
 
 
 @app.get("/api/overview")
-def overview(conn: Conn) -> dict[str, Any]:
+def overview(conn: Conn, _: ReadOnly) -> dict[str, Any]:
     return dashboard.overview(conn)
 
 
 @app.get("/api/stream")
-def stream(conn: Conn, limit: int = Query(40, ge=1, le=200),
+def stream(conn: Conn, _: ReadOnly, limit: int = Query(40, ge=1, le=200),
            before: int | None = Query(None, ge=0)) -> dict[str, Any]:
     return dashboard.stream(conn, limit=limit, before=before)
 
@@ -462,7 +523,7 @@ def stream(conn: Conn, limit: int = Query(40, ge=1, le=200),
 # ------------------------------------------------------------------ intents
 
 @app.get("/api/intents")
-def list_intents(conn: Conn, status: str | None = Query(None, max_length=32),
+def list_intents(conn: Conn, _: ReadOnly, status: str | None = Query(None, max_length=32),
                  agent_id: str | None = Query(None, max_length=128),
                  target_id: str | None = Query(None, max_length=128),
                  limit: int = Query(50, ge=1, le=200),
@@ -472,7 +533,7 @@ def list_intents(conn: Conn, status: str | None = Query(None, max_length=32),
 
 
 @app.get("/api/intents/{intent_id}")
-def intent_detail(intent_id: str, conn: Conn) -> dict[str, Any]:
+def intent_detail(intent_id: str, conn: Conn, _: ReadOnly) -> dict[str, Any]:
     out = intents.detail(conn, intent_id)
     if out is None:
         raise _fail(404, "intent_not_found", f"No intent {intent_id} exists in this ledger.")
@@ -480,7 +541,7 @@ def intent_detail(intent_id: str, conn: Conn) -> dict[str, Any]:
 
 
 @app.post("/api/governor/evaluate")
-def evaluate(body: EvaluateRequest, conn: Conn) -> dict[str, Any]:
+def evaluate(body: EvaluateRequest, conn: Conn, _: AgentKey) -> dict[str, Any]:
     """Run the real outbound pipeline. Records nothing unless `commit` is true.
 
     The dry run is genuinely the same code path -- decisions.evaluate is what
@@ -499,19 +560,29 @@ def evaluate(body: EvaluateRequest, conn: Conn) -> dict[str, Any]:
                 "note": "dry run: no intent was recorded and no money moved"}
 
     out = decisions.evaluate_and_record(conn, intent, now=now, policy=policy(), model=model)
-    return {"committed": True, **out,
+    # Same shape as the dry run -- `decision` nested -- so a client reads one field either
+    # way. The flat copy evaluate_and_record returns is what the MCP tool hands agents.
+    decision = {k: out[k] for k in ("action", "reasons", "evidence_events", "duplicate_risk",
+                                    "risk_factors", "open_exposure")}
+    return {"committed": True, "intent_id": out["intent_id"], "decision": decision,
+            "truth": out["truth"], "decision_event_seq": out["decision_event_seq"],
+            "executed": out["executed"], "reserved": out.get("reserved", False),
             "note": "the intent and its decision are recorded; the provider was not called"}
 
 
 @app.get("/api/review")
-def review_queue(conn: Conn) -> dict[str, Any]:
+def review_queue(conn: Conn, _: ReadOnly) -> dict[str, Any]:
     return intents.review_queue(conn)
 
 
 @app.post("/api/review/{intent_id}")
-def review_act(intent_id: str, body: ReviewRequest, conn: Conn) -> dict[str, Any]:
+def review_act(intent_id: str, body: ReviewRequest, conn: Conn,
+               key: Operator) -> dict[str, Any]:
+    # Who acted is the key, not a field the client fills in. Only the anonymous demo
+    # operator (auth off) may name themselves.
+    reviewer = body.reviewer if key is ANONYMOUS else key.name
     try:
-        return review.act(conn, intent_id, action=body.action, reviewer=body.reviewer,
+        return review.act(conn, intent_id, action=body.action, reviewer=reviewer,
                           note=body.note)
     except review.ReviewError as e:
         status = {"not_found": 404, "not_pending": 409, "not_reviewable": 409}.get(
@@ -520,20 +591,22 @@ def review_act(intent_id: str, body: ReviewRequest, conn: Conn) -> dict[str, Any
 
 
 @app.get("/api/reconciliation")
-def reconciliation(conn: Conn) -> dict[str, Any]:
+def reconciliation(conn: Conn, _: ReadOnly) -> dict[str, Any]:
     return intents.unresolved(conn)
 
 
 # ------------------------------------------------------------------ money
 
 @app.get("/api/entities/{entity_type}")
-def list_entities(entity_type: str, conn: Conn, limit: int = Query(50, ge=1, le=200),
+def list_entities(entity_type: str, conn: Conn, _: ReadOnly,
+                  limit: int = Query(50, ge=1, le=200),
                   offset: int = Query(0, ge=0)) -> dict[str, Any]:
     return financials.listing(conn, _entity_type(entity_type), limit=limit, offset=offset)
 
 
 @app.get("/api/entities/{entity_type}/{entity_id}")
-def entity_detail(entity_type: str, entity_id: str, conn: Conn) -> dict[str, Any]:
+def entity_detail(entity_type: str, entity_id: str, conn: Conn,
+                  _: ReadOnly) -> dict[str, Any]:
     out = financials.detail(conn, _entity_type(entity_type), entity_id)
     if out is None:
         raise _fail(404, "entity_not_found",
@@ -542,7 +615,8 @@ def entity_detail(entity_type: str, entity_id: str, conn: Conn) -> dict[str, Any
 
 
 @app.get("/api/truth/{entity_type}/{entity_id}")
-def truth_trace(entity_type: str, entity_id: str, conn: Conn) -> dict[str, Any]:
+def truth_trace(entity_type: str, entity_id: str, conn: Conn,
+                _: ReadOnly) -> dict[str, Any]:
     out = financials.truth_trace(conn, _entity_type(entity_type), entity_id)
     if out is None:
         raise _fail(404, "entity_not_found",
@@ -552,19 +626,19 @@ def truth_trace(entity_type: str, entity_id: str, conn: Conn) -> dict[str, Any]:
 
 
 @app.get("/api/obligations")
-def obligations(conn: Conn) -> dict[str, Any]:
+def obligations(conn: Conn, _: ReadOnly) -> dict[str, Any]:
     return financials.obligations(conn)
 
 
 # ------------------------------------------------------------------ agents and gate
 
 @app.get("/api/agents")
-def list_agents(conn: Conn) -> dict[str, Any]:
+def list_agents(conn: Conn, _: ReadOnly) -> dict[str, Any]:
     return {"items": intents.agents(conn)}
 
 
 @app.get("/api/agents/{agent_id}")
-def agent_detail(agent_id: str, conn: Conn) -> dict[str, Any]:
+def agent_detail(agent_id: str, conn: Conn, _: ReadOnly) -> dict[str, Any]:
     out = intents.agent_detail(conn, agent_id)
     if out is None:
         raise _fail(404, "agent_not_found", f"No agent {agent_id} has acted here.")
@@ -572,7 +646,7 @@ def agent_detail(agent_id: str, conn: Conn) -> dict[str, Any]:
 
 
 @app.post("/api/gate/inspect")
-def gate_inspect(body: MandateRequest, conn: Conn) -> dict[str, Any]:
+def gate_inspect(body: MandateRequest, conn: Conn, _: ReadOnly) -> dict[str, Any]:
     """Verify a mandate without spending it. Carries no replay protection by design."""
     gate_service.register_demo_issuer(conn)
     return gate_service.inspect(conn, envelope_body=body.model_dump(), now=int(time.time()),
@@ -580,7 +654,7 @@ def gate_inspect(body: MandateRequest, conn: Conn) -> dict[str, Any]:
 
 
 @app.post("/api/gate/admit")
-def gate_admit(body: AdmitRequest, conn: Conn) -> dict[str, Any]:
+def gate_admit(body: AdmitRequest, conn: Conn, _: AgentKey) -> dict[str, Any]:
     gate_service.register_demo_issuer(conn)
     return gate_service.admit(
         conn, envelope_body=body.mandate.model_dump(), cart_id=body.cart_id,
@@ -594,19 +668,19 @@ def gate_admit(body: AdmitRequest, conn: Conn) -> dict[str, Any]:
 # ------------------------------------------------------------------ proof
 
 @app.get("/api/proof/chain")
-def proof_chain(conn: Conn, limit: int = Query(50, ge=1, le=200),
+def proof_chain(conn: Conn, _: ReadOnly, limit: int = Query(50, ge=1, le=200),
                 before: int | None = Query(None, ge=1)) -> dict[str, Any]:
     return proof.chain(conn, limit=limit, before=before)
 
 
 @app.get("/api/proof/verify")
-def proof_verify(conn: Conn) -> dict[str, Any]:
+def proof_verify(conn: Conn, _: ReadOnly) -> dict[str, Any]:
     status = proof.scan(conn)
     return {**status, "claims": proof.claims(), "verified_at": int(time.time())}
 
 
 @app.get("/api/dispute/{intent_id}")
-def dispute_pack(intent_id: str, conn: Conn) -> JSONResponse:
+def dispute_pack(intent_id: str, conn: Conn, _: ReadOnly) -> JSONResponse:
     out = dispute.pack(conn, intent_id)
     if out is None:
         raise _fail(404, "intent_not_found", f"No intent {intent_id} exists in this ledger.")
@@ -617,7 +691,7 @@ def dispute_pack(intent_id: str, conn: Conn) -> JSONResponse:
 # ------------------------------------------------------------------ adversary lab
 
 @app.get("/api/scenarios")
-def list_scenarios() -> dict[str, Any]:
+def list_scenarios(_: Demo) -> dict[str, Any]:
     risk, ent = scenarios.models()
     return {"items": scenarios.catalogue(),
             "models": {"duplicate_risk": risk is not None, "entailment": ent is not None},
@@ -626,7 +700,7 @@ def list_scenarios() -> dict[str, Any]:
 
 
 @app.post("/api/scenarios/{scenario_id}/run")
-def run_scenario(scenario_id: str) -> dict[str, Any]:
+def run_scenario(scenario_id: str, _: Demo) -> dict[str, Any]:
     try:
         return scenarios.run(scenario_id)
     except KeyError:
@@ -634,7 +708,7 @@ def run_scenario(scenario_id: str) -> dict[str, Any]:
 
 
 @app.get("/api/evaluations")
-def evaluations() -> dict[str, Any]:
+def evaluations(_: ReadOnly) -> dict[str, Any]:
     """The benchmark reports, as written by `make bench` / `make gate-bench`."""
     import json
     out: dict[str, Any] = {}
@@ -651,13 +725,13 @@ def evaluations() -> dict[str, Any]:
 # ------------------------------------------------------------------ the buyer journey
 
 @app.get("/api/storefront")
-def storefront_catalogue() -> dict[str, Any]:
+def storefront_catalogue(_: Demo) -> dict[str, Any]:
     """The Bazaar's catalogue, Priya's default mandate, and the scenarios the agent can run."""
     return {**storefront.catalogue(), "mandate": storefront.default_mandate(int(time.time()))}
 
 
 @app.post("/api/storefront/plan")
-def storefront_plan(body: PlanRequest) -> dict[str, Any]:
+def storefront_plan(body: PlanRequest, _: Demo) -> dict[str, Any]:
     """The agent's cart for one mode, with the trace of how it got there. Decides nothing."""
     try:
         return storefront.plan(body.mandate.model_dump(), body.mode)
@@ -674,7 +748,7 @@ def _stepup_fail(e: stepup.StepUpError) -> HTTPException:
 
 
 @app.post("/api/stepup")
-def stepup_create(body: AdmitRequest, conn: Conn) -> dict[str, Any]:
+def stepup_create(body: AdmitRequest, conn: Conn, _: AgentKey) -> dict[str, Any]:
     """Ask the principal. The verdict is re-derived here, never taken from the client: only
     a cart the gate itself steps up can produce a token."""
     gate_service.register_demo_issuer(conn)
@@ -725,7 +799,7 @@ def _checkout_fail(e: checkout.CheckoutError) -> HTTPException:
 
 
 @app.post("/api/checkout")
-def checkout_start(body: CheckoutStartRequest, conn: Conn) -> dict[str, Any]:
+def checkout_start(body: CheckoutStartRequest, conn: Conn, _: Demo) -> dict[str, Any]:
     """A real Razorpay TEST order -- for a cart the gate ADMITTED. The admission event is
     looked up in the log by cart id; a cart with no admission has no checkout."""
     admission = checkout.admitted(conn, body.cart_id)
@@ -741,7 +815,7 @@ def checkout_start(body: CheckoutStartRequest, conn: Conn) -> dict[str, Any]:
 
 
 @app.get("/api/checkout/latest")
-def checkout_latest(conn: Conn) -> dict[str, Any]:
+def checkout_latest(conn: Conn, _: Demo) -> dict[str, Any]:
     """The most recent real payment, for the MCP console to refund. May be null."""
     return {"payment": checkout.latest_real_payment(conn)}
 
@@ -791,13 +865,13 @@ async def razorpay_webhook(request: Request) -> JSONResponse:
 
 
 @app.get("/api/duel")
-def duel_run() -> dict[str, Any]:
+def duel_run(_: Demo) -> dict[str, Any]:
     """Without Kavach vs with Kavach on one attack sequence. Derived, sandboxed, repeatable."""
     return duel.run()
 
 
 @app.post("/api/proof/tamper")
-def proof_tamper(body: TamperRequest, conn: Conn) -> dict[str, Any]:
+def proof_tamper(body: TamperRequest, conn: Conn, _: Demo) -> dict[str, Any]:
     """Edit a COPY of the log and verify it. The live ledger is never written."""
     try:
         return tamper.demo(conn, seq=body.seq)
@@ -818,7 +892,7 @@ def _mcp():
 
 
 @app.get("/api/mcp/tools")
-def mcp_tools(conn: Conn) -> dict[str, Any]:
+def mcp_tools(conn: Conn, _: Demo) -> dict[str, Any]:
     m = _mcp()
     return {
         "tools": m.catalogue(), "status": m.status(),
@@ -837,7 +911,7 @@ def mcp_tools(conn: Conn) -> dict[str, Any]:
 
 
 @app.post("/api/mcp/{tool}")
-def mcp_call(tool: str, body: McpCallRequest) -> dict[str, Any]:
+def mcp_call(tool: str, body: McpCallRequest, _: Demo) -> dict[str, Any]:
     """Call a tool exactly as an MCP client would. The function object is the one the stdio
     server registered; there is no HTTP re-implementation."""
     if not re.match(r"^[a-z_]{1,64}$", tool):
@@ -871,22 +945,58 @@ def mcp_call(tool: str, body: McpCallRequest) -> dict[str, Any]:
             "write": tool in m.WRITE_TOOLS, "toolset": m.TOOLSET_OF.get(tool)}
 
 
+# ------------------------------------------------------------------ access
+
+class KeyCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9 ._-]+$")
+    scope: Literal["readonly", "agent", "operator"]
+
+
+@app.get("/api/keys")
+def keys_list(conn: Conn, _: Operator) -> dict[str, Any]:
+    return {"items": auth.listing(conn), "scopes": list(auth.SCOPES), "mode": auth.mode()}
+
+
+@app.post("/api/keys", status_code=201)
+def keys_create(body: KeyCreateRequest, conn: Conn, _: Operator) -> dict[str, Any]:
+    """Mint a key. The plaintext is in this response and nowhere else."""
+    return {**auth.create(conn, name=body.name, scope=body.scope, now=int(time.time())),
+            "note": "store the key now; it is not shown again"}
+
+
+@app.delete("/api/keys/{key_id}")
+def keys_revoke(key_id: str, conn: Conn, _: Operator) -> dict[str, Any]:
+    if not re.match(r"^key_[a-f0-9]{12}$", key_id):
+        raise _fail(404, "key_not_found", "no such key")
+    if not auth.revoke(conn, key_id, now=int(time.time())):
+        raise _fail(404, "key_not_found", "no such active key")
+    return {"revoked": True, "key_id": key_id}
+
+
 # ------------------------------------------------------------------ demo and metrics
 
 @app.post("/api/demo/reset")
-def demo_reset(conn: Conn) -> dict[str, Any]:
+def demo_reset(conn: Conn, _: Demo) -> dict[str, Any]:
     """Re-seed the ledger deterministically. Destructive, so it exists only under
-    KAVACH_DEMO=1 -- the container and `make run` set it; a production deploy does not."""
-    if not demo.enabled():
-        raise _fail(403, "demo_disabled",
-                    "reset is disabled; set KAVACH_DEMO=1 to enable it in this environment")
+    KAVACH_DEMO=1 -- `make run` and compose set it; the image default does not."""
     counts = demo.seed_conn(conn, reset=True)
     return {"reset": True, "counts": counts, "at": int(time.time())}
 
 
 @app.get("/api/metrics")
-def metrics(conn: Conn) -> PlainTextResponse:
-    """A small Prometheus text surface. Counts, not internals."""
+def metrics(conn: Conn, request: Request, key: str | None = Query(None, max_length=256)
+            ) -> PlainTextResponse:
+    """A small Prometheus text surface. Counts, not internals.
+
+    Public unless KAVACH_METRICS_KEY is set, in which case the scraper presents it as a
+    bearer token or `?key=`. A scrape key is not an API key: it opens nothing else."""
+    want = os.environ.get("KAVACH_METRICS_KEY", "")
+    if want:
+        m = _BEARER.match(request.headers.get("authorization", ""))
+        got = (m.group(1) if m else None) or key or ""
+        if not secrets.compare_digest(got, want):
+            raise _fail(401, "metrics_key_required",
+                        "this metrics endpoint is locked with KAVACH_METRICS_KEY")
     status = proof.status(conn)
     lines = [
         "# TYPE kavach_events_total gauge", f"kavach_events_total {status['events']}",

@@ -151,7 +151,8 @@ def test_reset_seeds_and_tamper_breaks_a_copy_only(client):
 def test_reset_is_refused_when_the_demo_gate_is_off(client, monkeypatch):
     monkeypatch.delenv("KAVACH_DEMO", raising=False)
     r = client.post("/api/demo/reset")
-    assert r.status_code == 403 and r.json()["error"]["code"] == "demo_disabled"
+    # 404, not 403: outside a demo the route is not something this deployment has.
+    assert r.status_code == 404 and r.json()["error"]["code"] == "demo_disabled"
 
 
 def test_the_mcp_surface_dispatches_to_the_real_tool_functions(client):

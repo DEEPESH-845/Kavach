@@ -87,6 +87,7 @@ def act(conn: db.Connection, intent_id: str, *, action: str, reviewer: str,
     return {
         "intent_id": intent_id,
         "action": action,
+        "reviewer": reviewer,
         "applied": is_new,
         "status": target,
         "audit_event_seq": seq,
