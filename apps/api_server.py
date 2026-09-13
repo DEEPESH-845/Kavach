@@ -29,11 +29,13 @@ allowed through CORS explicitly.
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 import logging
 import os
 import re
 import secrets
+import sys
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -101,12 +103,14 @@ app.add_middleware(
     allow_origins=["http://localhost:3000", "http://127.0.0.1:3000",
                    "http://localhost:4173", "http://127.0.0.1:4173", *_EXTRA_ORIGINS],
     allow_credentials=False,
-    allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Request-Id"],
 )
 
 STARTED_AT = time.time()
-_requests = 0
+#: itertools.count is a single C-level increment: atomic under the GIL, unlike `+= 1`.
+_request_counter = itertools.count(1)
+_requests_served = 0
 _REQUEST_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 #: Endpoints a stranger can drive from a QR code or a demo button. Bounded per client.
 _LIMITED = ("/api/stepup", "/api/checkout", "/api/mcp", "/api/demo", "/api/proof/tamper",
@@ -130,8 +134,8 @@ def _client_key(request: Request) -> str:
 
 @app.middleware("http")
 async def _request_id_and_limits(request: Request, call_next):
-    global _requests
-    _requests += 1
+    global _requests_served
+    _requests_served = next(_request_counter)
     incoming = request.headers.get("x-request-id", "")
     rid = incoming if _REQUEST_ID.match(incoming) else f"req_{secrets.token_hex(6)}"
     request.state.request_id = rid
@@ -355,8 +359,11 @@ class McpCallRequest(BaseModel):
 
 @app.get("/api/health")
 def health(conn: Conn) -> dict[str, Any]:
-    """What this environment actually is. The UI's mode banner reads this, not a constant."""
-    status = proof.scan(conn)
+    """What this environment actually is. The UI's mode banner reads this, not a constant.
+
+    The chain check here is incremental (rows since the last verified head); the full walk
+    is /api/proof/verify. A health probe every 30 s must not scan the whole log."""
+    status = proof.status(conn)
     mode = os.environ.get("KAVACH_MODE", "replay")
     return {
         "status": "ok",
@@ -369,7 +376,7 @@ def health(conn: Conn) -> dict[str, Any]:
         "models": {"duplicate_risk": _models.get("risk") is not None,
                    "entailment": _models.get("entailment") is not None},
         "integrity": {"chain_intact": status["ok"], "events": status["events"],
-                      "broken_at": status["broken_at"]},
+                      "broken_at": status["broken_at"], "incremental": True},
         "policy": {"max_auto_refund_minor": policy().max_auto_refund_minor,
                    "session_cap_minor": policy().session_cap_minor,
                    "daily_cap_minor": policy().daily_cap_minor,
@@ -880,7 +887,7 @@ def demo_reset(conn: Conn) -> dict[str, Any]:
 @app.get("/api/metrics")
 def metrics(conn: Conn) -> PlainTextResponse:
     """A small Prometheus text surface. Counts, not internals."""
-    status = proof.scan(conn)
+    status = proof.status(conn)
     lines = [
         "# TYPE kavach_events_total gauge", f"kavach_events_total {status['events']}",
         "# TYPE kavach_chain_intact gauge", f"kavach_chain_intact {int(status['ok'])}",
@@ -891,7 +898,7 @@ def metrics(conn: Conn) -> PlainTextResponse:
     pend = conn.execute("SELECT COUNT(*) FROM stepups WHERE status='PENDING'").fetchone()[0]
     lines += ["# TYPE kavach_stepups_pending gauge", f"kavach_stepups_pending {pend}",
               "# TYPE kavach_http_requests_total counter",
-              f"kavach_http_requests_total {_requests}",
+              f"kavach_http_requests_total {_requests_served}",
               "# TYPE kavach_uptime_seconds gauge",
               f"kavach_uptime_seconds {int(time.time() - STARTED_AT)}"]
     return PlainTextResponse("\n".join(lines) + "\n", media_type="text/plain; version=0.0.4")
@@ -933,13 +940,24 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Kavach API server")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--workers", type=int,
+                        default=int(os.environ.get("KAVACH_WORKERS", "1") or 1),
+                        help="uvicorn worker processes (KAVACH_WORKERS); safe because every "
+                             "request opens its own connection")
     args = parser.parse_args()
 
     _load_models()
     _mount_ui()
     log.info("Kavach %s on http://%s:%d  (mode=%s, db=%s)", __version__, args.host,
              args.port, os.environ.get("KAVACH_MODE", "replay"), DB_PATH)
-    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    if args.workers > 1:
+        # Multiple workers need an import string, not an object: each worker re-imports.
+        # `python apps/api_server.py` puts apps/ on sys.path, not the repo root, so add it.
+        sys.path.insert(0, str(ROOT))
+        uvicorn.run("apps.api_server:app", host=args.host, port=args.port,
+                    workers=args.workers, log_level="info")
+    else:
+        uvicorn.run(app, host=args.host, port=args.port, log_level="info")
 
 
 if __name__ == "__main__":
