@@ -10,10 +10,9 @@ it did not move.
 from __future__ import annotations
 
 import json
-import sqlite3
 from typing import Any
 
-from .. import proof
+from .. import db, eventlog, proof
 
 
 class TamperError(Exception):
@@ -57,7 +56,7 @@ def _mutate(payload: dict[str, Any]) -> tuple[dict[str, Any], str, Any, Any]:
     return copy, "tampered", None, True
 
 
-def demo(conn: sqlite3.Connection, *, seq: int | None = None,
+def demo(conn: db.Connection, *, seq: int | None = None,
          window: int = 8) -> dict[str, Any]:
     live_before = proof.scan(conn)
     if live_before["events"] == 0:
@@ -70,9 +69,15 @@ def demo(conn: sqlite3.Connection, *, seq: int | None = None,
             "'mandate') ORDER BY seq DESC LIMIT 1").fetchone()
         seq = int(row["seq"]) if row else int(live_before["events"])
 
-    mem = sqlite3.connect(":memory:")
-    mem.row_factory = sqlite3.Row
-    conn.backup(mem)
+    # A row-by-row copy rather than sqlite's backup API, so the demonstration runs the same
+    # against a Postgres ledger. The copy is what gets edited; the live log is only read.
+    mem = eventlog.connect(":memory:")
+    cols = ("seq", "source", "external_id", "entity_type", "entity_id", "parent_entity_id",
+            "event_type", "payload", "occurred_at", "received_at", "sig_verified",
+            "previous_event_hash", "event_hash")
+    for r in conn.execute(f"SELECT {', '.join(cols)} FROM events ORDER BY seq"):
+        mem.execute(f"INSERT INTO events ({', '.join(cols)}) VALUES "
+                    f"({','.join('?' * len(cols))})", tuple(r[c] for c in cols))
 
     target = mem.execute("SELECT * FROM events WHERE seq=?", (seq,)).fetchone()
     if target is None:

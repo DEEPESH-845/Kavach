@@ -16,12 +16,11 @@ animation.
 
 from __future__ import annotations
 
-import sqlite3
 import time
 from collections.abc import Callable
 from typing import Any
 
-from .. import governor, ledger
+from .. import db, governor, ledger
 from ..eventlog import append, connect
 from ..gate import envelope
 from ..intelligence import entailment
@@ -39,7 +38,7 @@ _MERCHANT = "merchant_kirana_direct"
 
 # --------------------------------------------------------------------------- sandbox
 
-def _sandbox() -> sqlite3.Connection:
+def _sandbox() -> db.Connection:
     conn = connect(":memory:")
     ledger.init(conn)
     envelope.init(conn)
@@ -47,7 +46,7 @@ def _sandbox() -> sqlite3.Connection:
     return conn
 
 
-def _payment(conn: sqlite3.Connection, payment_id: str, amount_minor: int, at: int) -> None:
+def _payment(conn: db.Connection, payment_id: str, amount_minor: int, at: int) -> None:
     for status, offset in (("authorized", 0), ("captured", 60)):
         append(conn, source="webhook", external_id=f"{payment_id}:{status}",
                entity_type="payment", entity_id=payment_id,
@@ -58,7 +57,7 @@ def _payment(conn: sqlite3.Connection, payment_id: str, amount_minor: int, at: i
                occurred_at=at + offset, received_at=at + offset, sig_verified=True)
 
 
-def _refund(conn: sqlite3.Connection, refund_id: str, payment_id: str, amount_minor: int,
+def _refund(conn: db.Connection, refund_id: str, payment_id: str, amount_minor: int,
             at: int, status: str = "processed", arn: str | None = None) -> None:
     body: dict[str, Any] = {"id": refund_id, "payment_id": payment_id, "status": status,
                             "amount": amount_minor, "currency": "INR"}
@@ -232,7 +231,7 @@ def _outbound_unknown_state() -> dict[str, Any]:
 def _inbound(body_over: dict[str, Any] | None = None, *, lines: list[dict] | None = None,
              merchant: str = _MERCHANT, cart_id: str = "cart_demo",
              untrusted: str = "", tamper: bool = False,
-             pre: Callable[[sqlite3.Connection], None] | None = None,
+             pre: Callable[[db.Connection], None] | None = None,
              steps: list[str]) -> dict[str, Any]:
     conn = _sandbox()
     _, ent = models()
@@ -308,7 +307,7 @@ def _inbound_forged() -> dict[str, Any]:
 def _inbound_revoked() -> dict[str, Any]:
     body = _mandate_body(nonce="nonce_demo_revoked")
 
-    def revoke(conn: sqlite3.Connection) -> None:
+    def revoke(conn: db.Connection) -> None:
         envelope.revoke(conn, body["mandate_id"], at=T - 60,
                         reason="principal revoked after losing the device")
 

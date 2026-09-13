@@ -34,7 +34,6 @@ import logging
 import os
 import re
 import secrets
-import sqlite3
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -47,7 +46,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
-from kavach import __version__, governor, ledger, proof, webhook
+from kavach import __version__, db, governor, ledger, proof, webhook
 from kavach.eventlog import connect
 from kavach.gate import envelope
 from kavach.intelligence import entailment
@@ -168,7 +167,7 @@ def policy() -> governor.Policy:
 
 
 @contextmanager
-def _open() -> Iterator[sqlite3.Connection]:
+def _open() -> Iterator[db.Connection]:
     """One connection per request, closed when the request ends.
 
     same_thread=False is required and safe here for a specific reason: FastAPI runs a
@@ -187,12 +186,12 @@ def _open() -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
-def db() -> Iterator[sqlite3.Connection]:
+def _db_dep() -> Iterator[db.Connection]:
     with _open() as conn:
         yield conn
 
 
-Conn = Annotated[sqlite3.Connection, Depends(db)]
+Conn = Annotated[db.Connection, Depends(_db_dep)]
 
 
 def _fail(status: int, code: str, message: str, **extra: Any) -> HTTPException:

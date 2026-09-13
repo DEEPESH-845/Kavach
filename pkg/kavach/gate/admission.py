@@ -30,10 +30,10 @@ nothing and must never be treated as an admission.
 
 from __future__ import annotations
 
-import sqlite3
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from .. import db
 from ..intelligence.model import Model
 from . import mandate, population, provenance
 from .envelope import Envelope, Failure, claim_nonce_for_env, verify
@@ -119,7 +119,7 @@ def expected_losses(risk: float, cart_total_minor: int, costs: Costs) -> dict[Ve
     }
 
 
-def decide(conn: sqlite3.Connection, raw: bytes, signature: bytes, cart: Cart, *,
+def decide(conn: db.Connection, raw: bytes, signature: bytes, cart: Cart, *,
            key_id: str, now: int, expected_principal: str | None = None,
            untrusted_context: str = "",
            costs: Costs = DEFAULT_COSTS, model: Model | None = None) -> Admission:
@@ -181,7 +181,7 @@ def decide(conn: sqlite3.Connection, raw: bytes, signature: bytes, cart: Cart, *
     return result
 
 
-def admit(conn: sqlite3.Connection, raw: bytes, signature: bytes, cart: Cart, *,
+def admit(conn: db.Connection, raw: bytes, signature: bytes, cart: Cart, *,
           key_id: str, now: int, expected_principal: str | None = None,
           untrusted_context: str = "",
           costs: Costs = DEFAULT_COSTS, model: Model | None = None) -> Admission:
@@ -204,7 +204,7 @@ def admit(conn: sqlite3.Connection, raw: bytes, signature: bytes, cart: Cart, *,
 
 
 def _violation_reason(v: Violation, env: Envelope, cart: Cart,
-                      conn: sqlite3.Connection) -> str:
+                      conn: db.Connection) -> str:
     if v is Violation.PER_TXN_CAP_EXCEEDED:
         return (f"cart of {cart.total_minor / 100:,.2f} exceeds the per-transaction cap of "
                 f"{env.per_txn_cap_minor / 100:,.2f}")

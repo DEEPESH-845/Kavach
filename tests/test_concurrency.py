@@ -1,10 +1,6 @@
 from __future__ import annotations
 
 import concurrent.futures
-import os
-import sqlite3
-
-os.environ["KAVACH_DB"] = ":memory:"
 
 import pytest
 from kavach import eventlog, ledger
@@ -13,24 +9,20 @@ from kavach.mcp import server
 
 
 @pytest.fixture
-def conn():
-    c = sqlite3.connect(":memory:", check_same_thread=False)
-    c.row_factory = sqlite3.Row
+def conn(tmp_path, monkeypatch):
+    """A file-backed ledger the module opens per call, so twenty threads each get their
+    own connection and the write lock, not one shared handle, is what serialises them."""
+    path = str(tmp_path / "race.db")
+    monkeypatch.setattr(server, "_DB", path)
+    c = eventlog.connect(path)
     ledger.init(c)
-    eventlog.SCHEMA = eventlog.SCHEMA
-    c.executescript(eventlog.SCHEMA)
-    
-    # Pre-populate a payment of 100_00 (100 rupees)
     eventlog.append(
         c, source="api", external_id="pay_1_create", entity_type="payment",
         entity_id="pay_1", event_type="api.payment.captured",
         payload={"id": "pay_1", "status": "captured", "amount": 10000},
         occurred_at=1000, received_at=1000
     )
-    # Give server the connection
-    server._conn = c
     server._policy = Policy()
-    
     yield c
     c.close()
 
@@ -115,6 +107,7 @@ def test_a_connection_can_be_closed_from_another_thread_when_asked():
 def test_thread_affinity_is_still_the_default():
     """The relaxation must be opt-in. A caller that shares one connection between threads
     running at the same time is still wrong, and the default guard is what says so."""
+    import sqlite3
     import threading
 
     from kavach.eventlog import connect
