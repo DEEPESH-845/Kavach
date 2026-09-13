@@ -535,8 +535,8 @@ that stops beating its baselines fails the build rather than shipping.
 `railway.json`, `render.yaml` and `fly.toml` deploy that image with a disk mounted at
 `/data`; Cloud Run takes it as-is. Health check `/api/health`, metrics `/api/metrics`,
 webhook receiver `/api/webhooks/razorpay`. Full procedure, every environment variable, the
-persistence trade-off and the **plainly stated fact that there is no authentication**:
-[`documents/11-deploy.md`](documents/11-deploy.md).
+persistence trade-off, and **authentication** — scoped API keys, what is public by design
+and what is demo-only: [`documents/11-deploy.md`](documents/11-deploy.md).
 
 The live instance above is that image on Railway: a 500 MB volume at `/data`, `KAVACH_MODE=live`
 against Razorpay **test** keys, `KAVACH_TRUST_PROXY=1` because Railway's edge is the only path
@@ -559,7 +559,9 @@ credentials, the models and whether the hash chain is intact.
 | `KAVACH_MODE` | `replay` | `live` reaches the Razorpay API with your credentials and records a cassette; `replay` reads one back |
 | `RAZORPAY_KEY_ID` · `RAZORPAY_KEY_SECRET` | unset | An empty key means *no key*. It never falls through to the environment |
 | `RAZORPAY_WEBHOOK_SECRET` | unset | A missing secret fails verification closed; an unverified webhook never becomes certain evidence |
-| `KAVACH_DB` | `kavach.db` | Where the event log lives |
+| `KAVACH_DB` | `kavach.db` | Where the event log lives: a SQLite path or a `postgresql://` URL |
+| `KAVACH_DEMO` | off | `1` mounts the storefront, lab and reset surfaces and turns keys off. The image default is a production deployment |
+| `KAVACH_AUTH` | `required` unless demo | Every `/api` route needs `Authorization: Bearer kv_…` with a `readonly`, `agent` or `operator` scope. `python -m kavach keys create` mints one |
 | `KAVACH_KILL_SWITCH` | off | **Suspends autonomous money movement.** Every refund intent is routed to a human; invariants still deny outright |
 
 Caps and thresholds compile into `governor.Policy`, and there is deliberately **no API that
