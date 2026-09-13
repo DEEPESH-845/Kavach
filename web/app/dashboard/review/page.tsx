@@ -67,6 +67,9 @@ export default function ReviewPage() {
 function ReviewItem({ intent, onDone }: { intent: Intent; onDone: () => void }) {
   const [note, setNote] = useState('');
   const [open, setOpen] = useState(false);
+  /* Approving releases a refund for execution -- the reconciler carries it out. One click
+     is too few for money; the button asks once more, inline, naming the amount. */
+  const [confirming, setConfirming] = useState(false);
   const act = useAction((action: 'approve' | 'reject') =>
     api.review(intent.intent_id, { action, reviewer: 'operator', note }));
 
@@ -107,7 +110,7 @@ function ReviewItem({ intent, onDone }: { intent: Intent; onDone: () => void }) 
         </>}
         next={done
           ? <span style={{ color: 'var(--bone)' }}>{done.what_happens_next}</span>
-          : 'A human decides. Approving releases it for execution; rejecting closes it.'}
+          : 'A human decides. Approving releases it: the reconciler executes it against the provider under the intent’s idempotency key. Rejecting closes it.'}
         extra={<GoLink href={`/dashboard/decisions?id=${encodeURIComponent(intent.intent_id)}`}>
           Full decision
         </GoLink>}
@@ -150,14 +153,28 @@ function ReviewItem({ intent, onDone }: { intent: Intent; onDone: () => void }) 
             </div>
           ) : null}
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button className="btn btn--go" disabled={act.pending}
-              onClick={() => act.call('approve')}>
-              <Check size={13} /> {act.pending ? 'Recording…' : 'Approve'}
-            </button>
-            <button className="btn btn--danger" disabled={act.pending}
-              onClick={() => act.call('reject')}>
-              <X size={13} /> Reject
-            </button>
+            {confirming ? (
+              <>
+                <button className="btn btn--go" disabled={act.pending} autoFocus
+                  onClick={() => { void act.call('approve'); setConfirming(false); }}>
+                  <Check size={13} /> {act.pending ? 'Recording…' : `Yes, release ${money(intent.amount_minor)}`}
+                </button>
+                <button className="btn btn--ghost" disabled={act.pending} onClick={() => setConfirming(false)}>
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <>
+                <button className="btn btn--go" disabled={act.pending}
+                  onClick={() => setConfirming(true)}>
+                  <Check size={13} /> Approve
+                </button>
+                <button className="btn btn--danger" disabled={act.pending}
+                  onClick={() => act.call('reject')}>
+                  <X size={13} /> {act.pending ? 'Recording…' : 'Reject'}
+                </button>
+              </>
+            )}
             <button className="btn btn--ghost btn--sm" onClick={() => setOpen((v) => !v)}>
               {open ? 'Hide note' : 'Add a note'}
             </button>
