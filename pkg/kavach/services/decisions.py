@@ -119,13 +119,12 @@ def record(conn: sqlite3.Connection, intent: ledger.Intent, decision: governor.D
            *, now: int) -> dict[str, Any]:
     """Persist the intent, its decision, and an event proving both.
 
-    Wrapped in a savepoint rather than a bare sequence: a decision recorded without its
+    Wrapped in one transaction rather than a bare sequence: a decision recorded without its
     event, or an event recorded without its decision, is a hole in the audit trail, and a
     hole is worse than a failure because nothing reports it.
     """
     payload = decision.to_dict()
-    conn.execute("SAVEPOINT record_decision")
-    try:
+    with conn.transaction():
         out = governor.reserve(conn, intent, decision)
         seq, _ = append(
             conn, source="governor", external_id=f"decision:{intent.intent_id}",
@@ -141,10 +140,6 @@ def record(conn: sqlite3.Connection, intent: ledger.Intent, decision: governor.D
             # Our own assertion, not a signature-verified message from the rail. Marking it
             # verified would make the truth plane trust us the way it trusts Razorpay.
             sig_verified=False)
-        conn.execute("RELEASE SAVEPOINT record_decision")
-    except Exception:
-        conn.execute("ROLLBACK TO SAVEPOINT record_decision")
-        raise
     return {**out, "intent_id": intent.intent_id, "decision_event_seq": seq}
 
 

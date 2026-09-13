@@ -72,8 +72,7 @@ def act(conn: sqlite3.Connection, intent_id: str, *, action: str, reviewer: str,
             f"intent is {status}, not {ESCALATED}; only escalated intents await review")
 
     target = APPROVED if action == APPROVE else DENIED
-    conn.execute("SAVEPOINT review")
-    try:
+    with conn.transaction():
         seq, is_new = append(
             conn, source="review", external_id=f"review:{intent_id}:{action}",
             entity_type="intent", entity_id=intent_id,
@@ -85,10 +84,6 @@ def act(conn: sqlite3.Connection, intent_id: str, *, action: str, reviewer: str,
             occurred_at=now, received_at=now, sig_verified=False)
         if is_new:
             ledger.settle(conn, intent_id, target)
-        conn.execute("RELEASE SAVEPOINT review")
-    except Exception:
-        conn.execute("ROLLBACK TO SAVEPOINT review")
-        raise
 
     return {
         "intent_id": intent_id,

@@ -213,3 +213,11 @@ def test_inspection_cannot_be_used_to_launder_a_bad_signature(conn, issuer):
     raw, _ = signed(issuer)
     assert verify(conn, raw, b"forged", key_id=KEY_ID, now=T, claim_nonce=False) == (
         None, [Failure.BAD_SIGNATURE])
+
+
+def test_register_issuer_replaces_key(conn):
+    from kavach.gate import envelope
+    envelope.register_issuer(conn, "k1", b"\x01" * 32)
+    envelope.register_issuer(conn, "k1", b"\x02" * 32)
+    row = conn.execute("SELECT public_key FROM gate_issuers WHERE key_id='k1'").fetchone()
+    assert bytes(row["public_key"]) == b"\x02" * 32

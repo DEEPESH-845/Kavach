@@ -88,13 +88,16 @@ def register_issuer(conn: sqlite3.Connection, key_id: str, public_key: bytes) ->
     A key the envelope carries about itself proves nothing, so the key is looked up by id
     from what the merchant already trusts and an unrecognised id is a typed failure.
     """
-    conn.execute("INSERT OR REPLACE INTO gate_issuers (key_id, public_key) VALUES (?,?)",
+    conn.execute("INSERT INTO gate_issuers (key_id, public_key) VALUES (?,?) "
+                 "ON CONFLICT (key_id) DO UPDATE SET public_key=excluded.public_key",
                  (key_id, public_key))
 
 
 def revoke(conn: sqlite3.Connection, mandate_id: str, *, at: int, reason: str = "") -> None:
-    conn.execute("INSERT OR REPLACE INTO gate_revocations "
-                 "(mandate_id, revoked_at, reason) VALUES (?,?,?)", (mandate_id, at, reason))
+    conn.execute("INSERT INTO gate_revocations (mandate_id, revoked_at, reason) "
+                 "VALUES (?,?,?) ON CONFLICT (mandate_id) DO UPDATE SET "
+                 "revoked_at=excluded.revoked_at, reason=excluded.reason",
+                 (mandate_id, at, reason))
 
 
 def is_revoked(conn: sqlite3.Connection, mandate_id: str) -> bool:
@@ -154,10 +157,11 @@ def verify(conn: sqlite3.Connection, raw: bytes, signature: bytes, *, key_id: st
 
 
 def claim_nonce_for_env(conn: sqlite3.Connection, env: Envelope, now: int) -> bool:
-    """INSERT OR IGNORE and read rowcount -- the idiom eventlog.append already uses for
-    idempotent ingestion. One established pattern, used twice, beats two inventions."""
-    cur = conn.execute("INSERT OR IGNORE INTO gate_nonces (nonce, mandate_id, claimed_at) "
-                       "VALUES (?,?,?)", (env.nonce, env.mandate_id, now))
+    """ON CONFLICT DO NOTHING and read rowcount -- the idiom eventlog.append already uses
+    for idempotent ingestion. One established pattern, used twice, beats two inventions."""
+    cur = conn.execute("INSERT INTO gate_nonces (nonce, mandate_id, claimed_at) "
+                       "VALUES (?,?,?) ON CONFLICT DO NOTHING",
+                       (env.nonce, env.mandate_id, now))
     return cur.rowcount == 1
 
 

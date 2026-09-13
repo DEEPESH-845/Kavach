@@ -1,17 +1,12 @@
 from __future__ import annotations
 
-import sqlite3
-
 import pytest
 from kavach import eventlog, proof
 
 
 @pytest.fixture
 def conn():
-    c = sqlite3.connect(":memory:")
-    c.row_factory = sqlite3.Row
-    eventlog.SCHEMA = eventlog.SCHEMA
-    c.executescript(eventlog.SCHEMA)
+    c = eventlog.connect(":memory:")
     yield c
     c.close()
 
