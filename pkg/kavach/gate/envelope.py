@@ -94,6 +94,18 @@ def register_issuer(conn: db.Connection, key_id: str, public_key: bytes) -> None
                  (key_id, public_key))
 
 
+def list_issuers(conn: db.Connection) -> list[dict]:
+    rows = conn.execute(
+        "SELECT key_id, public_key FROM gate_issuers ORDER BY key_id").fetchall()
+    return [{"key_id": r["key_id"], "public_key": bytes(r["public_key"])} for r in rows]
+
+
+def remove_issuer(conn: db.Connection, key_id: str) -> bool:
+    """Stop trusting a key. Envelopes it signed fail UNKNOWN_ISSUER from now on; nothing
+    already admitted is rewritten -- the log says what was trusted at the time."""
+    return conn.execute("DELETE FROM gate_issuers WHERE key_id=?", (key_id,)).rowcount == 1
+
+
 def revoke(conn: db.Connection, mandate_id: str, *, at: int, reason: str = "") -> None:
     conn.execute("INSERT INTO gate_revocations (mandate_id, revoked_at, reason) "
                  "VALUES (?,?,?) ON CONFLICT (mandate_id) DO UPDATE SET "
@@ -152,9 +164,19 @@ def verify(conn: db.Connection, raw: bytes, signature: bytes, *, key_id: str,
     if failures:
         return None, failures
 
-    if claim_nonce and not claim_nonce_for_env(conn, env, now):
+    if claim_nonce:
+        if not claim_nonce_for_env(conn, env, now):
+            return None, [Failure.REPLAYED_NONCE]
+    elif nonce_spent(conn, env.nonce):
+        # An inspection leaves the nonce alone but must not call a spent mandate good: an
+        # agent asking "is this still usable?" deserves the true answer.
         return None, [Failure.REPLAYED_NONCE]
     return env, []
+
+
+def nonce_spent(conn: db.Connection, nonce: str) -> bool:
+    row = conn.execute("SELECT 1 FROM gate_nonces WHERE nonce=?", (nonce,)).fetchone()
+    return row is not None
 
 
 def claim_nonce_for_env(conn: db.Connection, env: Envelope, now: int) -> bool:

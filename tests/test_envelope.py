@@ -221,3 +221,10 @@ def test_register_issuer_replaces_key(conn):
     envelope.register_issuer(conn, "k1", b"\x02" * 32)
     row = conn.execute("SELECT public_key FROM gate_issuers WHERE key_id='k1'").fetchone()
     assert bytes(row["public_key"]) == b"\x02" * 32
+
+
+def test_inspection_reports_a_spent_nonce_without_spending_anything(conn, issuer):
+    raw, sig = signed(issuer)
+    assert check(conn, raw, sig, claim_nonce=True)[1] == []
+    env, failures = check(conn, raw, sig, claim_nonce=False)
+    assert env is None and failures == [Failure.REPLAYED_NONCE]

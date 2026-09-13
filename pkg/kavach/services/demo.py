@@ -99,7 +99,7 @@ def init_all(conn: db.Connection) -> None:
     stepup.init(conn)
     checkout.init(conn)
     migrations.apply(conn)
-    gate_service.register_demo_issuer(conn)
+    gate_service.register_demo_issuer(conn, force=True)
 
 
 def clear(conn: db.Connection) -> None:

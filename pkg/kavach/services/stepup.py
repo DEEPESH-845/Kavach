@@ -20,6 +20,7 @@ token; the phone fetches the view. Mandate and cart never travel in the QR.
 
 from __future__ import annotations
 
+import base64
 import json
 import secrets
 from typing import Any
@@ -167,9 +168,12 @@ def resolve(conn: db.Connection, token: str, *, action: str, now: int,
         else:
             # Re-run the real admission at THIS moment. Nothing is trusted from the moment
             # the token was minted: revocation, expiry and the cap are all re-read.
-            gate_service.register_demo_issuer(conn)
+            signed = _signed(m)
+            if signed is None:
+                gate_service.register_demo_issuer(conn)
             rerun = gate_service.admit(
-                conn, envelope_body=m, cart_id=cart["cart_id"],
+                conn, envelope_body=None if signed else m, signed=signed,
+                cart_id=cart["cart_id"],
                 merchant_id=cart["merchant_id"], lines=cart["lines"], now=now,
                 expected_principal=m["principal_id"],
                 untrusted_context=cart.get("untrusted_context", ""), model=model,
@@ -204,6 +208,16 @@ def resolve(conn: db.Connection, token: str, *, action: str, now: int,
                      "WHERE token=?", (new_status, now, resolver,
                                        json.dumps(result, sort_keys=True), token))
     return {"token": token, "status": new_status, "applied": True, **result}
+
+
+def _signed(m: dict[str, Any]) -> gate_service.Signed | None:
+    """A caller-signed envelope rides inside mandate_json under `_signed`, so approval can
+    re-verify the exact bytes the principal signed rather than a re-serialisation."""
+    s = m.get("_signed")
+    if not s:
+        return None
+    return (base64.b64decode(s["raw_b64"]), base64.b64decode(s["signature_b64"]),
+            str(s["key_id"]))
 
 
 def _envelope(m: dict[str, Any]) -> envelope.Envelope:
