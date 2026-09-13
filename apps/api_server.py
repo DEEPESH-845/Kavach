@@ -130,8 +130,12 @@ _request_counter = itertools.count(1)
 _requests_served = 0
 _REQUEST_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 #: Endpoints a stranger can drive from a QR code or a demo button. Bounded per client.
-_LIMITED = ("/api/stepup", "/api/checkout", "/api/mcp", "/api/demo", "/api/proof/tamper",
-            "/api/webhooks")
+#: Not the webhook: its gate is the HMAC, and a legitimate burst from Razorpay's few egress
+#: addresses must never be told to wait a minute.
+_LIMITED = ("/api/stepup", "/api/checkout", "/api/mcp", "/api/demo", "/api/proof/tamper")
+#: Every body on this API is an id, an amount, a mandate or a cart. A larger one is not a
+#: request this surface has a use for; it is memory somebody else chose.
+MAX_BODY = 1_000_000
 _bucket = ratelimit.Bucket(int(os.environ.get("KAVACH_RATE_LIMIT", "0") or 0)
                            or _SETTINGS.rate_limit_per_minute)
 
@@ -173,7 +177,12 @@ async def _request_id_and_limits(request: Request, call_next):
     token = observability.request_id.set(rid)
     started = time.perf_counter()
     try:
-        if request.url.path.startswith(_LIMITED) and not _bucket.allow(_client_key(request)):
+        length = request.headers.get("content-length", "")
+        if length.isdigit() and int(length) > MAX_BODY:
+            response = JSONResponse(status_code=413, content={
+                "error": {"code": "payload_too_large",
+                          "message": f"request bodies are limited to {MAX_BODY} bytes"}})
+        elif request.url.path.startswith(_LIMITED) and not _bucket.allow(_client_key(request)):
             response = JSONResponse(status_code=429, content={
                 "error": {"code": "rate_limited",
                           "message": "too many requests from this client; wait a minute"}})
@@ -572,11 +581,9 @@ def health(conn: Conn) -> dict[str, Any]:
                    "entailment": _models.get("entailment") is not None},
         "integrity": {"chain_intact": status["ok"], "events": status["events"],
                       "broken_at": status["broken_at"], "incremental": True},
-        "policy": {"max_auto_refund_minor": policy().max_auto_refund_minor,
-                   "session_cap_minor": policy().session_cap_minor,
-                   "daily_cap_minor": policy().daily_cap_minor,
-                   "risk_threshold": policy().risk_threshold,
-                   "kill_switch": policy().kill_switch},
+        # Limits are behind /api/policy (a key); an unauthenticated probe learns only what
+        # this deployment IS, never what it would let through.
+        "kill_switch": policy().kill_switch,
         "ui": STATIC_DIR.exists(),
         "razorpay": {"mode": mode,
                      "credentials": bool(os.environ.get("RAZORPAY_KEY_ID")
