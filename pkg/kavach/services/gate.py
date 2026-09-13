@@ -27,7 +27,7 @@ from typing import Any
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from .. import db
+from .. import config, db
 from ..gate import admission, envelope, mandate
 from ..intelligence.model import Model
 
@@ -161,7 +161,8 @@ def admit(conn: db.Connection, *, envelope_body: dict[str, Any], cart_id: str,
     run = admission.admit if charge else admission.decide
     result = run(conn, raw, sig, cart, key_id=DEMO_KEY_ID, now=now,
                  expected_principal=expected_principal or None,
-                 untrusted_context=untrusted_context, model=model)
+                 untrusted_context=untrusted_context, model=model,
+                 costs=config.current().costs)
 
     return {
         **result.to_dict(),

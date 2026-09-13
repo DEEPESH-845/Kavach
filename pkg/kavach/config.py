@@ -57,8 +57,11 @@ class Settings:
                      else model_threshold if model_threshold is not None
                      else governor.Policy.risk_threshold)
         tier = self.agents.get(agent_id or "", "agent")
+        # The environment switch is read HERE, per decision, never cached: it is the one
+        # control that must work the moment it is set, with no file edit and no restart.
         return replace(self.limits, risk_threshold=threshold,
-                       allow_write=self.limits.allow_write and tier != "readonly")
+                       allow_write=self.limits.allow_write and tier != "readonly",
+                       kill_switch=self.limits.kill_switch or governor.halted())
 
 
 # ------------------------------------------------------------------ validation
@@ -110,8 +113,7 @@ def _parse(doc: dict[str, Any], source: str | None) -> Settings:
         daily_cap_minor=_int("limits", "daily_cap_minor",
                              lim.get("daily_cap_minor", base.daily_cap_minor), minimum=1),
         risk_threshold=threshold if threshold is not None else base.risk_threshold,
-        # the environment switch is OR'd in by Policy's default factory
-        kill_switch=kill or governor.Policy().kill_switch,
+        kill_switch=kill,   # the file's value only; policy_for() ORs the environment in
     )
 
     g = _only("gate", doc.get("gate", {}),

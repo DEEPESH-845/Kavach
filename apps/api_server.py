@@ -48,7 +48,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
-from kavach import __version__, auth, db, governor, ledger, migrations, proof, webhook
+from kavach import __version__, auth, config, db, governor, ledger, migrations, proof, webhook
 from kavach.eventlog import connect
 from kavach.gate import envelope
 from kavach.intelligence import entailment
@@ -96,8 +96,10 @@ app = FastAPI(
 # The dev server is a different origin; the built UI is same-origin and needs none of this.
 # KAVACH_CORS_ORIGINS (comma-separated) adds a UI hosted elsewhere, e.g. the Vercel export
 # whose NEXT_PUBLIC_KAVACH_API points here.
+_SETTINGS = config.current()   # invalid KAVACH_POLICY refuses to start, naming the field
 _EXTRA_ORIGINS = [o.strip().rstrip("/")
                   for o in os.environ.get("KAVACH_CORS_ORIGINS", "").split(",") if o.strip()]
+_EXTRA_ORIGINS += [o for o in _SETTINGS.cors_origins if o not in _EXTRA_ORIGINS]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://127.0.0.1:3000",
@@ -115,7 +117,8 @@ _REQUEST_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 #: Endpoints a stranger can drive from a QR code or a demo button. Bounded per client.
 _LIMITED = ("/api/stepup", "/api/checkout", "/api/mcp", "/api/demo", "/api/proof/tamper",
             "/api/webhooks")
-_bucket = ratelimit.Bucket(int(os.environ.get("KAVACH_RATE_LIMIT", "60")))
+_bucket = ratelimit.Bucket(int(os.environ.get("KAVACH_RATE_LIMIT", "0") or 0)
+                           or _SETTINGS.rate_limit_per_minute)
 
 
 #: Only a deployment that IS behind a proxy may believe X-Forwarded-For. Off by default:
@@ -165,9 +168,11 @@ def _load_models() -> None:
         log.info("%s model: %s", name, "loaded" if _models[name] else "unavailable")
 
 
-def policy() -> governor.Policy:
+def policy(agent_id: str | None = None) -> governor.Policy:
+    """The policy one decision runs under: KAVACH_POLICY's limits, this agent's tier, and
+    the model's frozen threshold unless the file overrides it."""
     m = _models.get("risk")
-    return governor.Policy(risk_threshold=m.threshold) if m else governor.Policy()
+    return config.current().policy_for(agent_id, model_threshold=m.threshold if m else None)
 
 
 @contextmanager
@@ -473,7 +478,16 @@ def _mcp_status() -> dict[str, Any]:
 def get_policy(_: ReadOnly) -> dict[str, Any]:
     p = policy()
     m = _models.get("risk")
+    s = config.current()
     return {
+        "source": s.source or "compiled defaults (no KAVACH_POLICY)",
+        "gate_costs": {"fraud_loss_share": s.costs.fraud_loss_share,
+                       "margin_share": s.costs.margin_share,
+                       "step_up_minor": s.costs.step_up_minor,
+                       "hold_minor": s.costs.hold_minor,
+                       "step_up_catch_rate": s.costs.step_up_catch_rate,
+                       "hold_catch_rate": s.costs.hold_catch_rate},
+        "agent_tiers": dict(s.agents),
         "limits": {
             "max_auto_refund_minor": p.max_auto_refund_minor,
             "session_cap_minor": p.session_cap_minor,
@@ -482,7 +496,9 @@ def get_policy(_: ReadOnly) -> dict[str, Any]:
             "allow_write": p.allow_write,
             "kill_switch": p.kill_switch,
         },
-        "threshold_source": ("the estimator's frozen training threshold"
+        "threshold_source": ("[limits].risk_threshold in the policy file"
+                             if s.risk_threshold_override is not None else
+                             "the estimator's frozen training threshold"
                              if m else "governor.Policy default; no model is loaded"),
         "authority_order": [
             {"rank": 1, "layer": "Accounting invariants", "kind": "deterministic",
@@ -503,9 +519,10 @@ def get_policy(_: ReadOnly) -> dict[str, Any]:
              "outcome": "ESCALATE", "note": "per-refund, per-session and daily"},
         ],
         "mutable": False,
-        "mutability_note": "policy is compiled into governor.Policy. There is no API that "
-                           "edits it, because a limit an operator can raise from the "
-                           "screen it is failing on is not a limit.",
+        "mutability_note": "policy comes from the file KAVACH_POLICY names, or the compiled "
+                           "defaults. There is no API that edits it, because a limit an "
+                           "operator can raise from the screen it is failing on is not a "
+                           "limit; the file's diff and deploy are the audit trail.",
     }
 
 
@@ -553,13 +570,14 @@ def evaluate(body: EvaluateRequest, conn: Conn, _: AgentKey) -> dict[str, Any]:
                                       body.reason_text, now)
     model = _models.get("risk")
     if not body.commit:
-        decision, truth = decisions.evaluate(conn, intent, now=now, policy=policy(),
-                                             model=model)
+        decision, truth = decisions.evaluate(conn, intent, now=now,
+                                             policy=policy(body.agent_id), model=model)
         return {"committed": False, "intent_id": None, "decision": decision.to_dict(),
                 "truth": truth,
                 "note": "dry run: no intent was recorded and no money moved"}
 
-    out = decisions.evaluate_and_record(conn, intent, now=now, policy=policy(), model=model)
+    out = decisions.evaluate_and_record(conn, intent, now=now, policy=policy(body.agent_id),
+                                        model=model)
     # Same shape as the dry run -- `decision` nested -- so a client reads one field either
     # way. The flat copy evaluate_and_record returns is what the MCP tool hands agents.
     decision = {k: out[k] for k in ("action", "reasons", "evidence_events", "duplicate_risk",

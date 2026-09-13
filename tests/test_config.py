@@ -89,11 +89,13 @@ def test_env_kill_switch_wins(tmp_path, monkeypatch):
     f = tmp_path / "k.toml"
     f.write_text("[limits]\nkill_switch = false\n")
     monkeypatch.setenv("KAVACH_KILL_SWITCH", "1")
-    assert config.load(str(f)).limits.kill_switch is True
+    s = config.load(str(f))
+    assert s.limits.kill_switch is False                       # the file's value
+    assert s.policy_for("a", model_threshold=None).kill_switch is True   # env wins, live
     monkeypatch.delenv("KAVACH_KILL_SWITCH")
-    assert config.load(str(f)).limits.kill_switch is False
+    assert s.policy_for("a", model_threshold=None).kill_switch is False  # no reload needed
     f.write_text("[limits]\nkill_switch = true\n")
-    assert config.load(str(f)).limits.kill_switch is True
+    assert config.load(str(f)).policy_for("a", model_threshold=None).kill_switch is True
 
 
 def test_current_reloads_when_the_file_changes(tmp_path, monkeypatch):
