@@ -109,6 +109,7 @@ def view(conn: db.Connection, token: str, now: int) -> dict[str, Any]:
         "expires_at": row["expires_at"],
         "seconds_left": max(0, row["expires_at"] - now) if status == PENDING else 0,
         "agent_id": m["agent_id"],
+        "principal_id": m["principal_id"],
         "mandate_id": m["mandate_id"],
         "purpose": m["purpose"],
         "merchant_id": cart["merchant_id"],

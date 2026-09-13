@@ -5,10 +5,61 @@
  * endpoint the phone writes to. */
 
 import { useEffect, useState } from 'react';
-import { CheckCircle2, Smartphone, XCircle } from 'lucide-react';
+import { CheckCircle2, Send, Smartphone, XCircle } from 'lucide-react';
 import { absolute, useQr } from '@/lib/qr';
 import { money } from '@/lib/format';
 import { useJourney } from '@/lib/journey';
+import { NotifyChannel, StepUpDelivery, journeyApi } from '@/lib/api';
+import { useAction } from '@/lib/useApi';
+
+const PLACEHOLDER: Record<NotifyChannel, string> = {
+  email: 'priya@example.com', sms: '+91 98765 43210', whatsapp: '+91 98765 43210',
+  webhook: 'merchant',
+};
+
+/* The QR is the demo's channel; this is the production one. The same token goes out by
+   email, SMS or WhatsApp -- the server composes the message and never includes the
+   envelope -- and the delivery outcome is read back beside the token. */
+function SendLink({ token, deliveries }: { token: string; deliveries: StepUpDelivery[] }) {
+  const [channel, setChannel] = useState<NotifyChannel>('email');
+  const [to, setTo] = useState('');
+  const send = useAction((c: NotifyChannel, t: string) => journeyApi.stepUpNotify(token, { channel: c, to: t }));
+  const latest = deliveries[deliveries.length - 1];
+
+  return (
+    <form
+      className="bz-send"
+      onSubmit={(e) => { e.preventDefault(); if (to.trim()) void send.call(channel, to.trim()); }}
+    >
+      <label className="field__label" htmlFor="bz-send-to">Or send Priya the link</label>
+      <div className="bz-send__row">
+        <select className="select" aria-label="Channel" value={channel} onChange={(e) => setChannel(e.target.value as NotifyChannel)}>
+          <option value="email">Email</option>
+          <option value="sms">SMS</option>
+          <option value="whatsapp">WhatsApp</option>
+        </select>
+        <input id="bz-send-to" className="input" value={to} onChange={(e) => setTo(e.target.value)}
+          placeholder={PLACEHOLDER[channel]} inputMode={channel === 'email' ? 'email' : 'tel'} />
+        <button className="btn btn--sm" type="submit" disabled={send.pending || !to.trim()}>
+          <Send size={12} aria-hidden /> {send.pending ? 'Sending…' : 'Send'}
+        </button>
+      </div>
+      {send.error ? (
+        <p role="alert" className="field__hint" style={{ color: 'var(--oxide)', margin: '6px 0 0' }}>
+          {send.error.code === 'public_url_unset' || send.error.code === 'channel_unconfigured'
+            ? `Not set up on this deployment: ${send.error.message}`
+            : send.error.message}
+        </p>
+      ) : latest ? (
+        <p role="status" className="field__hint" style={{ margin: '6px 0 0', color: latest.status === 'failed' ? 'var(--oxide)' : undefined }}>
+          {latest.status === 'sent' ? `Sent by ${latest.channel} to ${latest.to}.`
+            : latest.status === 'queued' ? `Sending by ${latest.channel} to ${latest.to}…`
+            : `Could not send by ${latest.channel}: ${latest.error}`}
+        </p>
+      ) : null}
+    </form>
+  );
+}
 
 export function StepUpPanel({ focus }: { focus?: boolean }) {
   const j = useJourney();
@@ -48,6 +99,7 @@ export function StepUpPanel({ focus }: { focus?: boolean }) {
               <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <a className="btn btn--sm" href={url ?? '#'} target="_blank" rel="noreferrer">No phone? Open the approval page here</a>
               </div>
+              <SendLink token={s.token} deliveries={s.view?.notifications ?? []} />
             </>
           ) : status === 'APPROVED' ? (
             <>
