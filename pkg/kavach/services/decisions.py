@@ -23,10 +23,9 @@ Two things this module owns and nothing else does:
 
 from __future__ import annotations
 
-import sqlite3
 from typing import Any
 
-from .. import governor, ledger
+from .. import db, governor, ledger
 from ..eventlog import append
 from ..intelligence.model import Model
 from ..truth import Confidence
@@ -49,7 +48,7 @@ REFUSED_STATUSES = (DENIED,)
 UNRESOLVED_STATUSES = (APPROVED, FAILED)
 
 
-def risk_row(conn: sqlite3.Connection, intent: ledger.Intent, now: int) -> dict[str, Any]:
+def risk_row(conn: db.Connection, intent: ledger.Intent, now: int) -> dict[str, Any]:
     """The feature row the duplicate-risk estimator expects.
 
     Nothing here reaches forward in time: `prior` is only intents already recorded against
@@ -73,7 +72,7 @@ def risk_row(conn: sqlite3.Connection, intent: ledger.Intent, now: int) -> dict[
     }
 
 
-def score_risk(conn: sqlite3.Connection, intent: ledger.Intent, model: Model | None,
+def score_risk(conn: db.Connection, intent: ledger.Intent, model: Model | None,
                now: int) -> tuple[float | None, list[str]]:
     """(score, attribution). None means "not assessed", which the governor treats as a
     reason for caution -- never as a reason to proceed."""
@@ -87,7 +86,7 @@ def score_risk(conn: sqlite3.Connection, intent: ledger.Intent, model: Model | N
     return model.score(row), model.explain(row)
 
 
-def evaluate(conn: sqlite3.Connection, intent: ledger.Intent, *, now: int,
+def evaluate(conn: db.Connection, intent: ledger.Intent, *, now: int,
              policy: governor.Policy,
              model: Model | None = None) -> tuple[governor.Decision, dict[str, Any]]:
     """Decide, without writing anything. Returns the decision and the truth it read.
@@ -115,7 +114,7 @@ def evaluate(conn: sqlite3.Connection, intent: ledger.Intent, *, now: int,
     return decision, truth
 
 
-def record(conn: sqlite3.Connection, intent: ledger.Intent, decision: governor.Decision,
+def record(conn: db.Connection, intent: ledger.Intent, decision: governor.Decision,
            *, now: int) -> dict[str, Any]:
     """Persist the intent, its decision, and an event proving both.
 
@@ -143,7 +142,7 @@ def record(conn: sqlite3.Connection, intent: ledger.Intent, decision: governor.D
     return {**out, "intent_id": intent.intent_id, "decision_event_seq": seq}
 
 
-def evaluate_and_record(conn: sqlite3.Connection, intent: ledger.Intent, *, now: int,
+def evaluate_and_record(conn: db.Connection, intent: ledger.Intent, *, now: int,
                         policy: governor.Policy,
                         model: Model | None = None) -> dict[str, Any]:
     """The whole outbound pipeline: decide, then durably record why.

@@ -21,10 +21,10 @@ comparing against a field that does not exist is theatre.
 
 from __future__ import annotations
 
-import sqlite3
 from dataclasses import dataclass
 from enum import StrEnum
 
+from .. import db
 from ..eventlog import Event, append, for_entity
 from .envelope import Envelope
 
@@ -84,7 +84,7 @@ class Cart:
         return sum(line.total_minor for line in self.lines)
 
 
-def admissible(conn: sqlite3.Connection, env: Envelope, cart: Cart, *,
+def admissible(conn: db.Connection, env: Envelope, cart: Cart, *,
                now: int) -> list[Violation]:
     """Every way this cart fails its mandate. Empty list means it fits.
 
@@ -118,7 +118,7 @@ def admissible(conn: sqlite3.Connection, env: Envelope, cart: Cart, *,
     return violations
 
 
-def prior_admissions(conn: sqlite3.Connection, mandate_id: str) -> list[Event]:
+def prior_admissions(conn: db.Connection, mandate_id: str) -> list[Event]:
     """Admissions already charged against this mandate, in causal order.
 
     This is the evidence chain behind every cumulative-cap decision: the exact events whose
@@ -127,7 +127,7 @@ def prior_admissions(conn: sqlite3.Connection, mandate_id: str) -> list[Event]:
     return [e for e in for_entity(conn, "mandate", mandate_id) if e.event_type == ADMITTED]
 
 
-def spent(conn: sqlite3.Connection, mandate_id: str) -> int:
+def spent(conn: db.Connection, mandate_id: str) -> int:
     """Cumulative minor units admitted against this mandate, recomputed from the log.
 
     Deliberately takes no `now`: a mandate's own validity window already bounds when
@@ -137,7 +137,7 @@ def spent(conn: sqlite3.Connection, mandate_id: str) -> int:
     return sum(int(e.payload["total_minor"]) for e in prior_admissions(conn, mandate_id))
 
 
-def record_admission(conn: sqlite3.Connection, env: Envelope, cart: Cart, *,
+def record_admission(conn: db.Connection, env: Envelope, cart: Cart, *,
                      now: int) -> tuple[int, bool]:
     """Charge this cart against the mandate. Returns (event seq, is_new).
 

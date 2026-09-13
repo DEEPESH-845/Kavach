@@ -13,7 +13,6 @@ already asked for against the same target.
 from __future__ import annotations
 
 import json
-import sqlite3
 from dataclasses import dataclass
 
 from . import db
@@ -54,11 +53,11 @@ class Intent:
     result_id: str | None = None
 
 
-def init(conn: sqlite3.Connection) -> None:
+def init(conn: db.Connection) -> None:
     conn.executescript(SCHEMA)
 
 
-def record(conn: sqlite3.Connection, i: Intent, decision: dict | None = None) -> None:
+def record(conn: db.Connection, i: Intent, decision: dict | None = None) -> None:
     """Write-ahead: an intent is durable BEFORE it is executed.
 
     If we crash between here and the API call, recovery can see an intent with no result
@@ -77,19 +76,19 @@ def record(conn: sqlite3.Connection, i: Intent, decision: dict | None = None) ->
         raise ValueError(f"Intent {i.intent_id} already exists; history is immutable.") from e
 
 
-def settle(conn: sqlite3.Connection, intent_id: str, status: str,
+def settle(conn: db.Connection, intent_id: str, status: str,
            result_id: str | None = None) -> None:
     conn.execute("UPDATE intents SET status=?, result_id=COALESCE(?, result_id) "
                  "WHERE intent_id=?", (status, result_id, intent_id))
 
 
-def _to_intent(r: sqlite3.Row) -> Intent:
+def _to_intent(r: db.Row) -> Intent:
     return Intent(r["intent_id"], r["agent_id"], r["session_id"], r["tool"], r["target_type"],
                   r["target_id"], r["amount_minor"], r["reason_text"], r["created_at"],
                   r["status"], r["result_id"])
 
 
-def prior_intents(conn: sqlite3.Connection, target_type: str, target_id: str) -> list[Intent]:
+def prior_intents(conn: db.Connection, target_type: str, target_id: str) -> list[Intent]:
     """Everything any agent has already asked for against this target, in any session."""
     rows = conn.execute(
         "SELECT * FROM intents WHERE target_type=? AND target_id=? ORDER BY created_at",
@@ -97,7 +96,7 @@ def prior_intents(conn: sqlite3.Connection, target_type: str, target_id: str) ->
     return [_to_intent(r) for r in rows]
 
 
-def fact_for(conn: sqlite3.Connection, entity_type: str, entity_id: str,
+def fact_for(conn: db.Connection, entity_type: str, entity_id: str,
              now: int) -> FinancialFact | None:
     evs = for_entity(conn, entity_type, entity_id)
     if not evs:
@@ -116,7 +115,7 @@ def fact_for(conn: sqlite3.Connection, entity_type: str, entity_id: str,
 MONEY_ENTITIES = ("payment", "refund", "order", "payout")
 
 
-def open_obligations(conn: sqlite3.Connection, now: int) -> list[FinancialFact]:
+def open_obligations(conn: db.Connection, now: int) -> list[FinancialFact]:
     """Every entity we hold whose obligation is still OPEN."""
     q = ",".join("?" * len(MONEY_ENTITIES))
     rows = conn.execute(
@@ -130,7 +129,7 @@ def open_obligations(conn: sqlite3.Connection, now: int) -> list[FinancialFact]:
     return out
 
 
-def open_against_payment(conn: sqlite3.Connection, payment_id: str,
+def open_against_payment(conn: db.Connection, payment_id: str,
                          now: int) -> list[FinancialFact]:
     """Open refunds whose parent is this payment.
 
@@ -148,7 +147,7 @@ def open_against_payment(conn: sqlite3.Connection, payment_id: str,
     return out
 
 
-def exposure(conn: sqlite3.Connection, payment_id: str, now: int) -> int:
+def exposure(conn: db.Connection, payment_id: str, now: int) -> int:
     """Minor units already committed against this payment and not yet closed out.
 
     Counts open refunds PLUS intents that were executed but whose result we have no events

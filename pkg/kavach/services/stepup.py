@@ -22,9 +22,9 @@ from __future__ import annotations
 
 import json
 import secrets
-import sqlite3
 from typing import Any
 
+from .. import db
 from ..eventlog import append
 from ..gate import admission, envelope, mandate
 from ..intelligence.model import Model
@@ -59,11 +59,11 @@ class StepUpError(Exception):
         self.code, self.message = code, message
 
 
-def init(conn: sqlite3.Connection) -> None:
+def init(conn: db.Connection) -> None:
     conn.executescript(SCHEMA)
 
 
-def create(conn: sqlite3.Connection, *, mandate_body: dict[str, Any], cart: dict[str, Any],
+def create(conn: db.Connection, *, mandate_body: dict[str, Any], cart: dict[str, Any],
            admission_result: dict[str, Any], now: int) -> dict[str, Any]:
     """Open a re-consent request. Only a STEP_UP (or HOLD) verdict may ask for one."""
     verdict = admission_result.get("verdict")
@@ -79,21 +79,21 @@ def create(conn: sqlite3.Connection, *, mandate_body: dict[str, Any], cart: dict
     return {"token": token, "expires_at": now + TTL, "status": PENDING}
 
 
-def _row(conn: sqlite3.Connection, token: str) -> sqlite3.Row:
+def _row(conn: db.Connection, token: str) -> db.Row:
     row = conn.execute("SELECT * FROM stepups WHERE token=?", (token,)).fetchone()
     if row is None:
         raise StepUpError("not_found", "this approval link is not one Kavach issued")
     return row
 
 
-def _expire_if_due(conn: sqlite3.Connection, row: sqlite3.Row, now: int) -> str:
+def _expire_if_due(conn: db.Connection, row: db.Row, now: int) -> str:
     if row["status"] == PENDING and now > row["expires_at"]:
         conn.execute("UPDATE stepups SET status=? WHERE token=?", (EXPIRED, row["token"]))
         return EXPIRED
     return row["status"]
 
 
-def view(conn: sqlite3.Connection, token: str, now: int) -> dict[str, Any]:
+def view(conn: db.Connection, token: str, now: int) -> dict[str, Any]:
     """What the principal's phone shows. Deliberately narrow: amount, items, who is asking,
     why it stopped. The envelope stays on the server."""
     row = _row(conn, token)
@@ -126,7 +126,7 @@ def view(conn: sqlite3.Connection, token: str, now: int) -> dict[str, Any]:
     }
 
 
-def resolve(conn: sqlite3.Connection, token: str, *, action: str, now: int,
+def resolve(conn: db.Connection, token: str, *, action: str, now: int,
             resolver: str = "principal", model: Model | None = None) -> dict[str, Any]:
     """Approve or deny. Idempotent on (token, action); the opposite action is a conflict."""
     if action not in (APPROVE, DENY):
@@ -218,7 +218,7 @@ def _envelope(m: dict[str, Any]) -> envelope.Envelope:
         nonce=str(m["nonce"]), issued_at=int(m["issued_at"]))
 
 
-def pending(conn: sqlite3.Connection, now: int, limit: int = 20) -> list[dict[str, Any]]:
+def pending(conn: db.Connection, now: int, limit: int = 20) -> list[dict[str, Any]]:
     rows = conn.execute("SELECT token FROM stepups WHERE status=? ORDER BY created_at DESC "
                         "LIMIT ?", (PENDING, limit)).fetchall()
     return [view(conn, r["token"], now) for r in rows]

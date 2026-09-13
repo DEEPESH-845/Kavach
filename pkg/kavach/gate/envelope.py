@@ -20,12 +20,13 @@ principal, turning replay protection into a denial-of-service primitive.
 from __future__ import annotations
 
 import json
-import sqlite3
 from dataclasses import dataclass
 from enum import StrEnum
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+from .. import db
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS gate_issuers (
@@ -78,11 +79,11 @@ class Envelope:
     issued_at: int
 
 
-def init(conn: sqlite3.Connection) -> None:
+def init(conn: db.Connection) -> None:
     conn.executescript(SCHEMA)
 
 
-def register_issuer(conn: sqlite3.Connection, key_id: str, public_key: bytes) -> None:
+def register_issuer(conn: db.Connection, key_id: str, public_key: bytes) -> None:
     """Trust a principal's signing key. Configured out of band, never self-asserted.
 
     A key the envelope carries about itself proves nothing, so the key is looked up by id
@@ -93,21 +94,21 @@ def register_issuer(conn: sqlite3.Connection, key_id: str, public_key: bytes) ->
                  (key_id, public_key))
 
 
-def revoke(conn: sqlite3.Connection, mandate_id: str, *, at: int, reason: str = "") -> None:
+def revoke(conn: db.Connection, mandate_id: str, *, at: int, reason: str = "") -> None:
     conn.execute("INSERT INTO gate_revocations (mandate_id, revoked_at, reason) "
                  "VALUES (?,?,?) ON CONFLICT (mandate_id) DO UPDATE SET "
                  "revoked_at=excluded.revoked_at, reason=excluded.reason",
                  (mandate_id, at, reason))
 
 
-def is_revoked(conn: sqlite3.Connection, mandate_id: str) -> bool:
+def is_revoked(conn: db.Connection, mandate_id: str) -> bool:
     """Read at decision time, never cached. A cached revocation list is a revocation that
     does not work, which is worse than none because it is believed."""
     return conn.execute("SELECT 1 FROM gate_revocations WHERE mandate_id=?",
                         (mandate_id,)).fetchone() is not None
 
 
-def verify(conn: sqlite3.Connection, raw: bytes, signature: bytes, *, key_id: str,
+def verify(conn: db.Connection, raw: bytes, signature: bytes, *, key_id: str,
            now: int, expected_principal: str | None = None, claim_nonce: bool = False
            ) -> tuple[Envelope | None, list[Failure]]:
     """Verify a delegation envelope. Returns (envelope, []) or (None, failures).
@@ -156,7 +157,7 @@ def verify(conn: sqlite3.Connection, raw: bytes, signature: bytes, *, key_id: st
     return env, []
 
 
-def claim_nonce_for_env(conn: sqlite3.Connection, env: Envelope, now: int) -> bool:
+def claim_nonce_for_env(conn: db.Connection, env: Envelope, now: int) -> bool:
     """ON CONFLICT DO NOTHING and read rowcount -- the idiom eventlog.append already uses
     for idempotent ingestion. One established pattern, used twice, beats two inventions."""
     cur = conn.execute("INSERT INTO gate_nonces (nonce, mandate_id, claimed_at) "

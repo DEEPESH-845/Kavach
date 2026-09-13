@@ -13,15 +13,15 @@ how to do it without this codebase.
 
 from __future__ import annotations
 
-import sqlite3
 import time
 from typing import Any
 
+from .. import db
 from ..proof import claims, scan, verify_range
 from . import intents
 
 
-def pack(conn: sqlite3.Connection, intent_id: str,
+def pack(conn: db.Connection, intent_id: str,
          now: int | None = None) -> dict[str, Any] | None:
     if now is None:
         now = int(time.time())

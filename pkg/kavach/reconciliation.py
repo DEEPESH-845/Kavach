@@ -8,17 +8,18 @@ successfully processed or dropped, and settles the ledger accordingly.
 from __future__ import annotations
 
 import logging
-import sqlite3
 import time
 
 from kavach import ledger
 from kavach.razorpay.client import Razorpay
 
+from . import db
+
 logger = logging.getLogger(__name__)
 
 
 def reconcile_pending_intents(
-    conn: sqlite3.Connection,
+    conn: db.Connection,
     client: Razorpay,
     tolerance_seconds: int = 60,
     now: int | None = None

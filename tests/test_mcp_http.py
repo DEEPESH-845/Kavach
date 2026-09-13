@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 
 import pytest
-from kavach.eventlog import append
+from kavach.eventlog import append, connect
 
 T = 1_700_000_000
 SRC = Path(__file__).resolve().parents[1] / "pkg" / "kavach" / "mcp" / "server.py"
@@ -42,8 +42,9 @@ def test_toolsets_mirror_razorpays_vocabulary(srv):
 
 
 def test_dispatch_runs_the_dry_run_on_a_payment_in_the_log(srv):
+    seeded = connect(srv._DB)
     for status, at in (("authorized", T), ("captured", T + 30)):
-        append(srv._conn, source="webhook", external_id=f"pay_HTTP1:{status}",
+        append(seeded, source="webhook", external_id=f"pay_HTTP1:{status}",
                entity_type="payment", entity_id="pay_HTTP1", event_type=f"payment.{status}",
                payload={"payload": {"payment": {"entity": {
                    "id": "pay_HTTP1", "status": status, "amount": 50_000,

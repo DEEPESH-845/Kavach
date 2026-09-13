@@ -22,12 +22,12 @@ The private key is derived, never stored: a key on disk is a key that gets commi
 from __future__ import annotations
 
 import json
-import sqlite3
 from hashlib import sha256
 from typing import Any
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+from .. import db
 from ..gate import admission, envelope, mandate
 from ..intelligence.model import Model
 
@@ -40,7 +40,7 @@ def demo_principal_key() -> Ed25519PrivateKey:
     return Ed25519PrivateKey.from_private_bytes(sha256(_DEMO_SEED).digest())
 
 
-def register_demo_issuer(conn: sqlite3.Connection) -> str:
+def register_demo_issuer(conn: db.Connection) -> str:
     """Trust the demo principal's public key. Idempotent."""
     from cryptography.hazmat.primitives.serialization import (
         Encoding,
@@ -140,7 +140,7 @@ def _stages(result: admission.Admission, env_ok: bool) -> list[dict[str, Any]]:
     return out
 
 
-def admit(conn: sqlite3.Connection, *, envelope_body: dict[str, Any], cart_id: str,
+def admit(conn: db.Connection, *, envelope_body: dict[str, Any], cart_id: str,
           merchant_id: str, lines: list[dict[str, Any]], now: int,
           expected_principal: str | None = None, untrusted_context: str = "",
           model: Model | None = None, charge: bool = True,
@@ -181,7 +181,7 @@ def admit(conn: sqlite3.Connection, *, envelope_body: dict[str, Any], cart_id: s
     }
 
 
-def inspect(conn: sqlite3.Connection, *, envelope_body: dict[str, Any], now: int,
+def inspect(conn: db.Connection, *, envelope_body: dict[str, Any], now: int,
             expected_principal: str | None = None) -> dict[str, Any]:
     """Is this mandate good, and what does it permit? Does NOT spend the nonce."""
     raw, sig = sign(envelope_body)

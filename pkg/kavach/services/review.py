@@ -22,11 +22,10 @@ governor.py is explicit that no human waves those through here.
 
 from __future__ import annotations
 
-import sqlite3
 import time
 from typing import Any
 
-from .. import ledger
+from .. import db, ledger
 from ..eventlog import append
 from .decisions import APPROVED, DENIED, ESCALATED
 
@@ -42,7 +41,7 @@ class ReviewError(Exception):
         self.code, self.message = code, message
 
 
-def act(conn: sqlite3.Connection, intent_id: str, *, action: str, reviewer: str,
+def act(conn: db.Connection, intent_id: str, *, action: str, reviewer: str,
         note: str = "", now: int | None = None) -> dict[str, Any]:
     """Approve or reject one escalated intent. Idempotent on (intent, action).
 

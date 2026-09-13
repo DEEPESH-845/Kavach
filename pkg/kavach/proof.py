@@ -21,11 +21,12 @@ assume the strongest interpretation.
 from __future__ import annotations
 
 import hashlib
-import sqlite3
 from typing import Any
 
+from . import db
 
-def _expected(row: sqlite3.Row, prev_hash: str | None) -> str:
+
+def _expected(row: db.Row, prev_hash: str | None) -> str:
     """Recompute a row's hash exactly as eventlog.append computed it.
 
     Deliberately duplicated rather than shared with append(): a verifier that calls the
@@ -44,7 +45,7 @@ def _expected(row: sqlite3.Row, prev_hash: str | None) -> str:
     return h.hexdigest()
 
 
-def scan(conn: sqlite3.Connection) -> dict[str, Any]:
+def scan(conn: db.Connection) -> dict[str, Any]:
     """Walk the whole chain once. Returns the first break, if any, and the head.
 
     One pass, because every other function here needs the same walk and doing it three times
@@ -67,7 +68,7 @@ def scan(conn: sqlite3.Connection) -> dict[str, Any]:
             "detail": None, "head": prev_hash}
 
 
-def verify_event_chain(conn: sqlite3.Connection) -> tuple[bool, str]:
+def verify_event_chain(conn: db.Connection) -> tuple[bool, str]:
     """(valid, human-readable message). The shape the MCP tool surface already returns."""
     s = scan(conn)
     if not s["ok"]:
@@ -75,7 +76,7 @@ def verify_event_chain(conn: sqlite3.Connection) -> tuple[bool, str]:
     return True, f"Chain intact: {s['events']} events verified."
 
 
-def verify_range(conn: sqlite3.Connection, seqs: list[int]) -> tuple[bool, str]:
+def verify_range(conn: db.Connection, seqs: list[int]) -> tuple[bool, str]:
     """Are these specific events inside the verified prefix of the chain?
 
     A single event cannot be verified alone -- its hash covers its predecessor's -- so the
@@ -92,7 +93,7 @@ def verify_range(conn: sqlite3.Connection, seqs: list[int]) -> tuple[bool, str]:
     return False, f"the chain breaks at seq {s['broken_at']}, at or before a cited event"
 
 
-def chain(conn: sqlite3.Connection, limit: int = 50,
+def chain(conn: db.Connection, limit: int = 50,
           before: int | None = None) -> dict[str, Any]:
     """A window of the chain, newest first, each row with its own verification state."""
     status = scan(conn)
