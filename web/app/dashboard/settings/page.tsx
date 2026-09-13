@@ -24,10 +24,14 @@ const COMMANDS: [string, string][] = [
   ['make bench', 'train the duplicate-risk estimator and write evals/risk_report.json'],
   ['make gate-bench', 'train the entailment estimator and write evals/gate_report.json'],
   ['make test', 'the full Python suite'],
-  ['python apps/reconciler.py', 'settle intents that have no observed provider result'],
-  ['python apps/webhook_server.py', 'receive Razorpay webhooks with HMAC verification'],
+  ['python apps/webhook_server.py', 'receive Razorpay webhooks with HMAC verification, standalone'],
   ['python apps/mcp_server.py', 'the MCP tool surface an agent connects to'],
   ['python -m kavach keys create --name ops --scope operator', 'mint an API key; printed once'],
+  ['python -m kavach issuers add --key-id … --public-key …', 'trust a principal’s signing key'],
+  ['python -m kavach principal keygen', 'a keypair for a principal; sign mandates with `principal sign`'],
+  ['python -m kavach reconcile --once', 'settle or execute intents left APPROVED, against the provider'],
+  ['python -m kavach backup DEST', 'a consistent copy of a SQLite ledger while the API keeps serving'],
+  ['python -m kavach migrate', 'create or upgrade the schema; safe to repeat'],
 ];
 
 export default function SettingsPage() {
