@@ -48,7 +48,7 @@ export default function AccessPage() {
     if (out) keys.reload();
   }
 
-  const required = health.data?.auth.mode === 'required';
+  const required = health.data?.auth?.mode === 'required';
 
   return (
     <>

@@ -46,7 +46,7 @@ export default function SettingsPage() {
 
       <Section title="Connect" note="the key this browser sends; manage everyone's under Access">
         <div id="connect">
-          <ConnectCard required={health.data?.auth.mode === 'required'} onChange={health.reload} />
+          <ConnectCard required={health.data?.auth?.mode === 'required'} onChange={health.reload} />
         </div>
       </Section>
 
@@ -67,9 +67,9 @@ export default function SettingsPage() {
                     {h.integrity.chain_intact ? 'INTACT' : `BROKEN AT ${h.integrity.broken_at}`}
                   </Badge>],
                   ['Authentication', <span key="a" style={{ display: 'flex', gap: 9, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <Badge tone={h.auth.mode === 'required' ? 'info' : 'warn'}>{h.auth.mode === 'required' ? 'API KEYS REQUIRED' : 'OFF'}</Badge>
+                    <Badge tone={h.auth?.mode === 'required' ? 'info' : 'warn'}>{h.auth?.mode === 'required' ? 'API KEYS REQUIRED' : 'OFF'}</Badge>
                     <span style={{ color: 'var(--fog)' }}>
-                      {h.auth.mode === 'required'
+                      {h.auth?.mode === 'required'
                         ? 'every /api request carries a scoped key'
                         : 'a demo deployment (KAVACH_DEMO=1); set KAVACH_AUTH=required to insist on keys'}
                     </span>
