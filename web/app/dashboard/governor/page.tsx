@@ -16,7 +16,7 @@ import { api } from '@/lib/api';
 import { useApi } from '@/lib/useApi';
 import { count, money } from '@/lib/format';
 import {
-  Async, Badge, Card, GoLink, PageHead, Section, Skeleton, Stat, State, Td,
+  Async, Badge, Card, GoLink, KV, PageHead, Section, Skeleton, Stat, State, Td,
 } from '@/components/console/ui';
 
 const KIND_TONE: Record<string, 'info' | 'warn'> = {
@@ -65,7 +65,7 @@ export default function GovernorPage() {
               </div>
             </Section>
 
-            <Section title="Limits in force" note={p.threshold_source}>
+            <Section title="Limits in force" note={`${p.threshold_source} · from ${p.source}`}>
               <div className="grid grid--stats">
                 <Stat
                   label="Autonomous refund limit"
@@ -90,6 +90,22 @@ export default function GovernorPage() {
               </div>
             </Section>
 
+            <Section title="Gate economics" note="every rate is a stated assumption reported beside each verdict, not a measurement">
+              <Card>
+                <KV rows={[
+                  ['Loss on a bad cart', `${Math.round(p.gate_costs.fraud_loss_share * 100)}% of its value`],
+                  ['Margin forgone on a refused good cart', `${Math.round(p.gate_costs.margin_share * 100)}% of its value`],
+                  ['Cost of asking the principal again', money(p.gate_costs.step_up_minor, { round: true })],
+                  ['Cost of a human review', money(p.gate_costs.hold_minor, { round: true })],
+                  ['Bad carts a re-consent stops', `${Math.round(p.gate_costs.step_up_catch_rate * 100)}%`],
+                  ['Bad carts a reviewer stops', `${Math.round(p.gate_costs.hold_catch_rate * 100)}%`],
+                  ['Agent tiers', Object.keys(p.agent_tiers).length
+                    ? Object.entries(p.agent_tiers).map(([a, t]) => `${a} → ${t}`).join(' · ')
+                    : 'none listed — every agent may move money, subject to the ladder above'],
+                ]} />
+              </Card>
+            </Section>
+
             <Section title="Policy mutability">
               <Card>
                 <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
@@ -101,8 +117,9 @@ export default function GovernorPage() {
                     <p style={{ margin: 0, fontSize: 13 }}>{p.mutability_note}</p>
                     <p style={{ margin: '8px 0 0', fontSize: 12.5, color: 'var(--fog2)' }}>
                       There is no API that edits these values, so this screen has no controls
-                      to disable. Changing a limit is a code change with a review and a
-                      deploy, which is the audit trail a financial control needs.
+                      to disable. They come from the file <code className="mono">KAVACH_POLICY</code> names
+                      (or the compiled defaults); changing one is an edit with a diff, a review
+                      and a deploy, which is the audit trail a financial control needs.
                     </p>
                   </div>
                 </div>

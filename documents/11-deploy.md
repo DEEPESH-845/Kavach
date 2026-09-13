@@ -33,6 +33,7 @@ beating its baselines fails the build.
 | `KAVACH_DEMO` | no | `0` (image) | `1` mounts the demo surfaces (storefront, duel, lab, tamper, console MCP, `POST /api/demo/reset`) and turns API keys off by default. compose/Render/Fly/Railway set it for the demo. |
 | `KAVACH_AUTH` | no | `required`, or `off` when `KAVACH_DEMO=1` | Whether `/api` demands `Authorization: Bearer kv_…`. See *Authentication* below. |
 | `KAVACH_METRICS_KEY` | no | unset | Locks `/api/metrics` behind a separate scrape secret (bearer or `?key=`). |
+| `KAVACH_POLICY` | no | unset (compiled defaults) | Path to a TOML policy file: caps, thresholds, Gate economics, per-agent tiers, rate limit, CORS. See *Policy file* below. |
 | `KAVACH_SEED_ON_START` | no | unset | `1` re-seeds on every start. |
 | `KAVACH_KILL_SWITCH` | no | unset | Suspends autonomous money movement (every refund intent goes to a human). |
 | `KAVACH_CORS_ORIGINS` | no | unset | Comma-separated extra browser origins allowed to call the API, e.g. `https://kavach-three-rust.vercel.app` when the UI is hosted on Vercel with `NEXT_PUBLIC_KAVACH_API` pointing here. Same-origin deploys need none. |
@@ -197,6 +198,63 @@ The controls that are NOT relaxed for the demo: webhook HMAC is fail-closed, the
 signature is verified with the secret server-side, policy limits are compiled in with no
 endpoint that edits them, a step-up token is 192 random bits with a ten-minute life, and
 the tamper demonstration writes only to an in-memory copy.
+
+## Policy file
+
+`KAVACH_POLICY=/etc/kavach/kavach.toml` points at a copy of `kavach.example.toml`. Every
+key is optional and defaults to the compiled-in value; an unknown key or a wrong type
+refuses to start and names the field. The file is re-read when its mtime changes (one
+`stat` per request); a file that becomes invalid while running keeps the last good
+settings and logs the error rather than widening a limit or taking the API down.
+
+| Section | Keys | Effect |
+|---|---|---|
+| `[limits]` | `max_auto_refund_minor`, `session_cap_minor`, `daily_cap_minor`, `risk_threshold`, `kill_switch` | The governor's caps. `risk_threshold` overrides the trained model's frozen threshold; omit it to use the model's. `KAVACH_KILL_SWITCH=1` in the environment always wins over `kill_switch`. |
+| `[gate]` | `fraud_loss_share`, `margin_share`, `step_up_minor`, `hold_minor`, `step_up_catch_rate`, `hold_catch_rate` | The inbound gate's expected-loss economics. Every rate is a stated assumption reported beside each verdict. |
+| `[agents]` | `"<agent_id>" = "readonly" \| "agent"` | Per-agent tier. A `readonly` agent is refused money movement by the governor's permission tier, whatever tools it holds. |
+| `[server]` | `rate_limit_per_minute`, `cors_origins` | The API's own limits. `KAVACH_RATE_LIMIT` and `KAVACH_CORS_ORIGINS` in the environment add to these. |
+
+There is no API that edits the file. `GET /api/policy` reports its path and every value in
+force; the console's Governor page shows the same.
+
+## Real mandates: a principal signs, Kavach verifies
+
+Outside a demo Kavach signs nothing. A principal (the human delegating to an agent) holds an
+Ed25519 key; the merchant registers its public half; the agent presents mandates the
+principal signed. Four steps:
+
+```bash
+# 1. On the principal's device: a keypair. Keep private_key_b64 there.
+python -m kavach principal keygen
+#    {"key_id": "prin_…", "public_key_b64": "…", "private_key_b64": "…"}
+
+# 2. On the merchant's side: trust the public half (either form).
+python -m kavach issuers add --key-id prin_… --public-key <public_key_b64>
+curl -X POST https://<host>/api/issuers -H "Authorization: Bearer kv_operator_…" \
+     -H "Content-Type: application/json" \
+     -d '{"key_id": "prin_…", "public_key_b64": "…"}'
+
+# 3. On the principal's device: sign a mandate (the fields MandateRequest lists).
+python -m kavach principal sign --private-key <private_key_b64> --key-id prin_… mandate.json
+#    {"raw_b64": "…", "signature_b64": "…", "key_id": "prin_…"}
+
+# 4. The agent presents it at admission, unchanged.
+curl -X POST https://<host>/api/gate/admit -H "Authorization: Bearer kv_agent_…" \
+     -H "Content-Type: application/json" \
+     -d '{"envelope": {"raw_b64": "…", "signature_b64": "…", "key_id": "prin_…"},
+          "cart_id": "cart_1", "merchant_id": "bazaar", "lines": [...], "commit": true}'
+```
+
+The signature is verified over the exact bytes in `raw_b64`; tampering with a single byte
+is `BAD_SIGNATURE`, an unregistered `key_id` is `UNKNOWN_ISSUER`, and a spent nonce is
+`REPLAYED_NONCE` — including on `/api/gate/inspect`, which never spends one. Step-up stores
+the signed bytes and re-verifies them at the moment of approval. `DELETE /api/issuers/{id}`
+stops trusting a key; mandates it signed fail `UNKNOWN_ISSUER` from then on, and nothing
+already admitted is rewritten.
+
+The `mandate` body form — where the server signs as a demo principal — is refused with
+`demo_signing_disabled` unless `KAVACH_DEMO=1`, and the demo issuer is never registered on a
+production ledger.
 
 ## Verifying a deployment
 

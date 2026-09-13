@@ -562,10 +562,12 @@ credentials, the models and whether the hash chain is intact.
 | `KAVACH_DB` | `kavach.db` | Where the event log lives: a SQLite path or a `postgresql://` URL |
 | `KAVACH_DEMO` | off | `1` mounts the storefront, lab and reset surfaces and turns keys off. The image default is a production deployment |
 | `KAVACH_AUTH` | `required` unless demo | Every `/api` route needs `Authorization: Bearer kv_…` with a `readonly`, `agent` or `operator` scope. `python -m kavach keys create` mints one |
+| `KAVACH_POLICY` | unset | A TOML file of caps, thresholds, Gate economics and per-agent tiers (`kavach.example.toml`). Re-read when it changes; no API edits it |
 | `KAVACH_KILL_SWITCH` | off | **Suspends autonomous money movement.** Every refund intent is routed to a human; invariants still deny outright |
 
-Caps and thresholds compile into `governor.Policy`, and there is deliberately **no API that
-edits them** — a limit an operator can raise from the screen it is failing on is not a limit.
+Caps and thresholds come from the policy file (or the compiled defaults), and there is
+deliberately **no API that edits them** — a limit an operator can raise from the screen it
+is failing on is not a limit. The file's diff and deploy are the audit trail.
 
 ### Capacity, measured rather than asserted
 

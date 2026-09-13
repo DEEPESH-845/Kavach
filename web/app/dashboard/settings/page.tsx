@@ -118,9 +118,11 @@ export default function SettingsPage() {
               <span style={{ color: 'var(--bone)', fontSize: 13.5 }}>Policy limits</span>
             </div>
             <p style={{ margin: 0, fontSize: 13 }}>
-              Caps and thresholds are compiled into <code className="mono">governor.Policy</code>.
+              Caps, thresholds, the gate’s economics and per-agent tiers come from the TOML
+              file <code className="mono">KAVACH_POLICY</code> names (see{' '}
+              <code className="mono">kavach.example.toml</code>), or the compiled defaults.
               A limit an operator can raise from the screen where it is failing them is not a
-              limit — changing one is a code change with a review and a deploy, which is the
+              limit — changing one is an edit with a diff, a review and a deploy, which is the
               audit trail a financial control needs. The backend has no endpoint that would
               accept the edit.
             </p>
