@@ -21,6 +21,7 @@ assume the strongest interpretation.
 from __future__ import annotations
 
 import hashlib
+import threading
 from typing import Any
 
 from . import db
@@ -66,6 +67,52 @@ def scan(conn: db.Connection) -> dict[str, Any]:
         checked += 1
     return {"ok": True, "events": len(rows), "checked": checked, "broken_at": None,
             "detail": None, "head": prev_hash}
+
+
+#: Per-process verified head: (seq, hash). A health check every 30 s must not walk a
+#: million rows; it walks what arrived since the last check.
+_head: tuple[int, str | None] | None = None
+_head_lock = threading.Lock()
+
+
+def _reset_head() -> None:
+    global _head
+    with _head_lock:
+        _head = None
+
+
+def status(conn: db.Connection) -> dict[str, Any]:
+    """Chain status for health and metrics: verifies rows appended since the last head this
+    process verified, then advances the head.
+
+    It proves that new rows chain to the verified head -- both that each reproduces its hash
+    and that it names the head as its predecessor. It does NOT re-prove rows before that
+    head; `scan()` does, and /api/proof/verify calls it. Reported as `incremental: True`
+    so a reader knows which claim they are holding. Same keys as scan().
+    """
+    global _head
+    with _head_lock:
+        since, prev_hash = _head if _head else (0, None)
+        total = conn.execute(
+            "SELECT COUNT(*) c, COALESCE(MAX(seq), 0) m FROM events").fetchone()
+        if int(total["m"]) < since:  # the log was reset underneath this process
+            since, prev_hash = 0, None
+        rows = conn.execute("SELECT * FROM events WHERE seq > ? ORDER BY seq",
+                            (since,)).fetchall()
+        checked = since
+        for r in rows:
+            expected = _expected(r, prev_hash)
+            if expected != r["event_hash"] or r["previous_event_hash"] != prev_hash:
+                _head = (since, prev_hash)
+                return {"ok": False, "events": int(total["c"]), "checked": checked,
+                        "broken_at": int(r["seq"]),
+                        "detail": (f"event {r['seq']} does not chain to the verified head: "
+                                   f"expected {expected}, stored {r['event_hash']}"),
+                        "head": prev_hash, "incremental": True}
+            prev_hash, checked = r["event_hash"], checked + 1
+        _head = (int(rows[-1]["seq"]) if rows else since, prev_hash)
+        return {"ok": True, "events": int(total["c"]), "checked": checked,
+                "broken_at": None, "detail": None, "head": prev_hash, "incremental": True}
 
 
 def verify_event_chain(conn: db.Connection) -> tuple[bool, str]:

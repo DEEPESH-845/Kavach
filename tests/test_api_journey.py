@@ -214,3 +214,12 @@ def test_cors_origins_from_env_are_allowed_and_tidied(tmp_path_factory):
                 assert r.headers.get("access-control-allow-origin") == origin
             r = c.get("/api/health", headers={"Origin": "https://evil.example"})
             assert "access-control-allow-origin" not in r.headers
+
+
+def test_cors_preflight_allows_authorization(client):
+    r = client.options("/api/overview", headers={
+        "Origin": "http://localhost:3000",
+        "Access-Control-Request-Method": "GET",
+        "Access-Control-Request-Headers": "authorization"})
+    assert r.status_code == 200
+    assert "authorization" in r.headers["access-control-allow-headers"].lower()
