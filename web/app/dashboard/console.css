@@ -740,6 +740,8 @@ body:has(.console) { overflow: hidden; }
 .console .state__actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; justify-content: center; }
 .console .state--error .state__icon { color: var(--oxide); }
 .console .state--error .state__title { color: var(--oxide); }
+.console .state--quiet .state__icon { color: var(--amber); }
+.console .state--quiet .state__title { color: var(--bone); }
 
 .console .skeleton {
   background: linear-gradient(90deg, var(--slab) 25%, var(--raise) 50%, var(--slab) 75%);
@@ -827,3 +829,23 @@ body:has(.console) { overflow: hidden; }
    read many times a day. The global reduced-motion rule above already neutralises it. */
 .console .route { animation: routeIn 170ms var(--e-reveal) both; }
 @keyframes routeIn { from { opacity: 0; transform: translateY(4px); } }
+
+/* ── key banner: a production deployment with no key in this browser ─────────── */
+.console .keybanner {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin: 0 0 18px; padding: 10px 14px; border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--amber) 45%, transparent);
+  background: color-mix(in srgb, var(--amber) 9%, transparent);
+  color: var(--bone); font-size: 13px;
+}
+.console .keybanner .btn { margin-left: auto; }
+
+/* ── form rows: fields side by side with the action at the end; stacked on phones ── */
+.console .formrow { display: grid; gap: 12px; align-items: end; }
+.console .formrow--2 { grid-template-columns: minmax(0, 1fr) auto; }
+.console .formrow--3 { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto; }
+.console .formrow__actions { display: flex; gap: 8px; flex-wrap: wrap; }
+@media (max-width: 640px) {
+  .console .formrow--2, .console .formrow--3 { grid-template-columns: 1fr; }
+  .console .formrow .btn { width: 100%; justify-content: center; }
+}

@@ -15,6 +15,7 @@ import { count } from '@/lib/format';
 import {
   Async, Badge, Card, KV, PageHead, Section, Skeleton,
 } from '@/components/console/ui';
+import { ConnectCard } from '@/components/console/Connect';
 
 const COMMANDS: [string, string][] = [
   ['make run', 'seed the ledger, build the UI, and serve everything on one port'],
@@ -26,6 +27,7 @@ const COMMANDS: [string, string][] = [
   ['python apps/reconciler.py', 'settle intents that have no observed provider result'],
   ['python apps/webhook_server.py', 'receive Razorpay webhooks with HMAC verification'],
   ['python apps/mcp_server.py', 'the MCP tool surface an agent connects to'],
+  ['python -m kavach keys create --name ops --scope operator', 'mint an API key; printed once'],
 ];
 
 export default function SettingsPage() {
@@ -37,6 +39,12 @@ export default function SettingsPage() {
         title="Settings"
         sub="What this installation is running, and how to change it. Nothing here can be edited from the browser — see below for why that is deliberate."
       />
+
+      <Section title="Connect" note="the key this browser sends; manage everyone's under Access">
+        <div id="connect">
+          <ConnectCard required={health.data?.auth.mode === 'required'} onChange={health.reload} />
+        </div>
+      </Section>
 
       <Async state={health} skeleton={<Skeleton rows={5} />}>
         {(h) => (
@@ -54,6 +62,15 @@ export default function SettingsPage() {
                   ['Chain', <Badge tone={h.integrity.chain_intact ? 'info' : 'deny'} key="c">
                     {h.integrity.chain_intact ? 'INTACT' : `BROKEN AT ${h.integrity.broken_at}`}
                   </Badge>],
+                  ['Authentication', <span key="a" style={{ display: 'flex', gap: 9, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <Badge tone={h.auth.mode === 'required' ? 'info' : 'warn'}>{h.auth.mode === 'required' ? 'API KEYS REQUIRED' : 'OFF'}</Badge>
+                    <span style={{ color: 'var(--fog)' }}>
+                      {h.auth.mode === 'required'
+                        ? 'every /api request carries a scoped key'
+                        : 'a demo deployment (KAVACH_DEMO=1); set KAVACH_AUTH=required to insist on keys'}
+                    </span>
+                  </span>],
+                  ['Demo surfaces', h.demo.reset_enabled ? 'mounted — storefront, lab, reset' : 'absent — a production deployment'],
                   ['Built UI served by the API', h.ui ? 'yes' : 'no — running against the dev server'],
                 ]} />
               </Card>

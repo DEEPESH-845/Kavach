@@ -19,10 +19,10 @@ import { usePathname } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import {
   Activity, BadgeCheck, Boxes, Bug, FileSearch, FlaskConical, Gauge, KeyRound,
-  Landmark, Layers, Menu, PanelsTopLeft, RefreshCw, Settings,
+  Landmark, Layers, Lock, Menu, PanelsTopLeft, RefreshCw, Settings,
   ShieldCheck, TerminalSquare, Undo2, UserCheck, Waypoints, X,
 } from 'lucide-react';
-import { api } from '@/lib/api';
+import { api, getApiKey } from '@/lib/api';
 import { useApi, usePoll } from '@/lib/useApi';
 import './console.css';
 
@@ -73,6 +73,12 @@ const NAV: { label: string; ask: string; items: Item[] }[] = [
     items: [
       { href: '/dashboard/adversary', label: 'Adversary Lab', icon: <Bug size={15} /> },
       { href: '/dashboard/evaluations', label: 'Evaluations', icon: <FlaskConical size={15} /> },
+    ],
+  },
+  {
+    label: 'Operate', ask: 'Who may call this, and what is it running?',
+    items: [
+      { href: '/dashboard/access', label: 'Access', icon: <Lock size={15} /> },
       { href: '/dashboard/settings', label: 'Settings', icon: <Settings size={15} /> },
     ],
   },
@@ -222,6 +228,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
 
           <main className="content">
             <div className="content__inner">
+              <KeyBanner health={health} pathname={pathname} />
               {/* useSearchParams client-side-renders up to the nearest boundary; every
                   detail view reads ?id= from it, so the boundary lives here once. */}
               <Suspense fallback={<div className="skeleton skeleton--stat" />}>
@@ -231,6 +238,24 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
           </main>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* A production deployment with no key in this browser: say so once, above every screen,
+   rather than letting each screen discover it with its own 401. */
+function KeyBanner({ health, pathname }: {
+  health: ReturnType<typeof useApi<Awaited<ReturnType<typeof api.health>>>>; pathname: string;
+}) {
+  const [hasKey, setHasKey] = useState(true);
+  useEffect(() => { setHasKey(!!getApiKey()); }, [pathname, health.data]);
+  if (!health.data || health.data.auth?.mode !== 'required' || hasKey) return null;
+  if (pathname === '/dashboard/access' || pathname === '/dashboard/settings') return null;
+  return (
+    <div className="keybanner" role="status">
+      <Lock size={13} aria-hidden />
+      <span>This deployment requires an API key. Nothing below will load until one is connected.</span>
+      <Link href="/dashboard/access" className="btn btn--primary btn--sm">Connect a key</Link>
     </div>
   );
 }
