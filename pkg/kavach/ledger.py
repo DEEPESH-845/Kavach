@@ -150,8 +150,11 @@ def open_against_payment(conn: db.Connection, payment_id: str,
 def exposure(conn: db.Connection, payment_id: str, now: int) -> int:
     """Minor units already committed against this payment and not yet closed out.
 
-    Counts open refunds PLUS intents that were executed but whose result we have no events
-    for yet -- the window where a naive agent double-refunds.
+    Counts open refunds PLUS intents whose money is spoken for but not yet visible on the
+    rail: EXECUTED ones whose result we hold no events for, and APPROVED ones -- reserved
+    and awaiting the provider, or released by a reviewer and awaiting the reconciler. A
+    reservation that does not count is not a reservation: two intents evaluated in that
+    window would both pass the captured-amount invariant.
     """
     total = sum(f.amount_minor for f in open_against_payment(conn, payment_id, now))
     # Every refund we hold ANY event for -- open or closed. If an intent produced one of
@@ -160,6 +163,6 @@ def exposure(conn: db.Connection, payment_id: str, now: int) -> int:
         "SELECT DISTINCT entity_id FROM events WHERE entity_type='refund' "
         "AND parent_entity_id=?", (payment_id,)).fetchall()}
     for i in prior_intents(conn, "payment", payment_id):
-        if i.status == "EXECUTED" and i.result_id not in observed:
+        if i.status == "APPROVED" or (i.status == "EXECUTED" and i.result_id not in observed):
             total += i.amount_minor
     return total

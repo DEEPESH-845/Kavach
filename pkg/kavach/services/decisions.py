@@ -152,6 +152,9 @@ def evaluate_and_record(conn: db.Connection, intent: ledger.Intent, *, now: int,
     (governor.execute_provider) so that a decision can be recorded even when the provider
     call cannot be made -- which is the state the reconciler exists to resolve.
     """
-    decision, truth = evaluate(conn, intent, now=now, policy=policy, model=model)
-    out = record(conn, intent, decision, now=now)
+    # Under the write lock from the first read: a concurrent commit on the same payment
+    # waits here and then sees this reservation in its exposure.
+    with conn.transaction():
+        decision, truth = evaluate(conn, intent, now=now, policy=policy, model=model)
+        out = record(conn, intent, decision, now=now)
     return {**out, "truth": truth}
