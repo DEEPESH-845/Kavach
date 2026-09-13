@@ -28,10 +28,10 @@ from __future__ import annotations
 
 import json
 import os
-import sqlite3
 import time
 from typing import Any
 
+from .. import db
 from ..eventlog import Event, append, for_entity
 from ..razorpay.client import (
     CassetteMismatch,
@@ -64,7 +64,7 @@ class CheckoutError(Exception):
         self.code, self.message, self.status = code, message, status
 
 
-def init(conn: sqlite3.Connection) -> None:
+def init(conn: db.Connection) -> None:
     conn.executescript(SCHEMA)
 
 
@@ -103,7 +103,7 @@ def _provider(e: Exception) -> CheckoutError:
     return CheckoutError("provider_error", "the provider call failed", 502)
 
 
-def admitted(conn: sqlite3.Connection, cart_id: str) -> dict[str, Any] | None:
+def admitted(conn: db.Connection, cart_id: str) -> dict[str, Any] | None:
     """The gate's own record of admitting this cart, or None.
 
     THE AMOUNT COMES FROM HERE AND NOWHERE ELSE. An earlier version verified that a cart
@@ -122,7 +122,7 @@ def admitted(conn: sqlite3.Connection, cart_id: str) -> dict[str, Any] | None:
             "lines": payload.get("lines", [])}
 
 
-def start(conn: sqlite3.Connection, *, admission: dict[str, Any], mandate_id: str, now: int,
+def start(conn: db.Connection, *, admission: dict[str, Any], mandate_id: str, now: int,
           client: Razorpay | None = None) -> dict[str, Any]:
     """Create the order for an ADMITTED cart. Returns what Standard Checkout needs and
     nothing it must not have: the key ID is public by design; the secret never leaves the
@@ -142,8 +142,8 @@ def start(conn: sqlite3.Connection, *, admission: dict[str, Any], mandate_id: st
     except Exception as e:  # noqa: BLE001 - classified below
         raise _provider(e) from None
     order_id = order["id"]
-    conn.execute("INSERT OR IGNORE INTO checkouts (order_id, cart_id, mandate_id, agent_id, "
-                 "amount_minor, created_at) VALUES (?,?,?,?,?,?)",
+    conn.execute("INSERT INTO checkouts (order_id, cart_id, mandate_id, agent_id, "
+                 "amount_minor, created_at) VALUES (?,?,?,?,?,?) ON CONFLICT DO NOTHING",
                  (order_id, cart_id, mandate_id, agent_id, total, now))
     seq, _ = append(conn, source="api_response", external_id=f"order:{order_id}:created",
                     entity_type="checkout", entity_id=order_id,
@@ -162,7 +162,7 @@ def start(conn: sqlite3.Connection, *, admission: dict[str, Any], mandate_id: st
     }
 
 
-def link(conn: sqlite3.Connection, *, order_id: str, now: int,
+def link(conn: db.Connection, *, order_id: str, now: int,
          client: Razorpay | None = None) -> dict[str, Any]:
     """A Payment Link for the same cart, for paying on a phone. Created on demand."""
     row = conn.execute("SELECT * FROM checkouts WHERE order_id=?", (order_id,)).fetchone()
@@ -189,7 +189,7 @@ def link(conn: sqlite3.Connection, *, order_id: str, now: int,
     return {"link_id": pl["id"], "short_url": pl.get("short_url"), "reused": False}
 
 
-def _ingest_payment(conn: sqlite3.Connection, entity: dict[str, Any], now: int) -> int:
+def _ingest_payment(conn: db.Connection, entity: dict[str, Any], now: int) -> int:
     """The payment entity as an UNSIGNED observation. Same shape mcp/server._ingest writes."""
     seq, _ = append(conn, source="api_response",
                     external_id=f"api_response:{entity['id']}:{entity.get('status')}",
@@ -200,7 +200,7 @@ def _ingest_payment(conn: sqlite3.Connection, entity: dict[str, Any], now: int) 
     return seq
 
 
-def confirm(conn: sqlite3.Connection, *, order_id: str, payment_id: str, signature: str,
+def confirm(conn: db.Connection, *, order_id: str, payment_id: str, signature: str,
             now: int, client: Razorpay | None = None,
             secret: str | None = None) -> dict[str, Any]:
     """Verify the Checkout handler signature; only then fetch and ingest the payment."""
@@ -261,7 +261,7 @@ def preview_verified(events: list[Event], now: int) -> dict[str, Any] | None:
                     "signature-verified webhook; it is not evidence and was not recorded"}
 
 
-def status(conn: sqlite3.Connection, *, order_id: str, now: int,
+def status(conn: db.Connection, *, order_id: str, now: int,
            client: Razorpay | None = None, poll: bool = True) -> dict[str, Any]:
     """The financial fact for this checkout's payment, its evidence, and how it was heard."""
     row = conn.execute("SELECT * FROM checkouts WHERE order_id=?", (order_id,)).fetchone()
@@ -318,7 +318,7 @@ def status(conn: sqlite3.Connection, *, order_id: str, now: int,
     return out
 
 
-def latest_real_payment(conn: sqlite3.Connection,
+def latest_real_payment(conn: db.Connection,
                         now: int | None = None) -> dict[str, Any] | None:
     """The most recent payment that came from an actual checkout, for the MCP console to
     refund. None when the ledger holds only seeded payments."""

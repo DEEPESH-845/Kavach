@@ -22,12 +22,12 @@ The private key is derived, never stored: a key on disk is a key that gets commi
 from __future__ import annotations
 
 import json
-import sqlite3
 from hashlib import sha256
 from typing import Any
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+from .. import config, db, observability
 from ..gate import admission, envelope, mandate
 from ..intelligence.model import Model
 
@@ -40,8 +40,17 @@ def demo_principal_key() -> Ed25519PrivateKey:
     return Ed25519PrivateKey.from_private_bytes(sha256(_DEMO_SEED).digest())
 
 
-def register_demo_issuer(conn: sqlite3.Connection) -> str:
-    """Trust the demo principal's public key. Idempotent."""
+def register_demo_issuer(conn: db.Connection, *, force: bool = False) -> str | None:
+    """Trust the demo principal's public key. Idempotent.
+
+    Only under KAVACH_DEMO=1 (or `force`, which the sandboxes and the seed use): the key
+    is derived from a seed anyone can read, so a production ledger that trusted it would
+    admit any mandate anyone cared to sign. Outside a demo it is simply never registered,
+    and the only way in is a key a principal registered through /api/issuers.
+    """
+    from . import demo
+    if not force and not demo.enabled():
+        return None
     from cryptography.hazmat.primitives.serialization import (
         Encoding,
         PublicFormat,
@@ -49,6 +58,9 @@ def register_demo_issuer(conn: sqlite3.Connection) -> str:
     pub = demo_principal_key().public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
     envelope.register_issuer(conn, DEMO_KEY_ID, pub)
     return DEMO_KEY_ID
+
+
+Signed = tuple[bytes, bytes, str]   # (raw, signature, key_id) as the principal produced them
 
 
 def sign(envelope_body: dict[str, Any]) -> tuple[bytes, bytes]:
@@ -140,28 +152,42 @@ def _stages(result: admission.Admission, env_ok: bool) -> list[dict[str, Any]]:
     return out
 
 
-def admit(conn: sqlite3.Connection, *, envelope_body: dict[str, Any], cart_id: str,
+def admit(conn: db.Connection, *, envelope_body: dict[str, Any] | None = None,
+          signed: Signed | None = None, cart_id: str,
           merchant_id: str, lines: list[dict[str, Any]], now: int,
           expected_principal: str | None = None, untrusted_context: str = "",
           model: Model | None = None, charge: bool = True,
           tamper: bool = False) -> dict[str, Any]:
-    """Sign this envelope as the demo principal, then run real admission against the cart.
+    """Run real admission against the cart.
+
+    Two ways in. `signed` is the production path: the bytes and signature exactly as the
+    principal produced them, verified against a key registered through /api/issuers.
+    `envelope_body` is the demo path: the server signs it as the demo principal.
 
     `tamper=True` signs the envelope and then mutates it, so the bytes on the wire no longer
     match the signature. That is how the forged-mandate scenario is genuinely forged rather
     than asserted: the same verification path that admits a good envelope refuses this one.
     """
-    raw, sig = sign(envelope_body)
-    if tamper:
-        mutated = dict(envelope_body)
-        mutated["per_txn_cap_minor"] = int(mutated.get("per_txn_cap_minor", 0)) * 100
-        raw = json.dumps(mutated, sort_keys=True, separators=(",", ":")).encode()
+    if signed is not None:
+        raw, sig, key_id = signed
+    else:
+        if envelope_body is None:
+            raise ValueError("admit needs either a signed envelope or a demo mandate body")
+        raw, sig = sign(envelope_body)
+        key_id = DEMO_KEY_ID
+        if tamper:
+            mutated = dict(envelope_body)
+            mutated["per_txn_cap_minor"] = int(mutated.get("per_txn_cap_minor", 0)) * 100
+            raw = json.dumps(mutated, sort_keys=True, separators=(",", ":")).encode()
 
     cart = build_cart(cart_id, merchant_id, lines)
     run = admission.admit if charge else admission.decide
-    result = run(conn, raw, sig, cart, key_id=DEMO_KEY_ID, now=now,
+    result = run(conn, raw, sig, cart, key_id=key_id, now=now,
                  expected_principal=expected_principal or None,
-                 untrusted_context=untrusted_context, model=model)
+                 untrusted_context=untrusted_context, model=model,
+                 costs=config.current().costs)
+    if charge:
+        observability.admissions.labels(verdict=result.verdict.value).inc()
 
     return {
         **result.to_dict(),
@@ -175,17 +201,30 @@ def admit(conn: sqlite3.Connection, *, envelope_body: dict[str, Any], cart_id: s
         "stages": _stages(result, result.envelope is not None),
         "charged_to_mandate": bool(charge and result.verdict is admission.Verdict.ALLOW),
         "entailment_model": model is not None,
-        "issuer": {"key_id": DEMO_KEY_ID, "simulated": True,
-                   "note": "the principal's signing key is derived locally for this "
-                           "environment; the signature check itself is real"},
+        "issuer": _issuer(key_id),
     }
 
 
-def inspect(conn: sqlite3.Connection, *, envelope_body: dict[str, Any], now: int,
+def _issuer(key_id: str) -> dict[str, Any]:
+    if key_id == DEMO_KEY_ID:
+        return {"key_id": key_id, "simulated": True,
+                "note": "the principal's signing key is derived locally for this "
+                        "environment; the signature check itself is real"}
+    return {"key_id": key_id, "simulated": False}
+
+
+def inspect(conn: db.Connection, *, envelope_body: dict[str, Any] | None = None,
+            signed: Signed | None = None, now: int,
             expected_principal: str | None = None) -> dict[str, Any]:
     """Is this mandate good, and what does it permit? Does NOT spend the nonce."""
-    raw, sig = sign(envelope_body)
-    env, failures = envelope.verify(conn, raw, sig, key_id=DEMO_KEY_ID, now=now,
+    if signed is not None:
+        raw, sig, key_id = signed
+    else:
+        if envelope_body is None:
+            raise ValueError("inspect needs either a signed envelope or a demo mandate body")
+        raw, sig = sign(envelope_body)
+        key_id = DEMO_KEY_ID
+    env, failures = envelope.verify(conn, raw, sig, key_id=key_id, now=now,
                                     expected_principal=expected_principal or None,
                                     claim_nonce=False)
     if env is None:
@@ -210,5 +249,5 @@ def inspect(conn: sqlite3.Connection, *, envelope_body: dict[str, Any], now: int
                         "total_minor": e.payload["total_minor"],
                         "event_hash": e.event_hash}
                        for e in mandate.prior_admissions(conn, env.mandate_id)],
-        "issuer": {"key_id": DEMO_KEY_ID, "simulated": True},
+        "issuer": {"key_id": key_id, "simulated": key_id == DEMO_KEY_ID},
     }

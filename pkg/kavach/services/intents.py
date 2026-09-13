@@ -11,11 +11,10 @@ than showing neither.
 from __future__ import annotations
 
 import json
-import sqlite3
 import time
 from typing import Any
 
-from .. import ledger
+from .. import db, ledger
 from ..eventlog import Event, by_seq, for_entity
 from ..proof import verify_range
 from ..truth import Confidence
@@ -36,7 +35,7 @@ def _decision(raw: str | None) -> dict[str, Any]:
     return out if isinstance(out, dict) else {}
 
 
-def _row(r: sqlite3.Row) -> dict[str, Any]:
+def _row(r: db.Row) -> dict[str, Any]:
     return {**{k: r[k] for k in _FIELDS}, "decision": _decision(r["decision"])}
 
 
@@ -50,7 +49,7 @@ def _event(e: Event) -> dict[str, Any]:
             "payload": e.payload}
 
 
-def listing(conn: sqlite3.Connection, *, status: str | None = None,
+def listing(conn: db.Connection, *, status: str | None = None,
             agent_id: str | None = None, target_id: str | None = None,
             limit: int = 50, offset: int = 0) -> dict[str, Any]:
     where, args = [], []
@@ -73,7 +72,7 @@ def listing(conn: sqlite3.Connection, *, status: str | None = None,
             "limit": limit, "offset": offset}
 
 
-def review_queue(conn: sqlite3.Connection) -> dict[str, Any]:
+def review_queue(conn: db.Connection) -> dict[str, Any]:
     q = ",".join("?" * len(REVIEW_STATUSES))
     rows = conn.execute(
         f"SELECT * FROM intents WHERE status IN ({q}) ORDER BY created_at DESC",
@@ -81,7 +80,7 @@ def review_queue(conn: sqlite3.Connection) -> dict[str, Any]:
     return {"items": [_row(r) for r in rows], "total": len(rows)}
 
 
-def unresolved(conn: sqlite3.Connection) -> dict[str, Any]:
+def unresolved(conn: db.Connection) -> dict[str, Any]:
     """Intents we committed to and hold no provider result for. The reconciler's backlog."""
     q = ",".join("?" * len(UNRESOLVED_STATUSES))
     rows = conn.execute(
@@ -90,12 +89,12 @@ def unresolved(conn: sqlite3.Connection) -> dict[str, Any]:
     return {"items": [_row(r) for r in rows], "total": len(rows)}
 
 
-def get(conn: sqlite3.Connection, intent_id: str) -> dict[str, Any] | None:
+def get(conn: db.Connection, intent_id: str) -> dict[str, Any] | None:
     r = conn.execute("SELECT * FROM intents WHERE intent_id = ?", (intent_id,)).fetchone()
     return _row(r) if r else None
 
 
-def detail(conn: sqlite3.Connection, intent_id: str,
+def detail(conn: db.Connection, intent_id: str,
            now: int | None = None) -> dict[str, Any] | None:
     """Everything about one decision, in the order the decision was made."""
     intent = get(conn, intent_id)
@@ -167,7 +166,7 @@ def detail(conn: sqlite3.Connection, intent_id: str,
     }
 
 
-def duplicate_candidate(conn: sqlite3.Connection,
+def duplicate_candidate(conn: db.Connection,
                         now: int | None = None) -> dict[str, Any] | None:
     """A payment against which a duplicate refund is genuinely possible right now.
 
@@ -231,14 +230,14 @@ def _better(a: dict[str, Any], b: dict[str, Any]) -> bool:
     return a["intent_age_seconds"] > b["intent_age_seconds"]
 
 
-def _parent_of(conn: sqlite3.Connection, refund_id: str) -> str | None:
+def _parent_of(conn: db.Connection, refund_id: str) -> str | None:
     r = conn.execute("SELECT parent_entity_id FROM events WHERE entity_type='refund' AND "
                      "entity_id=? AND parent_entity_id IS NOT NULL LIMIT 1",
                      (refund_id,)).fetchone()
     return r["parent_entity_id"] if r else None
 
 
-def agents(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+def agents(conn: db.Connection) -> list[dict[str, Any]]:
     rows = conn.execute(
         "SELECT agent_id,"
         "       COUNT(*) AS intents,"
@@ -265,7 +264,7 @@ def agents(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     return out
 
 
-def agent_detail(conn: sqlite3.Connection, agent_id: str) -> dict[str, Any] | None:
+def agent_detail(conn: db.Connection, agent_id: str) -> dict[str, Any] | None:
     summary = next((a for a in agents(conn) if a["agent_id"] == agent_id), None)
     if summary is None:
         return None

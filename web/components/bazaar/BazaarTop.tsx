@@ -23,9 +23,15 @@ export function BazaarTop({ current }: { current: 'shop' | 'tour' | 'duel' }) {
     <header className="bz-top">
       <Link href="/" className="bz-mark"><span className="bz-glyph" aria-hidden /> KAVACH</Link>
       <nav aria-label="Surfaces">
-        <Link href="/tour" aria-current={current === 'tour' ? 'page' : undefined}>Tour</Link>
-        <Link href="/shop" aria-current={current === 'shop' ? 'page' : undefined}>Shop</Link>
-        <Link href="/duel" aria-current={current === 'duel' ? 'page' : undefined}>Duel</Link>
+        {/* The demo surfaces are 404s on a production deployment; do not advertise them.
+            Until health answers, the links stay so a slow API does not blank the nav. */}
+        {h && !h.demo.reset_enabled ? null : (
+          <>
+            <Link href="/tour" aria-current={current === 'tour' ? 'page' : undefined}>Tour</Link>
+            <Link href="/shop" aria-current={current === 'shop' ? 'page' : undefined}>Shop</Link>
+            <Link href="/duel" aria-current={current === 'duel' ? 'page' : undefined}>Duel</Link>
+          </>
+        )}
         <Link href="/dashboard">Console</Link>
       </nav>
       <span className="bz-spacer" />

@@ -28,8 +28,16 @@ beating its baselines fails the build.
 | `RAZORPAY_KEY_SECRET` | for payments | unset | Verifies the Checkout handler signature server-side; never reaches the browser. |
 | `KAVACH_MODE` | for payments | `replay` | `live` reaches the Razorpay API. `replay` never leaves the machine; checkout reports itself unavailable. |
 | `RAZORPAY_WEBHOOK_SECRET` | no | unset | Verifies `X-Razorpay-Signature`. Unset ⇒ every webhook is refused (fail-closed) and polled payments stay `DERIVED_PROBABLE`. |
-| `KAVACH_DB` | no | `/data/kavach.db` (image) | The event log. Mount a disk at its directory to persist. |
-| `KAVACH_DEMO` | no | `1` (image) | Enables `POST /api/demo/reset` and the **Reset demo** button. Set `0` outside a demo. |
+| `KAVACH_DB` | no | `/data/kavach.db` (image) | The event log: a SQLite path (mount a disk at its directory to persist) or a `postgresql://` URL. The image includes the driver; elsewhere `pip install 'kavach[postgres]'`. |
+| `KAVACH_WORKERS` | no | `1` | uvicorn worker processes. Every request opens its own connection, so more than one is safe on either store. |
+| `KAVACH_DEMO` | no | `0` (image) | `1` mounts the demo surfaces (storefront, duel, lab, tamper, console MCP, `POST /api/demo/reset`) and turns API keys off by default. compose/Render/Fly/Railway set it for the demo. |
+| `KAVACH_AUTH` | no | `required`, or `off` when `KAVACH_DEMO=1` | Whether `/api` demands `Authorization: Bearer kv_…`. See *Authentication* below. |
+| `KAVACH_METRICS_KEY` | no | unset | Locks `/api/metrics` behind a separate scrape secret (bearer or `?key=`). |
+| `KAVACH_RECONCILE_INTERVAL` | no | `60` in live mode, `0` otherwise | Seconds between reconciler passes on a background thread; `0` disables it (run `python -m kavach reconcile` instead). |
+| `KAVACH_LOG_FORMAT` | no | `text` | `json` emits one JSON object per line with the request id, route, status and latency. |
+| `SENTRY_DSN` | no | unset | Sends unhandled errors to Sentry (`kavach[sentry]`; the image includes it). |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | no | unset | Exports request traces over OTLP/HTTP (`kavach[otel]`; the image includes it). `OTEL_SERVICE_NAME` defaults to `kavach`. |
+| `KAVACH_POLICY` | no | unset (compiled defaults) | Path to a TOML policy file: caps, thresholds, Gate economics, per-agent tiers, rate limit, CORS. See *Policy file* below. |
 | `KAVACH_SEED_ON_START` | no | unset | `1` re-seeds on every start. |
 | `KAVACH_KILL_SWITCH` | no | unset | Suspends autonomous money movement (every refund intent goes to a human). |
 | `KAVACH_CORS_ORIGINS` | no | unset | Comma-separated extra browser origins allowed to call the API, e.g. `https://kavach-three-rust.vercel.app` when the UI is hosted on Vercel with `NEXT_PUBLIC_KAVACH_API` pointing here. Same-origin deploys need none. |
@@ -40,7 +48,13 @@ beating its baselines fails the build.
 
 ## Persistence, honestly
 
-SQLite in WAL mode is the one writer. On a **mounted disk** (`/data`) the ledger, the
+**Postgres.** Set `KAVACH_DB=postgresql://user:pass@host:5432/kavach`. Every table is
+created on first start, the schema is versioned in `schema_migrations`, and writers
+serialise on one advisory lock so the hash chain has exactly one head. This is the
+configuration for more than one node or more than one worker; nothing else changes. Back it
+up with `pg_dump` like any other database.
+
+**SQLite.** In WAL mode it is the one writer. On a **mounted disk** (`/data`) the ledger, the
 step-up tokens and the checkouts survive restarts and deploys. On **ephemeral storage** the
 container starts from the seed every time it starts — the demo still works, but a judge's
 earlier session is gone. Say which you have:
@@ -132,25 +146,183 @@ From then on a payment made in the Bazaar is observed twice — once by the API 
 (`DERIVED_PROBABLE`) and once by the signed webhook (`DERIVED_CERTAIN`) — and the truth
 panel shows the upgrade for real rather than as the labelled preview.
 
-## There is no authentication, deliberately — and what that means
+## Authentication: API keys, and what is public
 
-Kavach ships no login. Every screen and every endpoint is open to whoever can reach the
-URL. That is right for a demonstration a judge should be able to open and drive, and it is
-wrong for anything else. Before this sits in front of a real ledger:
+Outside a demo (`KAVACH_DEMO` unset or `0`, which is the image default) every `/api` route
+needs `Authorization: Bearer kv_…`. Keys carry one of three scopes, ordered:
 
-- Put it behind an identity proxy (Cloudflare Access, IAP, your own SSO) — the API is
-  stateless, so there is nothing session-shaped to retrofit.
-- Set `KAVACH_DEMO=0` so `POST /api/demo/reset` disappears. It deletes the ledger.
+| Scope | May call |
+|---|---|
+| `readonly` | every GET: overview, stream, intents, entities, truth, proof, agents, policy, evaluations |
+| `agent` | + `POST /api/gate/admit`, `POST /api/governor/evaluate`, `POST /api/stepup` |
+| `operator` | + review actions, `/api/keys`, and everything a later phase adds for operators |
+
+Mint the first key on the host (no server needed; `--db` takes the same path or URL as
+`KAVACH_DB`):
+
+```bash
+python -m kavach keys create --name ops --scope operator      # prints the key ONCE
+python -m kavach keys list
+python -m kavach keys revoke key_…
+```
+
+Only a SHA-256 of the key is stored. The console keeps an operator's key in the browser
+(Settings → Connect) and sends it on every request; the Access page mints and revokes
+keys for the rest of the team. Who approved or rejected an escalation is recorded from the
+key's name, not from anything the client typed.
+
+`KAVACH_AUTH=off` forces keys off (a demo does this by default); `KAVACH_AUTH=required`
+forces them on even in a demo. `KAVACH_METRICS_KEY` locks `/api/metrics` for a scraper
+with a separate secret that opens nothing else.
+
+**Public by design** — the credential is something other than a key:
+
+- `/api/health` (no secrets in it), `/api/metrics` (unless locked as above)
+- `/api/webhooks/razorpay` — the HMAC signature is the credential; fail-closed
+- `/api/stepup/{token}` view and resolve — the 192-bit single-use token is the credential
+- `/api/checkout/{order_id}` status, `/link`, `/confirm` — the paying browser's side, keyed
+  by a Razorpay order id and verified with the key secret server-side. Anyone holding an
+  `order_…` id can read that checkout's status; order ids are not guessable and carry no
+  personal data, but they are not a secret either
+
+**Demo-only** — a 404 outside `KAVACH_DEMO=1`: the storefront and buyer agent, the duel,
+the Adversary Lab scenarios, the tamper demonstration, the console's MCP dispatcher, and
+`POST /api/demo/reset` (it deletes the ledger). Agents still reach the MCP tools over
+stdio with `kavach-mcp-server`.
+
+Also before this sits in front of a real ledger:
+
+- Put the console behind an identity proxy (Cloudflare Access, IAP, your own SSO) if you
+  want people, not just keys, in the audit trail of who opened it.
 - Set `KAVACH_TRUST_PROXY=1` only once something in front of you actually sets
   `X-Forwarded-For`; until then the rate limiter keys on the socket peer, which cannot be
   spoofed by a header.
-- Know that anyone holding an `order_...` id can read that checkout's status. Order ids are
-  Razorpay's, not guessable, and carry no personal data — but they are not a secret either.
 
 The controls that are NOT relaxed for the demo: webhook HMAC is fail-closed, the checkout
 signature is verified with the secret server-side, policy limits are compiled in with no
 endpoint that edits them, a step-up token is 192 random bits with a ten-minute life, and
 the tamper demonstration writes only to an in-memory copy.
+
+## Policy file
+
+`KAVACH_POLICY=/etc/kavach/kavach.toml` points at a copy of `kavach.example.toml`. Every
+key is optional and defaults to the compiled-in value; an unknown key or a wrong type
+refuses to start and names the field. The file is re-read when its mtime changes (one
+`stat` per request); a file that becomes invalid while running keeps the last good
+settings and logs the error rather than widening a limit or taking the API down.
+
+| Section | Keys | Effect |
+|---|---|---|
+| `[limits]` | `max_auto_refund_minor`, `session_cap_minor`, `daily_cap_minor`, `risk_threshold`, `kill_switch` | The governor's caps. `risk_threshold` overrides the trained model's frozen threshold; omit it to use the model's. `KAVACH_KILL_SWITCH=1` in the environment always wins over `kill_switch`. |
+| `[gate]` | `fraud_loss_share`, `margin_share`, `step_up_minor`, `hold_minor`, `step_up_catch_rate`, `hold_catch_rate` | The inbound gate's expected-loss economics. Every rate is a stated assumption reported beside each verdict. |
+| `[agents]` | `"<agent_id>" = "readonly" \| "agent"` | Per-agent tier. A `readonly` agent is refused money movement by the governor's permission tier, whatever tools it holds. |
+| `[server]` | `rate_limit_per_minute`, `cors_origins` | The API's own limits. `KAVACH_RATE_LIMIT` and `KAVACH_CORS_ORIGINS` in the environment add to these. |
+
+There is no API that edits the file. `GET /api/policy` reports its path and every value in
+force; the console's Governor page shows the same.
+
+## Real mandates: a principal signs, Kavach verifies
+
+Outside a demo Kavach signs nothing. A principal (the human delegating to an agent) holds an
+Ed25519 key; the merchant registers its public half; the agent presents mandates the
+principal signed. Four steps:
+
+```bash
+# 1. On the principal's device: a keypair. Keep private_key_b64 there.
+python -m kavach principal keygen
+#    {"key_id": "prin_…", "public_key_b64": "…", "private_key_b64": "…"}
+
+# 2. On the merchant's side: trust the public half (either form).
+python -m kavach issuers add --key-id prin_… --public-key <public_key_b64>
+curl -X POST https://<host>/api/issuers -H "Authorization: Bearer kv_operator_…" \
+     -H "Content-Type: application/json" \
+     -d '{"key_id": "prin_…", "public_key_b64": "…"}'
+
+# 3. On the principal's device: sign a mandate (the fields MandateRequest lists).
+python -m kavach principal sign --private-key <private_key_b64> --key-id prin_… mandate.json
+#    {"raw_b64": "…", "signature_b64": "…", "key_id": "prin_…"}
+
+# 4. The agent presents it at admission, unchanged.
+curl -X POST https://<host>/api/gate/admit -H "Authorization: Bearer kv_agent_…" \
+     -H "Content-Type: application/json" \
+     -d '{"envelope": {"raw_b64": "…", "signature_b64": "…", "key_id": "prin_…"},
+          "cart_id": "cart_1", "merchant_id": "bazaar", "lines": [...], "commit": true}'
+```
+
+The signature is verified over the exact bytes in `raw_b64`; tampering with a single byte
+is `BAD_SIGNATURE`, an unregistered `key_id` is `UNKNOWN_ISSUER`, and a spent nonce is
+`REPLAYED_NONCE` — including on `/api/gate/inspect`, which never spends one. Step-up stores
+the signed bytes and re-verifies them at the moment of approval. `DELETE /api/issuers/{id}`
+stops trusting a key; mandates it signed fail `UNKNOWN_ISSUER` from then on, and nothing
+already admitted is rewritten.
+
+The `mandate` body form — where the server signs as a demo principal — is refused with
+`demo_signing_disabled` unless `KAVACH_DEMO=1`, and the demo issuer is never registered on a
+production ledger.
+
+## Sending the step-up link to the principal
+
+A `STEP_UP` verdict mints a single-use token; the demo shows it as a QR. In production the
+same token goes out over a channel:
+
+```bash
+curl -X POST https://<host>/api/stepup -H "Authorization: Bearer kv_agent_…" \
+     -d '{"envelope": {…}, "cart_id": "…", "merchant_id": "…", "lines": [...],
+          "notify": {"channel": "whatsapp", "to": "+919876543210"}}'
+curl -X POST https://<host>/api/stepup/<token>/notify -H "Authorization: Bearer kv_agent_…" \
+     -d '{"channel": "email", "to": "priya@example.com"}'          # send, or send again
+curl https://<host>/api/stepup/<token>                              # …"notifications": [...]
+```
+
+| Channel | Needs | Notes |
+|---|---|---|
+| `email` | `KAVACH_SMTP_URL` | `smtp://user:pass@host:587?from=…` (STARTTLS) or `smtps://…:465`. Stdlib `smtplib`. |
+| `sms`, `whatsapp` | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_SMS` / `TWILIO_FROM_WHATSAPP` | One POST to Twilio's REST API. Recipients are E.164 numbers. |
+| `webhook` | `KAVACH_STEPUP_WEBHOOK_URL`, optional `KAVACH_STEPUP_WEBHOOK_SECRET` | Kavach POSTs `{to, message, token, approve_url, agent_id, principal_id, merchant_id, amount_minor, expires_at}`; `X-Kavach-Signature: sha256=<hmac>` when a secret is set. Run any channel behind it. |
+
+All channels need `KAVACH_PUBLIC_URL` (this deployment's public origin) to build the link.
+The message carries who is asking, for how much, at which merchant, and the link — never
+the mandate envelope. Delivery runs off the request path; the outcome (`sent`, `failed`
+with the provider's reason) is recorded and returned with the token, recipients masked.
+An unconfigured channel is a `503 channel_unconfigured` that names the variable.
+
+## Operating it: logs, metrics, reconciliation, backups
+
+**Logs.** `KAVACH_LOG_FORMAT=json` for a pipeline; every line carries the request id that
+the response returned as `X-Request-Id`, and access lines carry the route template, status,
+latency and the name of the API key that called. Unhandled errors log a reference the
+response also returns, so a user's report ties to a line.
+
+**Metrics.** `/api/metrics` is Prometheus exposition: `kavach_http_request_seconds`
+(histogram by route), `kavach_http_requests_total` (route, method, status),
+`kavach_decisions_total` (action), `kavach_admissions_total` (verdict),
+`kavach_webhooks_total` (ingested / duplicate / rejected), `kavach_stepup_notifications_total`
+(channel, status), `kavach_reconciler_runs_total` and `_settled_total`, plus the gauges
+`kavach_chain_intact`, `kavach_events_total`, `kavach_intents_total{status}`,
+`kavach_stepups_pending`, `kavach_uptime_seconds`. Lock it with `KAVACH_METRICS_KEY`. With
+`KAVACH_WORKERS > 1` each worker reports its own counters.
+
+**Tracing and errors.** Set `OTEL_EXPORTER_OTLP_ENDPOINT` and/or `SENTRY_DSN`; nothing is
+imported until they are.
+
+**Reconciliation.** An intent is `APPROVED` when the governor allowed it and the provider
+call did not complete, or when a human released it from the review queue. The reconciler
+looks for the refund on Razorpay (by the intent id in its notes); if it is there the intent
+is `EXECUTED`, and if it is not, the reconciler **executes it** under the idempotency key
+derived from the intent id, so a human approval actually happens and a retried crash cannot
+double-refund. It runs on a thread inside the API every `KAVACH_RECONCILE_INTERVAL`
+seconds (default 60 in live mode) and reports into `/api/health` as `reconciler`; or run it
+yourself: `python -m kavach reconcile --once`.
+
+**Webhook rejections.** Every delivery the receiver refused — missing or bad signature, no
+secret configured, malformed body — is recorded (reason, whether a signature was present,
+the body's hash, never the body) and listed at `GET /api/webhooks/rejections` for an
+operator. A misconfigured secret shows up here within one delivery.
+
+**Backups.** SQLite: `python -m kavach backup /backups/kavach-$(date +%F).db` takes a
+consistent, compacted copy (`VACUUM INTO`) while the API keeps serving; it refuses to
+overwrite. Postgres: `pg_dump` as usual. The hash chain travels with the copy —
+`/api/proof/verify` against a restored ledger proves it was restored intact.
 
 ## Verifying a deployment
 

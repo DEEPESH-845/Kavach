@@ -535,13 +535,30 @@ that stops beating its baselines fails the build rather than shipping.
 `railway.json`, `render.yaml` and `fly.toml` deploy that image with a disk mounted at
 `/data`; Cloud Run takes it as-is. Health check `/api/health`, metrics `/api/metrics`,
 webhook receiver `/api/webhooks/razorpay`. Full procedure, every environment variable, the
-persistence trade-off and the **plainly stated fact that there is no authentication**:
-[`documents/11-deploy.md`](documents/11-deploy.md).
+persistence trade-off, and **authentication** — scoped API keys, what is public by design
+and what is demo-only: [`documents/11-deploy.md`](documents/11-deploy.md).
 
 The live instance above is that image on Railway: a 500 MB volume at `/data`, `KAVACH_MODE=live`
 against Razorpay **test** keys, `KAVACH_TRUST_PROXY=1` because Railway's edge is the only path
 in. `curl https://kavach-production-0363.up.railway.app/api/health` reports the mode, the
 credentials, the models and whether the hash chain is intact.
+
+### Before it sits in front of a real ledger
+
+1. `KAVACH_DEMO` unset (the image default): no storefront, no lab, no reset, keys required.
+2. `python -m kavach keys create --name ops --scope operator` — connect it under
+   **Settings → Connect**; mint `agent` keys for whatever calls `/api/gate/admit`.
+3. Register each principal's Ed25519 public key (`/api/issuers` or `python -m kavach
+   issuers add`); the server signs nothing outside a demo.
+4. `KAVACH_POLICY=kavach.toml` from `kavach.example.toml` — your caps, your economics.
+5. `RAZORPAY_WEBHOOK_SECRET` set, and the webhook pointed at `/api/webhooks/razorpay`, so
+   payment truth is `DERIVED_CERTAIN` rather than polled.
+6. `KAVACH_DB=postgresql://…` for more than one node; `KAVACH_WORKERS` for more than one core.
+7. `KAVACH_PUBLIC_URL` and one step-up channel, so a principal is asked without a QR.
+8. `KAVACH_LOG_FORMAT=json`, scrape `/api/metrics`, and `python -m kavach backup` on a
+   schedule (or `pg_dump`).
+
+Every item is documented with its variable in [`documents/11-deploy.md`](documents/11-deploy.md).
 
 ### Four wires, no fork
 
@@ -550,7 +567,7 @@ credentials, the models and whether the hash chain is intact.
 | **Evidence in** | `apps/webhook_server.py`, or your gateway calling the same handler | HMAC-verified webhooks become append-only events. Nothing unverified is ever trusted as evidence |
 | **Agents in** | `kavach-mcp-server` over stdio | Razorpay-compatible tool names, so an agent's config changes by one line. The tools return facts, and they can refuse |
 | **Decisions in** | `POST /api/governor/evaluate`, `POST /api/gate/admit` | For anything that is not an MCP client — your own agent framework, a checkout service, a queue consumer |
-| **Settlement back** | `apps/reconciler.py` | Finds intents left `APPROVED` because a provider call timed out, and settles them against the provider's own state |
+| **Settlement back** | the reconciler (a thread in the API, or `python -m kavach reconcile`) | Finds intents left `APPROVED` — a provider call that timed out, or a human approval nobody executed — settles the ones the provider has, and executes the rest under the intent's idempotency key |
 
 ### Configuration is environment, not code
 
@@ -559,11 +576,15 @@ credentials, the models and whether the hash chain is intact.
 | `KAVACH_MODE` | `replay` | `live` reaches the Razorpay API with your credentials and records a cassette; `replay` reads one back |
 | `RAZORPAY_KEY_ID` · `RAZORPAY_KEY_SECRET` | unset | An empty key means *no key*. It never falls through to the environment |
 | `RAZORPAY_WEBHOOK_SECRET` | unset | A missing secret fails verification closed; an unverified webhook never becomes certain evidence |
-| `KAVACH_DB` | `kavach.db` | Where the event log lives |
+| `KAVACH_DB` | `kavach.db` | Where the event log lives: a SQLite path or a `postgresql://` URL |
+| `KAVACH_DEMO` | off | `1` mounts the storefront, lab and reset surfaces and turns keys off. The image default is a production deployment |
+| `KAVACH_AUTH` | `required` unless demo | Every `/api` route needs `Authorization: Bearer kv_…` with a `readonly`, `agent` or `operator` scope. `python -m kavach keys create` mints one |
+| `KAVACH_POLICY` | unset | A TOML file of caps, thresholds, Gate economics and per-agent tiers (`kavach.example.toml`). Re-read when it changes; no API edits it |
 | `KAVACH_KILL_SWITCH` | off | **Suspends autonomous money movement.** Every refund intent is routed to a human; invariants still deny outright |
 
-Caps and thresholds compile into `governor.Policy`, and there is deliberately **no API that
-edits them** — a limit an operator can raise from the screen it is failing on is not a limit.
+Caps and thresholds come from the policy file (or the compiled defaults), and there is
+deliberately **no API that edits them** — a limit an operator can raise from the screen it
+is failing on is not a limit. The file's diff and deploy are the audit trail.
 
 ### Capacity, measured rather than asserted
 
@@ -583,7 +604,7 @@ Whatever stops a merchant deploying this defence, it is not its cost.
 ### Scaling shape
 
 - **The API is stateless.** A decision is a pure function of `(events, now, policy)` — the same property that lets a decision be replayed to the same verdict months later lets you run as many API processes as you like behind a load balancer.
-- **The event log is the one writer.** SQLite in WAL mode holds the rates above on a single node. Every write goes through one `eventlog.append()` and every read through `eventlog.connect()`, so moving to Postgres is a connection factory rather than a refactor — and that adapter is the one piece not yet written, which is exactly where the single-node ceiling sits.
+- **The event log is the one writer.** SQLite in WAL mode holds the rates above on a single node; `KAVACH_DB=postgresql://…` runs the same schema on Postgres for more than one node or worker, with every writer serialised on one advisory lock so the hash chain has one head. Same code path either way — `kavach/db.py` is the whole difference.
 - **Models are files, loaded once per process** (`data/*.pkl`). A new process is warm in milliseconds and no decision waits on a provider.
 - **Degradation raises the floor.** A missing model does not open the gate; it moves the decision to STEP-UP or human approval (ADR-006). There is no path on which an unavailable component becomes a silent ALLOW.
 
@@ -625,6 +646,12 @@ the test suite, and every row with a screen is reachable from `make run`.
 | MCP over HTTP — the same function objects the stdio server serves | ✅ **Built** | 6 tests |
 | Guided five-minute tour + demo reset | ✅ **Built** | driven end to end in a browser |
 | Deployment — one image, one port, models trained at build | ✅ **Built** | [`documents/11-deploy.md`](documents/11-deploy.md) |
+| Authentication — scoped API keys, demo surfaces gated, keys page | ✅ **Built** | 10 tests; `python -m kavach keys` |
+| Real mandates — principals sign, `/api/issuers`, demo key never trusted in production | ✅ **Built** | 7 tests; `python -m kavach principal` |
+| Policy file — caps, economics, tiers from `KAVACH_POLICY`, hot-reloaded, no write API | ✅ **Built** | 18 tests |
+| Postgres — same schema and hash chain behind `KAVACH_DB=postgresql://…` | ✅ **Built** | the whole suite runs against Postgres 16 in CI |
+| Step-up channels — email, SMS, WhatsApp, signed webhook | ✅ **Built** | 12 tests |
+| Operations — JSON logs, Prometheus, reconciler thread, webhook rejection log, backups, Sentry/OTel hooks | ✅ **Built** | `/api/metrics`, `/api/health` |
 
 <sub><b>Totals:</b> 255 test functions · 11 adversary scenarios · 11 benchmark baselines across two corpora, on Python 3.11, 3.12 and 3.13 in CI. Plus a scripted judge session that drives the whole five-minute path in a real browser and asserts 34 things a judge should see.</sub>
 
@@ -638,10 +665,11 @@ Stated plainly, because a system about verifiable truth cannot be vague about it
    envelope is a field-for-field Ed25519 stand-in, the mapping is documented, and the
    adapter boundary is where the real rail lands. Everything above that boundary — caps,
    scope, revocation, replay — is the code that runs either way.
-2. **One writer, deliberately.** The event log is append-only behind a single `append()`, on
-   SQLite in WAL mode, which sustains the measured rates on one node. The Postgres adapter
-   behind `eventlog.connect()` is not written yet; until it is, that is the ceiling, and
-   this is where it is stated rather than discovered.
+2. **One writer, deliberately.** The event log is append-only behind a single `append()`,
+   and every writer takes one lock — `BEGIN IMMEDIATE` on SQLite, an advisory lock on
+   Postgres — so the hash chain has exactly one head. Write throughput is therefore bounded
+   by one serialised writer per store; that is the ceiling, stated here rather than
+   discovered.
 3. **The duplicate base rate (12%) is a stated assumption, not a measurement.** No public
    figure exists. A sensitivity sweep ships in `evals/risk_report.json`, and a week of
    shadow deployment replaces the assumption with your own number.

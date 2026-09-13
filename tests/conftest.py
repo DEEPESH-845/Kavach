@@ -7,6 +7,8 @@ makes a payment decision replayable months later during a dispute.
 
 from __future__ import annotations
 
+import os
+
 import pytest
 from kavach import ledger
 from kavach.eventlog import append, connect
@@ -27,9 +29,29 @@ def _no_ambient_credentials(monkeypatch):
         monkeypatch.delenv(var, raising=False)
 
 
+#: Every table any module creates. Dropped between tests on Postgres, where ":memory:" is
+#: not an option and a fresh database per test is too slow.
+TABLES = ("events", "intents", "gate_issuers", "gate_nonces", "gate_revocations", "stepups",
+          "stepup_notifications", "checkouts", "api_keys", "webhook_rejections",
+          "schema_migrations")
+
+
+def fresh(target: str | None = None):
+    """A connection to an empty store: SQLite in memory, or the Postgres named by
+    KAVACH_TEST_PG with every table dropped first."""
+    url = target or os.environ.get("KAVACH_TEST_PG")
+    if not url:
+        return connect(":memory:")
+    c = connect(url)
+    for t in TABLES:
+        c.execute(f"DROP TABLE IF EXISTS {t} CASCADE")
+    c.close()
+    return connect(url)
+
+
 @pytest.fixture
 def conn():
-    c = connect(":memory:")
+    c = fresh()
     ledger.init(c)
     envelope.init(c)
     yield c

@@ -20,12 +20,13 @@ principal, turning replay protection into a denial-of-service primitive.
 from __future__ import annotations
 
 import json
-import sqlite3
 from dataclasses import dataclass
 from enum import StrEnum
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+from .. import db
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS gate_issuers (
@@ -78,33 +79,48 @@ class Envelope:
     issued_at: int
 
 
-def init(conn: sqlite3.Connection) -> None:
+def init(conn: db.Connection) -> None:
     conn.executescript(SCHEMA)
 
 
-def register_issuer(conn: sqlite3.Connection, key_id: str, public_key: bytes) -> None:
+def register_issuer(conn: db.Connection, key_id: str, public_key: bytes) -> None:
     """Trust a principal's signing key. Configured out of band, never self-asserted.
 
     A key the envelope carries about itself proves nothing, so the key is looked up by id
     from what the merchant already trusts and an unrecognised id is a typed failure.
     """
-    conn.execute("INSERT OR REPLACE INTO gate_issuers (key_id, public_key) VALUES (?,?)",
+    conn.execute("INSERT INTO gate_issuers (key_id, public_key) VALUES (?,?) "
+                 "ON CONFLICT (key_id) DO UPDATE SET public_key=excluded.public_key",
                  (key_id, public_key))
 
 
-def revoke(conn: sqlite3.Connection, mandate_id: str, *, at: int, reason: str = "") -> None:
-    conn.execute("INSERT OR REPLACE INTO gate_revocations "
-                 "(mandate_id, revoked_at, reason) VALUES (?,?,?)", (mandate_id, at, reason))
+def list_issuers(conn: db.Connection) -> list[dict]:
+    rows = conn.execute(
+        "SELECT key_id, public_key FROM gate_issuers ORDER BY key_id").fetchall()
+    return [{"key_id": r["key_id"], "public_key": bytes(r["public_key"])} for r in rows]
 
 
-def is_revoked(conn: sqlite3.Connection, mandate_id: str) -> bool:
+def remove_issuer(conn: db.Connection, key_id: str) -> bool:
+    """Stop trusting a key. Envelopes it signed fail UNKNOWN_ISSUER from now on; nothing
+    already admitted is rewritten -- the log says what was trusted at the time."""
+    return conn.execute("DELETE FROM gate_issuers WHERE key_id=?", (key_id,)).rowcount == 1
+
+
+def revoke(conn: db.Connection, mandate_id: str, *, at: int, reason: str = "") -> None:
+    conn.execute("INSERT INTO gate_revocations (mandate_id, revoked_at, reason) "
+                 "VALUES (?,?,?) ON CONFLICT (mandate_id) DO UPDATE SET "
+                 "revoked_at=excluded.revoked_at, reason=excluded.reason",
+                 (mandate_id, at, reason))
+
+
+def is_revoked(conn: db.Connection, mandate_id: str) -> bool:
     """Read at decision time, never cached. A cached revocation list is a revocation that
     does not work, which is worse than none because it is believed."""
     return conn.execute("SELECT 1 FROM gate_revocations WHERE mandate_id=?",
                         (mandate_id,)).fetchone() is not None
 
 
-def verify(conn: sqlite3.Connection, raw: bytes, signature: bytes, *, key_id: str,
+def verify(conn: db.Connection, raw: bytes, signature: bytes, *, key_id: str,
            now: int, expected_principal: str | None = None, claim_nonce: bool = False
            ) -> tuple[Envelope | None, list[Failure]]:
     """Verify a delegation envelope. Returns (envelope, []) or (None, failures).
@@ -148,16 +164,27 @@ def verify(conn: sqlite3.Connection, raw: bytes, signature: bytes, *, key_id: st
     if failures:
         return None, failures
 
-    if claim_nonce and not claim_nonce_for_env(conn, env, now):
+    if claim_nonce:
+        if not claim_nonce_for_env(conn, env, now):
+            return None, [Failure.REPLAYED_NONCE]
+    elif nonce_spent(conn, env.nonce):
+        # An inspection leaves the nonce alone but must not call a spent mandate good: an
+        # agent asking "is this still usable?" deserves the true answer.
         return None, [Failure.REPLAYED_NONCE]
     return env, []
 
 
-def claim_nonce_for_env(conn: sqlite3.Connection, env: Envelope, now: int) -> bool:
-    """INSERT OR IGNORE and read rowcount -- the idiom eventlog.append already uses for
-    idempotent ingestion. One established pattern, used twice, beats two inventions."""
-    cur = conn.execute("INSERT OR IGNORE INTO gate_nonces (nonce, mandate_id, claimed_at) "
-                       "VALUES (?,?,?)", (env.nonce, env.mandate_id, now))
+def nonce_spent(conn: db.Connection, nonce: str) -> bool:
+    row = conn.execute("SELECT 1 FROM gate_nonces WHERE nonce=?", (nonce,)).fetchone()
+    return row is not None
+
+
+def claim_nonce_for_env(conn: db.Connection, env: Envelope, now: int) -> bool:
+    """ON CONFLICT DO NOTHING and read rowcount -- the idiom eventlog.append already uses
+    for idempotent ingestion. One established pattern, used twice, beats two inventions."""
+    cur = conn.execute("INSERT INTO gate_nonces (nonce, mandate_id, claimed_at) "
+                       "VALUES (?,?,?) ON CONFLICT DO NOTHING",
+                       (env.nonce, env.mandate_id, now))
     return cur.rowcount == 1
 
 

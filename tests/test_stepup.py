@@ -24,7 +24,7 @@ class StubModel:
 @pytest.fixture
 def db(conn):
     stepup.init(conn)
-    gate_service.register_demo_issuer(conn)
+    gate_service.register_demo_issuer(conn, force=True)
     return conn
 
 

@@ -1,0 +1,29 @@
+# Kavach policy. Point KAVACH_POLICY at a copy of this file. Every key is optional and
+# defaults to the compiled-in value; an unknown key or a wrong type refuses to start and
+# names the field. There is no API that edits this: the file, its diff and its deploy are
+# the audit trail. KAVACH_KILL_SWITCH=1 in the environment always wins over [limits].
+
+[limits]
+max_auto_refund_minor = 100000      # ₹1,000.00 — above this a human approves
+session_cap_minor     = 500000      # ₹5,000.00 per agent session
+daily_cap_minor       = 2500000     # ₹25,000.00 per day, autonomous
+# risk_threshold = 0.5              # omit to use the trained model's frozen threshold
+# kill_switch = false               # true routes every refund intent to a human
+
+[gate]
+# Merchant economics for the inbound gate. Every rate is a STATED ASSUMPTION reported
+# beside every verdict, not a measurement -- replace them with your own numbers.
+fraud_loss_share   = 1.0            # of a bad cart's value, how much is actually lost
+margin_share       = 0.15           # of a good cart's value, the margin forgone if refused
+step_up_minor      = 4000           # ₹40.00 friction cost of asking the principal again
+hold_minor         = 15000          # ₹150.00 cost of a human looking at it
+step_up_catch_rate = 0.70           # share of bad carts a re-consent stops
+hold_catch_rate    = 0.95           # share of bad carts a reviewer stops
+
+[agents]
+# Per-agent tier. Anything not listed is "agent" (may move money, subject to the governor).
+# "reporting-bot" = "readonly"      # the governor refuses money movement for this agent
+
+[server]
+rate_limit_per_minute = 60          # per client, on the endpoints a stranger can drive
+cors_origins = []                   # extra browser origins, e.g. ["https://ui.example.com"]

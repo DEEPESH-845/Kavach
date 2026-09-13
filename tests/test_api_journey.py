@@ -8,6 +8,7 @@ contract the storefront, the phone page and the tour are built against.
 from __future__ import annotations
 
 import importlib
+import os
 
 import pytest
 from fastapi.testclient import TestClient
@@ -18,8 +19,13 @@ T_MODEL_FREE_VERDICTS = {"ALLOW", "STEP_UP", "HOLD", "DENY"}
 @pytest.fixture(scope="module")
 def client(tmp_path_factory):
     with pytest.MonkeyPatch.context() as mp:
-        db = tmp_path_factory.mktemp("api") / "api.db"
-        mp.setenv("KAVACH_DB", str(db))
+        # KAVACH_TEST_PG runs the whole HTTP journey against Postgres; otherwise a file.
+        target = os.environ.get("KAVACH_TEST_PG") or str(tmp_path_factory.mktemp("api")
+                                                           / "api.db")
+        if target.startswith("postgres"):
+            from tests.conftest import fresh
+            fresh(target).close()
+        mp.setenv("KAVACH_DB", target)
         mp.setenv("KAVACH_DEMO", "1")
         mp.setenv("KAVACH_RATE_LIMIT", "1000")
         mp.delenv("KAVACH_MODE", raising=False)
@@ -145,7 +151,8 @@ def test_reset_seeds_and_tamper_breaks_a_copy_only(client):
 def test_reset_is_refused_when_the_demo_gate_is_off(client, monkeypatch):
     monkeypatch.delenv("KAVACH_DEMO", raising=False)
     r = client.post("/api/demo/reset")
-    assert r.status_code == 403 and r.json()["error"]["code"] == "demo_disabled"
+    # 404, not 403: outside a demo the route is not something this deployment has.
+    assert r.status_code == 404 and r.json()["error"]["code"] == "demo_disabled"
 
 
 def test_the_mcp_surface_dispatches_to_the_real_tool_functions(client):
@@ -214,3 +221,58 @@ def test_cors_origins_from_env_are_allowed_and_tidied(tmp_path_factory):
                 assert r.headers.get("access-control-allow-origin") == origin
             r = c.get("/api/health", headers={"Origin": "https://evil.example"})
             assert "access-control-allow-origin" not in r.headers
+
+
+def test_cors_preflight_allows_authorization(client):
+    r = client.options("/api/overview", headers={
+        "Origin": "http://localhost:3000",
+        "Access-Control-Request-Method": "GET",
+        "Access-Control-Request-Headers": "authorization"})
+    assert r.status_code == 200
+    assert "authorization" in r.headers["access-control-allow-headers"].lower()
+
+
+def test_step_up_can_send_the_link_over_a_channel(client, monkeypatch):
+    from kavach.services import notify
+    monkeypatch.setenv("KAVACH_PUBLIC_URL", "https://kavach.example")
+    sent = []
+
+    def fake(to, msg, _payload):
+        sent.append((to, msg))
+        return "mid"
+    monkeypatch.setitem(notify.TRANSPORTS, "email", fake)
+    body, _ = _admit(client, "stepup", commit=False, nonce="n_notify", cart_id="cart_ntf")
+    r = client.post("/api/stepup", json={**body, "notify": {"channel": "email",
+                                                            "to": "priya@example.com"}})
+    assert r.status_code == 200, r.text
+    n = r.json()["notification"]
+    assert n["channel"] == "email" and n["to"] == "p…@example.com"
+    tok = r.json()["token"]
+    import time
+    for _ in range(50):
+        d = client.get(f"/api/stepup/{tok}").json()["notifications"]
+        if d and d[0]["status"] != "queued":
+            break
+        time.sleep(0.05)
+    assert d[0]["status"] == "sent" and d[0]["provider_id"] == "mid"
+    assert sent and f"https://kavach.example/approve/?t={tok}" in sent[0][1]["body"]
+
+    # re-send through the explicit route; an unconfigured channel is a 503 that says so
+    r = client.post(f"/api/stepup/{tok}/notify", json={"channel": "sms", "to": "+919876543210"})
+    assert r.status_code == 200
+    monkeypatch.delenv("KAVACH_PUBLIC_URL")
+    r = client.post(f"/api/stepup/{tok}/notify", json={"channel": "email", "to": "a@b.co"})
+    assert r.status_code == 503 and r.json()["error"]["code"] == "public_url_unset"
+    r = client.post(f"/api/stepup/{tok}/notify", json={"channel": "email", "to": "nope"})
+    assert r.status_code == 422 and r.json()["error"]["code"] == "invalid_recipient"
+
+
+def test_oversized_bodies_are_refused_before_parsing(client):
+    r = client.post("/api/gate/admit", content=b"{" + b" " * 1_100_000,
+                    headers={"Content-Type": "application/json"})
+    assert r.status_code == 413 and r.json()["error"]["code"] == "payload_too_large"
+
+
+def test_health_does_not_publish_policy_limits(client):
+    h = client.get("/api/health").json()
+    assert "policy" not in h and "kill_switch" in h

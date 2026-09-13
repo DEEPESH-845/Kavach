@@ -21,8 +21,7 @@ import { useRouter } from 'next/navigation';
 import type { ReactElement, ReactNode } from 'react';
 import { cloneElement, useEffect, useId, useState } from 'react';
 import {
-  AlertTriangle, ArrowRight, Check, CircleSlash, Copy, Inbox,
-  Minus, RefreshCw, TriangleAlert, X,
+  AlertTriangle, ArrowRight, Check, CircleSlash, Copy, Inbox, Lock, Minus, RefreshCw, TriangleAlert, X,
 } from 'lucide-react';
 import type { ApiError } from '@/lib/api';
 import type { Tone } from '@/lib/format';
@@ -226,16 +225,35 @@ export function Empty({ title, body, action }: {
   );
 }
 
+/* A few failures are states of the deployment rather than faults, and read as such: no key
+   yet, a key without the scope, a surface this deployment does not mount. Those get a
+   product sentence and a quieter tone; everything else shows the server's message. */
+function describe(error: ApiError): { title: string; body: string; quiet: boolean } {
+  if (error.status === 0) return { title: 'Kavach API is not reachable', body: error.remedy, quiet: false };
+  if (error.status === 401) {
+    return { title: 'An API key is needed', quiet: true,
+      body: 'This deployment requires a key on every request. Connect one — it is kept in this browser only.' };
+  }
+  if (error.status === 403) {
+    return { title: 'This key cannot do that', quiet: true,
+      body: 'The connected key does not hold the scope this action needs. Connect an operator key, or ask whoever holds one.' };
+  }
+  if (error.code === 'demo_disabled') {
+    return { title: 'Not mounted on this deployment', quiet: true,
+      body: 'The storefront, lab, duel, tamper and console-MCP surfaces exist only where KAVACH_DEMO=1. This is a production deployment.' };
+  }
+  return { title: error.message, body: error.remedy, quiet: false };
+}
+
 export function ErrorState({ error, retry, compact }: {
   error: ApiError; retry?: () => void; compact?: boolean;
 }) {
+  const d = describe(error);
   return (
-    <div className="state state--error" style={compact ? { padding: '26px 18px' } : undefined}>
-      <AlertTriangle size={26} className="state__icon" aria-hidden />
-      <div className="state__title">
-        {error.status === 0 ? 'Kavach API is not reachable' : error.message}
-      </div>
-      <p className="state__body">{error.remedy}</p>
+    <div className={`state ${d.quiet ? 'state--quiet' : 'state--error'}`} style={compact ? { padding: '26px 18px' } : undefined}>
+      {d.quiet ? <Lock size={26} className="state__icon" aria-hidden /> : <AlertTriangle size={26} className="state__icon" aria-hidden />}
+      <div className="state__title">{d.title}</div>
+      <p className="state__body">{d.body}</p>
       {error.fields?.length ? (
         <ul style={{ listStyle: 'none', margin: 0, padding: 0, fontSize: 12.5 }}>
           {error.fields.map((f, i) => (
@@ -247,7 +265,10 @@ export function ErrorState({ error, retry, compact }: {
         <p className="state__body mono" style={{ fontSize: 11 }}>ref {error.reference}</p>
       ) : null}
       <div className="state__actions">
-        {retry ? (
+        {error.status === 401 || error.status === 403 ? (
+          <Link className="btn btn--primary" href="/dashboard/access">Connect a key</Link>
+        ) : null}
+        {error.code === 'demo_disabled' ? null : retry ? (
           <button className="btn" onClick={retry}><RefreshCw size={13} /> Retry</button>
         ) : null}
         <Link className="btn btn--ghost" href="/dashboard">Command centre</Link>
