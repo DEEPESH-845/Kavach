@@ -392,9 +392,13 @@ body:has(.console) { overflow: hidden; }
 .console .why__row > *,
 .console .rung > *,
 .console .flow > * { min-width: 0; }
-.console .grid--stats { grid-template-columns: repeat(auto-fit, minmax(min(212px, 100%), 1fr)); }
-.console .grid--2 { grid-template-columns: repeat(auto-fit, minmax(min(330px, 100%), 1fr)); }
-.console .grid--3 { grid-template-columns: repeat(auto-fit, minmax(min(255px, 100%), 1fr)); }
+/* Flex rather than auto-fit grid: with four stats and room for three, a grid leaves the
+   fourth alone on its own row at a third of the width. Flex-grow lets the last row's
+   cards share what is left, so nothing is orphaned at any width. */
+.console .grid--stats, .console .grid--2, .console .grid--3 { display: flex; flex-wrap: wrap; }
+.console .grid--stats > * { flex: 1 1 184px; min-width: 0; }
+.console .grid--2 > * { flex: 1 1 330px; min-width: 0; }
+.console .grid--3 > * { flex: 1 1 255px; min-width: 0; }
 
 /* ── stat ─────────────────────────────────────────────────────────────────── */
 
