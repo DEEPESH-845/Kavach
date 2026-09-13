@@ -543,6 +543,23 @@ against Razorpay **test** keys, `KAVACH_TRUST_PROXY=1` because Railway's edge is
 in. `curl https://kavach-production-0363.up.railway.app/api/health` reports the mode, the
 credentials, the models and whether the hash chain is intact.
 
+### Before it sits in front of a real ledger
+
+1. `KAVACH_DEMO` unset (the image default): no storefront, no lab, no reset, keys required.
+2. `python -m kavach keys create --name ops --scope operator` — connect it under
+   **Settings → Connect**; mint `agent` keys for whatever calls `/api/gate/admit`.
+3. Register each principal's Ed25519 public key (`/api/issuers` or `python -m kavach
+   issuers add`); the server signs nothing outside a demo.
+4. `KAVACH_POLICY=kavach.toml` from `kavach.example.toml` — your caps, your economics.
+5. `RAZORPAY_WEBHOOK_SECRET` set, and the webhook pointed at `/api/webhooks/razorpay`, so
+   payment truth is `DERIVED_CERTAIN` rather than polled.
+6. `KAVACH_DB=postgresql://…` for more than one node; `KAVACH_WORKERS` for more than one core.
+7. `KAVACH_PUBLIC_URL` and one step-up channel, so a principal is asked without a QR.
+8. `KAVACH_LOG_FORMAT=json`, scrape `/api/metrics`, and `python -m kavach backup` on a
+   schedule (or `pg_dump`).
+
+Every item is documented with its variable in [`documents/11-deploy.md`](documents/11-deploy.md).
+
 ### Four wires, no fork
 
 | Wire | Surface | What it does |
@@ -629,6 +646,12 @@ the test suite, and every row with a screen is reachable from `make run`.
 | MCP over HTTP — the same function objects the stdio server serves | ✅ **Built** | 6 tests |
 | Guided five-minute tour + demo reset | ✅ **Built** | driven end to end in a browser |
 | Deployment — one image, one port, models trained at build | ✅ **Built** | [`documents/11-deploy.md`](documents/11-deploy.md) |
+| Authentication — scoped API keys, demo surfaces gated, keys page | ✅ **Built** | 10 tests; `python -m kavach keys` |
+| Real mandates — principals sign, `/api/issuers`, demo key never trusted in production | ✅ **Built** | 7 tests; `python -m kavach principal` |
+| Policy file — caps, economics, tiers from `KAVACH_POLICY`, hot-reloaded, no write API | ✅ **Built** | 18 tests |
+| Postgres — same schema and hash chain behind `KAVACH_DB=postgresql://…` | ✅ **Built** | the whole suite runs against Postgres 16 in CI |
+| Step-up channels — email, SMS, WhatsApp, signed webhook | ✅ **Built** | 12 tests |
+| Operations — JSON logs, Prometheus, reconciler thread, webhook rejection log, backups, Sentry/OTel hooks | ✅ **Built** | `/api/metrics`, `/api/health` |
 
 <sub><b>Totals:</b> 255 test functions · 11 adversary scenarios · 11 benchmark baselines across two corpora, on Python 3.11, 3.12 and 3.13 in CI. Plus a scripted judge session that drives the whole five-minute path in a real browser and asserts 34 things a judge should see.</sub>
 
