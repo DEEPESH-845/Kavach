@@ -157,7 +157,7 @@ export type Health = {
   database: string;
   models: { duplicate_risk: boolean; entailment: boolean };
   integrity: { chain_intact: boolean; events: number; broken_at: number | null };
-  policy: Record<string, number | boolean>;
+  kill_switch: boolean;
   ui: boolean;
   auth: { mode: 'required' | 'off'; scopes: string[] };
   demo: { reset_enabled: boolean };

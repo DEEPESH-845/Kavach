@@ -265,3 +265,14 @@ def test_step_up_can_send_the_link_over_a_channel(client, monkeypatch):
     assert r.status_code == 503 and r.json()["error"]["code"] == "public_url_unset"
     r = client.post(f"/api/stepup/{tok}/notify", json={"channel": "email", "to": "nope"})
     assert r.status_code == 422 and r.json()["error"]["code"] == "invalid_recipient"
+
+
+def test_oversized_bodies_are_refused_before_parsing(client):
+    r = client.post("/api/gate/admit", content=b"{" + b" " * 1_100_000,
+                    headers={"Content-Type": "application/json"})
+    assert r.status_code == 413 and r.json()["error"]["code"] == "payload_too_large"
+
+
+def test_health_does_not_publish_policy_limits(client):
+    h = client.get("/api/health").json()
+    assert "policy" not in h and "kill_switch" in h

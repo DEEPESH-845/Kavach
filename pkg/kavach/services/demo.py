@@ -21,11 +21,11 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from .. import db, governor, ledger, migrations
+from .. import db, governor, ledger, migrations, webhook
 from ..eventlog import append, connect
 from ..gate import envelope
 from ..intelligence import model as risk_model
-from . import checkout, decisions, stepup
+from . import checkout, decisions, notify, stepup
 from . import gate as gate_service
 
 HOUR = 3_600
@@ -98,6 +98,8 @@ def init_all(conn: db.Connection) -> None:
     envelope.init(conn)
     stepup.init(conn)
     checkout.init(conn)
+    notify.init(conn)
+    webhook.init(conn)
     migrations.apply(conn)
     gate_service.register_demo_issuer(conn, force=True)
 
@@ -105,7 +107,7 @@ def init_all(conn: db.Connection) -> None:
 def clear(conn: db.Connection) -> None:
     """Everything the demo produces, in one place, so a reset cannot half-happen."""
     for table in ("intents", "events", "gate_nonces", "gate_revocations", "stepups",
-                  "checkouts"):
+                  "stepup_notifications", "checkouts", "webhook_rejections"):
         conn.execute(f"DELETE FROM {table}")
     if conn.dialect == "sqlite":
         conn.execute("DELETE FROM sqlite_sequence WHERE name='events'")
