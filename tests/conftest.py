@@ -32,7 +32,8 @@ def _no_ambient_credentials(monkeypatch):
 #: Every table any module creates. Dropped between tests on Postgres, where ":memory:" is
 #: not an option and a fresh database per test is too slow.
 TABLES = ("events", "intents", "gate_issuers", "gate_nonces", "gate_revocations", "stepups",
-          "checkouts", "schema_migrations")
+          "stepup_notifications", "checkouts", "api_keys", "webhook_rejections",
+          "schema_migrations")
 
 
 def fresh(target: str | None = None):
