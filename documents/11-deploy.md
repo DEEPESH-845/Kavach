@@ -30,7 +30,9 @@ beating its baselines fails the build.
 | `RAZORPAY_WEBHOOK_SECRET` | no | unset | Verifies `X-Razorpay-Signature`. Unset ⇒ every webhook is refused (fail-closed) and polled payments stay `DERIVED_PROBABLE`. |
 | `KAVACH_DB` | no | `/data/kavach.db` (image) | The event log: a SQLite path (mount a disk at its directory to persist) or a `postgresql://` URL. The image includes the driver; elsewhere `pip install 'kavach[postgres]'`. |
 | `KAVACH_WORKERS` | no | `1` | uvicorn worker processes. Every request opens its own connection, so more than one is safe on either store. |
-| `KAVACH_DEMO` | no | `1` (image) | Enables `POST /api/demo/reset` and the **Reset demo** button. Set `0` outside a demo. |
+| `KAVACH_DEMO` | no | `0` (image) | `1` mounts the demo surfaces (storefront, duel, lab, tamper, console MCP, `POST /api/demo/reset`) and turns API keys off by default. compose/Render/Fly/Railway set it for the demo. |
+| `KAVACH_AUTH` | no | `required`, or `off` when `KAVACH_DEMO=1` | Whether `/api` demands `Authorization: Bearer kv_…`. See *Authentication* below. |
+| `KAVACH_METRICS_KEY` | no | unset | Locks `/api/metrics` behind a separate scrape secret (bearer or `?key=`). |
 | `KAVACH_SEED_ON_START` | no | unset | `1` re-seeds on every start. |
 | `KAVACH_KILL_SWITCH` | no | unset | Suspends autonomous money movement (every refund intent goes to a human). |
 | `KAVACH_CORS_ORIGINS` | no | unset | Comma-separated extra browser origins allowed to call the API, e.g. `https://kavach-three-rust.vercel.app` when the UI is hosted on Vercel with `NEXT_PUBLIC_KAVACH_API` pointing here. Same-origin deploys need none. |
@@ -139,20 +141,57 @@ From then on a payment made in the Bazaar is observed twice — once by the API 
 (`DERIVED_PROBABLE`) and once by the signed webhook (`DERIVED_CERTAIN`) — and the truth
 panel shows the upgrade for real rather than as the labelled preview.
 
-## There is no authentication, deliberately — and what that means
+## Authentication: API keys, and what is public
 
-Kavach ships no login. Every screen and every endpoint is open to whoever can reach the
-URL. That is right for a demonstration a judge should be able to open and drive, and it is
-wrong for anything else. Before this sits in front of a real ledger:
+Outside a demo (`KAVACH_DEMO` unset or `0`, which is the image default) every `/api` route
+needs `Authorization: Bearer kv_…`. Keys carry one of three scopes, ordered:
 
-- Put it behind an identity proxy (Cloudflare Access, IAP, your own SSO) — the API is
-  stateless, so there is nothing session-shaped to retrofit.
-- Set `KAVACH_DEMO=0` so `POST /api/demo/reset` disappears. It deletes the ledger.
+| Scope | May call |
+|---|---|
+| `readonly` | every GET: overview, stream, intents, entities, truth, proof, agents, policy, evaluations |
+| `agent` | + `POST /api/gate/admit`, `POST /api/governor/evaluate`, `POST /api/stepup` |
+| `operator` | + review actions, `/api/keys`, and everything a later phase adds for operators |
+
+Mint the first key on the host (no server needed; `--db` takes the same path or URL as
+`KAVACH_DB`):
+
+```bash
+python -m kavach keys create --name ops --scope operator      # prints the key ONCE
+python -m kavach keys list
+python -m kavach keys revoke key_…
+```
+
+Only a SHA-256 of the key is stored. The console keeps an operator's key in the browser
+(Settings → Connect) and sends it on every request; the Access page mints and revokes
+keys for the rest of the team. Who approved or rejected an escalation is recorded from the
+key's name, not from anything the client typed.
+
+`KAVACH_AUTH=off` forces keys off (a demo does this by default); `KAVACH_AUTH=required`
+forces them on even in a demo. `KAVACH_METRICS_KEY` locks `/api/metrics` for a scraper
+with a separate secret that opens nothing else.
+
+**Public by design** — the credential is something other than a key:
+
+- `/api/health` (no secrets in it), `/api/metrics` (unless locked as above)
+- `/api/webhooks/razorpay` — the HMAC signature is the credential; fail-closed
+- `/api/stepup/{token}` view and resolve — the 192-bit single-use token is the credential
+- `/api/checkout/{order_id}` status, `/link`, `/confirm` — the paying browser's side, keyed
+  by a Razorpay order id and verified with the key secret server-side. Anyone holding an
+  `order_…` id can read that checkout's status; order ids are not guessable and carry no
+  personal data, but they are not a secret either
+
+**Demo-only** — a 404 outside `KAVACH_DEMO=1`: the storefront and buyer agent, the duel,
+the Adversary Lab scenarios, the tamper demonstration, the console's MCP dispatcher, and
+`POST /api/demo/reset` (it deletes the ledger). Agents still reach the MCP tools over
+stdio with `kavach-mcp-server`.
+
+Also before this sits in front of a real ledger:
+
+- Put the console behind an identity proxy (Cloudflare Access, IAP, your own SSO) if you
+  want people, not just keys, in the audit trail of who opened it.
 - Set `KAVACH_TRUST_PROXY=1` only once something in front of you actually sets
   `X-Forwarded-For`; until then the rate limiter keys on the socket peer, which cannot be
   spoofed by a header.
-- Know that anyone holding an `order_...` id can read that checkout's status. Order ids are
-  Razorpay's, not guessable, and carry no personal data — but they are not a secret either.
 
 The controls that are NOT relaxed for the demo: webhook HMAC is fail-closed, the checkout
 signature is verified with the secret server-side, policy limits are compiled in with no
