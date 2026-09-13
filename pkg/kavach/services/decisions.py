@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .. import db, governor, ledger
+from .. import db, governor, ledger, observability
 from ..eventlog import append
 from ..intelligence.model import Model
 from ..truth import Confidence
@@ -123,6 +123,7 @@ def record(conn: db.Connection, intent: ledger.Intent, decision: governor.Decisi
     hole is worse than a failure because nothing reports it.
     """
     payload = decision.to_dict()
+    observability.decisions.labels(action=decision.action.value).inc()
     with conn.transaction():
         out = governor.reserve(conn, intent, decision)
         seq, _ = append(

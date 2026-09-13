@@ -33,6 +33,10 @@ beating its baselines fails the build.
 | `KAVACH_DEMO` | no | `0` (image) | `1` mounts the demo surfaces (storefront, duel, lab, tamper, console MCP, `POST /api/demo/reset`) and turns API keys off by default. compose/Render/Fly/Railway set it for the demo. |
 | `KAVACH_AUTH` | no | `required`, or `off` when `KAVACH_DEMO=1` | Whether `/api` demands `Authorization: Bearer kv_…`. See *Authentication* below. |
 | `KAVACH_METRICS_KEY` | no | unset | Locks `/api/metrics` behind a separate scrape secret (bearer or `?key=`). |
+| `KAVACH_RECONCILE_INTERVAL` | no | `60` in live mode, `0` otherwise | Seconds between reconciler passes on a background thread; `0` disables it (run `python -m kavach reconcile` instead). |
+| `KAVACH_LOG_FORMAT` | no | `text` | `json` emits one JSON object per line with the request id, route, status and latency. |
+| `SENTRY_DSN` | no | unset | Sends unhandled errors to Sentry (`kavach[sentry]`; the image includes it). |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | no | unset | Exports request traces over OTLP/HTTP (`kavach[otel]`; the image includes it). `OTEL_SERVICE_NAME` defaults to `kavach`. |
 | `KAVACH_POLICY` | no | unset (compiled defaults) | Path to a TOML policy file: caps, thresholds, Gate economics, per-agent tiers, rate limit, CORS. See *Policy file* below. |
 | `KAVACH_SEED_ON_START` | no | unset | `1` re-seeds on every start. |
 | `KAVACH_KILL_SWITCH` | no | unset | Suspends autonomous money movement (every refund intent goes to a human). |
@@ -281,6 +285,44 @@ The message carries who is asking, for how much, at which merchant, and the link
 the mandate envelope. Delivery runs off the request path; the outcome (`sent`, `failed`
 with the provider's reason) is recorded and returned with the token, recipients masked.
 An unconfigured channel is a `503 channel_unconfigured` that names the variable.
+
+## Operating it: logs, metrics, reconciliation, backups
+
+**Logs.** `KAVACH_LOG_FORMAT=json` for a pipeline; every line carries the request id that
+the response returned as `X-Request-Id`, and access lines carry the route template, status,
+latency and the name of the API key that called. Unhandled errors log a reference the
+response also returns, so a user's report ties to a line.
+
+**Metrics.** `/api/metrics` is Prometheus exposition: `kavach_http_request_seconds`
+(histogram by route), `kavach_http_requests_total` (route, method, status),
+`kavach_decisions_total` (action), `kavach_admissions_total` (verdict),
+`kavach_webhooks_total` (ingested / duplicate / rejected), `kavach_stepup_notifications_total`
+(channel, status), `kavach_reconciler_runs_total` and `_settled_total`, plus the gauges
+`kavach_chain_intact`, `kavach_events_total`, `kavach_intents_total{status}`,
+`kavach_stepups_pending`, `kavach_uptime_seconds`. Lock it with `KAVACH_METRICS_KEY`. With
+`KAVACH_WORKERS > 1` each worker reports its own counters.
+
+**Tracing and errors.** Set `OTEL_EXPORTER_OTLP_ENDPOINT` and/or `SENTRY_DSN`; nothing is
+imported until they are.
+
+**Reconciliation.** An intent is `APPROVED` when the governor allowed it and the provider
+call did not complete, or when a human released it from the review queue. The reconciler
+looks for the refund on Razorpay (by the intent id in its notes); if it is there the intent
+is `EXECUTED`, and if it is not, the reconciler **executes it** under the idempotency key
+derived from the intent id, so a human approval actually happens and a retried crash cannot
+double-refund. It runs on a thread inside the API every `KAVACH_RECONCILE_INTERVAL`
+seconds (default 60 in live mode) and reports into `/api/health` as `reconciler`; or run it
+yourself: `python -m kavach reconcile --once`.
+
+**Webhook rejections.** Every delivery the receiver refused — missing or bad signature, no
+secret configured, malformed body — is recorded (reason, whether a signature was present,
+the body's hash, never the body) and listed at `GET /api/webhooks/rejections` for an
+operator. A misconfigured secret shows up here within one delivery.
+
+**Backups.** SQLite: `python -m kavach backup /backups/kavach-$(date +%F).db` takes a
+consistent, compacted copy (`VACUUM INTO`) while the API keeps serving; it refuses to
+overwrite. Postgres: `pg_dump` as usual. The hash chain travels with the copy —
+`/api/proof/verify` against a restored ledger proves it was restored intact.
 
 ## Verifying a deployment
 

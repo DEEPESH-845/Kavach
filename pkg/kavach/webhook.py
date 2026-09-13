@@ -8,10 +8,48 @@ import os
 import time
 from http.server import BaseHTTPRequestHandler
 
-from kavach import eventlog
+from kavach import eventlog, observability
 from kavach.razorpay.client import verify_webhook
 
 logger = logging.getLogger(__name__)
+
+#: Deliveries that were refused, kept so an operator can see a misconfigured secret or a
+#: sender that is not Razorpay. The body is never stored -- only its hash, so a repeat can
+#: be recognised without keeping what an unverified sender chose to post.
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS webhook_rejections (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    received_at        INTEGER NOT NULL,
+    reason             TEXT    NOT NULL,
+    signature_present  INTEGER NOT NULL,
+    body_sha256        TEXT    NOT NULL,
+    body_bytes         INTEGER NOT NULL,
+    event_id           TEXT
+);
+"""
+
+
+def init(conn) -> None:
+    conn.executescript(SCHEMA)
+
+
+def rejections(conn, limit: int = 50) -> list[dict]:
+    rows = conn.execute("SELECT * FROM webhook_rejections ORDER BY id DESC LIMIT ?",
+                        (limit,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def _reject(conn, *, reason: str, signature: str | None, raw: bytes, event_id: str | None,
+            now: int) -> None:
+    import hashlib
+    observability.webhooks.labels(outcome="rejected").inc()
+    try:
+        conn.execute("INSERT INTO webhook_rejections (received_at, reason, signature_present, "
+                     "body_sha256, body_bytes, event_id) VALUES (?,?,?,?,?,?)",
+                     (now, reason, int(bool(signature)), hashlib.sha256(raw).hexdigest(),
+                      len(raw), event_id))
+    except Exception:  # noqa: BLE001 - the table may not exist on a bare connection
+        logger.debug("could not record webhook rejection", exc_info=True)
 
 
 def process(conn, raw_body: bytes, signature: str | None, secret: str, *,
@@ -22,38 +60,43 @@ def process(conn, raw_body: bytes, signature: str | None, secret: str, *,
     cannot disagree about what counts as evidence. Fail-closed: a missing secret or a bad
     signature is a 401 and nothing is written.
     """
+    now = int(time.time()) if now is None else now
+
+    def refuse(code: int, reason: str) -> tuple[int, str]:
+        logger.warning("webhook refused: %s", reason)
+        _reject(conn, reason=reason, signature=signature, raw=raw_body, event_id=event_id,
+                now=now)
+        return code, reason
+
     if not signature:
-        logger.warning("Missing X-Razorpay-Signature header")
-        return 401, "Missing signature"
+        return refuse(401, "Missing signature")
+    if not secret:
+        return refuse(401, "No RAZORPAY_WEBHOOK_SECRET configured")
     if not verify_webhook(raw_body, signature, secret):
-        logger.warning("Invalid webhook signature")
-        return 401, "Invalid signature"
+        return refuse(401, "Invalid signature")
     try:
         payload = json.loads(raw_body.decode())
     except (json.JSONDecodeError, UnicodeDecodeError):
-        logger.error("Malformed JSON payload")
-        return 400, "Malformed JSON"
+        return refuse(400, "Malformed JSON")
     if not isinstance(payload, dict):
-        return 400, "Malformed JSON"
+        return refuse(400, "Malformed JSON")
     event = payload.get("event")
     if not event or not isinstance(event, str):
-        logger.warning("Missing event field in payload")
-        return 400, "Missing event field"
+        return refuse(400, "Missing event field")
     entity_type = event.split(".")[0]
     try:
         entity = payload["payload"][entity_type]["entity"]
         eid = entity["id"]
     except (KeyError, TypeError):
-        logger.error("Missing entity payload or id")
-        return 400, "Malformed entity payload"
+        return refuse(400, "Malformed entity payload")
     parent_id = entity.get("payment_id") if entity_type == "refund" else None
     external_id = event_id or f"webhook:{eid}:{event}"
-    now = int(time.time()) if now is None else now
     _, is_new = eventlog.append(
         conn, source="webhook", external_id=external_id, entity_type=entity_type,
         entity_id=eid, parent_entity_id=parent_id, event_type=event, payload=payload,
         occurred_at=int(payload.get("created_at") or now), received_at=now,
         sig_verified=True)
+    observability.webhooks.labels(outcome="ingested" if is_new else "duplicate").inc()
     logger.info("%s event: %s (%s)", "Ingested new" if is_new else "Ignored duplicate",
                 external_id, event)
     return 200, "OK"

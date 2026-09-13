@@ -50,7 +50,19 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
-from kavach import __version__, auth, config, db, governor, ledger, migrations, proof, webhook
+from kavach import (
+    __version__,
+    auth,
+    config,
+    db,
+    governor,
+    ledger,
+    migrations,
+    observability,
+    proof,
+    reconciliation,
+    webhook,
+)
 from kavach.eventlog import connect
 from kavach.gate import envelope
 from kavach.intelligence import entailment
@@ -138,6 +150,19 @@ def _client_key(request: Request) -> str:
     return (fwd.split(",")[0].strip() if fwd else "") or peer
 
 
+_access = logging.getLogger("kavach.access")
+
+
+def _route_of(request: Request) -> str:
+    """The route template, not the path: /api/intents/{intent_id} rather than one label per
+    id, or the metrics cardinality is whatever callers make it."""
+    route = request.scope.get("route")
+    path = getattr(route, "path", None)
+    if path:
+        return path
+    return "/api/*" if request.url.path.startswith("/api/") else "/static"
+
+
 @app.middleware("http")
 async def _request_id_and_limits(request: Request, call_next):
     global _requests_served
@@ -145,13 +170,32 @@ async def _request_id_and_limits(request: Request, call_next):
     incoming = request.headers.get("x-request-id", "")
     rid = incoming if _REQUEST_ID.match(incoming) else f"req_{secrets.token_hex(6)}"
     request.state.request_id = rid
-    if request.url.path.startswith(_LIMITED) and not _bucket.allow(_client_key(request)):
-        return JSONResponse(status_code=429, headers={"X-Request-Id": rid}, content={
-            "error": {"code": "rate_limited",
-                      "message": "too many requests from this client; wait a minute"}})
-    response = await call_next(request)
-    response.headers["X-Request-Id"] = rid
-    return response
+    token = observability.request_id.set(rid)
+    started = time.perf_counter()
+    try:
+        if request.url.path.startswith(_LIMITED) and not _bucket.allow(_client_key(request)):
+            response = JSONResponse(status_code=429, content={
+                "error": {"code": "rate_limited",
+                          "message": "too many requests from this client; wait a minute"}})
+        else:
+            response = await call_next(request)
+        response.headers["X-Request-Id"] = rid
+        if request.url.path.startswith("/api/"):
+            elapsed = time.perf_counter() - started
+            route = _route_of(request)
+            observability.http_requests.labels(route=route, method=request.method,
+                                               status=str(response.status_code)).inc()
+            observability.http_latency.labels(route=route).observe(elapsed)
+            key = getattr(request.state, "key", None)
+            _access.info("%s %s %d %.1fms", request.method, request.url.path,
+                         response.status_code, elapsed * 1000,
+                         extra={"route": route, "method": request.method,
+                                "status": response.status_code,
+                                "ms": round(elapsed * 1000, 1),
+                                "key": key.name if key else None})
+        return response
+    finally:
+        observability.request_id.reset(token)
 
 
 # ------------------------------------------------------------------ infrastructure
@@ -194,6 +238,7 @@ def _open() -> Iterator[db.Connection]:
         stepup.init(conn)
         checkout.init(conn)
         notify.init(conn)
+        webhook.init(conn)
         migrations.apply(conn)
         yield conn
     finally:
@@ -550,6 +595,10 @@ def health(conn: Conn) -> dict[str, Any]:
                       "connect over stdio with kavach-mcp-server"},
         "auth": {"mode": auth.mode(), "scopes": list(auth.SCOPES)},
         "demo": {"reset_enabled": demo.enabled()},
+        "reconciler": _reconciler or {"enabled": False,
+                                      "note": "KAVACH_RECONCILE_INTERVAL=0 or replay mode; "
+                                              "run `python -m kavach reconcile` instead"},
+        "observability": _observability,
         "uptime_seconds": int(time.time() - STARTED_AT),
     }
 
@@ -697,7 +746,7 @@ def review_act(intent_id: str, body: ReviewRequest, conn: Conn,
 
 
 @app.get("/api/reconciliation")
-def reconciliation(conn: Conn, _: ReadOnly) -> dict[str, Any]:
+def reconciliation_queue(conn: Conn, _: ReadOnly) -> dict[str, Any]:
     return intents.unresolved(conn)
 
 
@@ -1036,6 +1085,15 @@ async def razorpay_webhook(request: Request) -> JSONResponse:
     return JSONResponse(status_code=code, content={"status": message})
 
 
+@app.get("/api/webhooks/rejections")
+def webhook_rejections(conn: Conn, _: Operator,
+                       limit: int = Query(50, ge=1, le=200)) -> dict[str, Any]:
+    """Deliveries the receiver refused, newest first: a misconfigured secret, a sender that
+    is not Razorpay, a malformed body. Bodies are not kept, only their hash."""
+    return {"items": webhook.rejections(conn, limit),
+            "configured": bool(os.environ.get("RAZORPAY_WEBHOOK_SECRET"))}
+
+
 @app.get("/api/duel")
 def duel_run(_: Demo) -> dict[str, Any]:
     """Without Kavach vs with Kavach on one attack sequence. Derived, sandboxed, repeatable."""
@@ -1200,20 +1258,15 @@ def metrics(conn: Conn, request: Request, key: str | None = Query(None, max_leng
             raise _fail(401, "metrics_key_required",
                         "this metrics endpoint is locked with KAVACH_METRICS_KEY")
     status = proof.status(conn)
-    lines = [
-        "# TYPE kavach_events_total gauge", f"kavach_events_total {status['events']}",
-        "# TYPE kavach_chain_intact gauge", f"kavach_chain_intact {int(status['ok'])}",
-        "# TYPE kavach_intents_total gauge",
-    ]
+    observability.events_total.set(status["events"])
+    observability.chain_intact.set(int(status["ok"]))
     for r in conn.execute("SELECT status, COUNT(*) c FROM intents GROUP BY status"):
-        lines.append(f'kavach_intents_total{{status="{r["status"]}"}} {r["c"]}')
+        observability.intents_by_status.labels(status=r["status"]).set(r["c"])
     pend = conn.execute("SELECT COUNT(*) FROM stepups WHERE status='PENDING'").fetchone()[0]
-    lines += ["# TYPE kavach_stepups_pending gauge", f"kavach_stepups_pending {pend}",
-              "# TYPE kavach_http_requests_total counter",
-              f"kavach_http_requests_total {_requests_served}",
-              "# TYPE kavach_uptime_seconds gauge",
-              f"kavach_uptime_seconds {int(time.time() - STARTED_AT)}"]
-    return PlainTextResponse("\n".join(lines) + "\n", media_type="text/plain; version=0.0.4")
+    observability.stepups_pending.set(pend)
+    observability.uptime.set(int(time.time() - STARTED_AT))
+    body, content_type = observability.exposition()
+    return PlainTextResponse(body, media_type=content_type)
 
 
 # ------------------------------------------------------------------ static UI
@@ -1246,9 +1299,26 @@ def _mount_ui() -> None:
     log.info("serving the built UI from %s", STATIC_DIR)
 
 
+_reconciler: dict[str, Any] | None = None
+_observability: dict[str, Any] = {"log_format": "text", "sentry": False, "otel": False}
+
+
+def _start_background() -> None:
+    """Optional hooks and the reconciler thread. Idempotent: once per process."""
+    global _reconciler
+    _observability["log_format"] = observability.configure_logging()
+    _observability["sentry"] = observability.init_sentry()
+    _observability["otel"] = observability.init_otel(app)
+    live = os.environ.get("KAVACH_MODE", "replay") == "live"
+    raw = os.environ.get("KAVACH_RECONCILE_INTERVAL", "").strip()
+    interval = int(raw) if raw.isdigit() else (60 if live else 0)
+    if interval > 0 and _reconciler is None:
+        _reconciler = reconciliation.start_background(
+            lambda: connect(DB_PATH, same_thread=False), interval=interval)
+        log.info("reconciler: every %ds", interval)
+
+
 def main() -> None:
-    logging.basicConfig(level=logging.INFO,
-                        format="%(asctime)s [%(levelname)s] %(name)s %(message)s")
     parser = argparse.ArgumentParser(description="Kavach API server")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
@@ -1260,6 +1330,7 @@ def main() -> None:
 
     _load_models()
     _mount_ui()
+    _start_background()
     log.info("Kavach %s on http://%s:%d  (mode=%s, db=%s)", __version__, args.host,
              args.port, os.environ.get("KAVACH_MODE", "replay"), DB_PATH)
     if args.workers > 1:
@@ -1277,3 +1348,4 @@ if __name__ == "__main__":
 else:  # imported by tests or an ASGI runner
     _load_models()
     _mount_ui()
+    _start_background()

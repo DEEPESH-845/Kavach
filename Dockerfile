@@ -30,7 +30,7 @@ WORKDIR /app
 # The package first, so a change to the UI does not reinstall scikit-learn.
 COPY pyproject.toml README.md LICENSE ./
 COPY pkg ./pkg
-RUN pip install ".[postgres]"
+RUN pip install ".[postgres,sentry,otel]"
 
 COPY apps ./apps
 COPY evals ./evals
