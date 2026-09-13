@@ -142,8 +142,8 @@ def start(conn: sqlite3.Connection, *, admission: dict[str, Any], mandate_id: st
     except Exception as e:  # noqa: BLE001 - classified below
         raise _provider(e) from None
     order_id = order["id"]
-    conn.execute("INSERT OR IGNORE INTO checkouts (order_id, cart_id, mandate_id, agent_id, "
-                 "amount_minor, created_at) VALUES (?,?,?,?,?,?)",
+    conn.execute("INSERT INTO checkouts (order_id, cart_id, mandate_id, agent_id, "
+                 "amount_minor, created_at) VALUES (?,?,?,?,?,?) ON CONFLICT DO NOTHING",
                  (order_id, cart_id, mandate_id, agent_id, total, now))
     seq, _ = append(conn, source="api_response", external_id=f"order:{order_id}:created",
                     entity_type="checkout", entity_id=order_id,

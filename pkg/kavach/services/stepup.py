@@ -150,8 +150,7 @@ def resolve(conn: sqlite3.Connection, token: str, *, action: str, now: int,
     cart = json.loads(row["cart_json"])
     result: dict[str, Any]
 
-    conn.execute("SAVEPOINT stepup_resolve")
-    try:
+    with conn.transaction():
         if action == DENY:
             seq, _ = append(conn, source="stepup", external_id=f"stepup:{token}:deny",
                             entity_type="mandate", entity_id=m["mandate_id"],
@@ -176,13 +175,11 @@ def resolve(conn: sqlite3.Connection, token: str, *, action: str, now: int,
                 untrusted_context=cart.get("untrusted_context", ""), model=model,
                 charge=False)
             if rerun["verdict"] == admission.Verdict.DENY.value:
-                conn.execute("RELEASE SAVEPOINT stepup_resolve")
                 raise StepUpError("re_admission_refused",
                                   "approval cannot reach past the gate: " +
                                   "; ".join(rerun["reasons"]))
             env = _envelope(m)
             if not envelope.claim_nonce_for_env(conn, env, now):
-                conn.execute("RELEASE SAVEPOINT stepup_resolve")
                 raise StepUpError("re_admission_refused",
                                   "this mandate's nonce was already spent")
             built = gate_service.build_cart(cart["cart_id"], cart["merchant_id"],
@@ -206,12 +203,6 @@ def resolve(conn: sqlite3.Connection, token: str, *, action: str, now: int,
         conn.execute("UPDATE stepups SET status=?, resolved_at=?, resolved_by=?, result_json=? "
                      "WHERE token=?", (new_status, now, resolver,
                                        json.dumps(result, sort_keys=True), token))
-        conn.execute("RELEASE SAVEPOINT stepup_resolve")
-    except StepUpError:
-        raise
-    except Exception:
-        conn.execute("ROLLBACK TO SAVEPOINT stepup_resolve")
-        raise
     return {"token": token, "status": new_status, "applied": True, **result}
 
 

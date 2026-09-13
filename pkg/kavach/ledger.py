@@ -16,6 +16,7 @@ import json
 import sqlite3
 from dataclasses import dataclass
 
+from . import db
 from .eventlog import for_entity
 from .truth import FinancialFact, derive
 
@@ -72,7 +73,7 @@ def record(conn: sqlite3.Connection, i: Intent, decision: dict | None = None) ->
              i.amount_minor, i.reason_text, i.created_at, i.status,
              json.dumps(decision or {}, sort_keys=True), i.result_id),
         )
-    except sqlite3.IntegrityError as e:
+    except db.IntegrityError as e:
         raise ValueError(f"Intent {i.intent_id} already exists; history is immutable.") from e
 
 
