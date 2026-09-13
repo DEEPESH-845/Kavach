@@ -67,7 +67,7 @@ def test_read_only_hides_write_tools_and_compiles_a_refusing_policy(srv):
     out = srv.configure(toolsets={"refunds", "payments"}, read_only=True)
     assert "create_refund" not in out["enabled"]
     assert "check_refund" in out["enabled"]
-    assert srv._policy.allow_write is False
+    assert srv._policy_for("anyone").allow_write is False
     with pytest.raises(KeyError):
         srv.dispatch("create_refund", {"payment_id": "pay_HTTP1", "amount": "1", "reason": "x"})
     with pytest.raises(KeyError):

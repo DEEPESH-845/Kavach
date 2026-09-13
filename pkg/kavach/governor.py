@@ -33,7 +33,7 @@ class Action(StrEnum):
     DENY = "DENY"           # never executable, no human can wave it through here
 
 
-def _halted() -> bool:
+def halted() -> bool:
     """The kill switch, read from the environment at policy construction.
 
     Every caller builds its Policy the same way -- API, MCP server, seeder, lab -- so one
@@ -52,7 +52,7 @@ class Policy:
     risk_threshold: float = 0.5                 # from the model's frozen train threshold
     #: Operator halt. ESCALATE rather than DENY on purpose: halting the agents must not
     #: strand a legitimate refund, it must put a human in front of every one of them.
-    kill_switch: bool = field(default_factory=_halted)
+    kill_switch: bool = field(default_factory=halted)
 
 
 @dataclass

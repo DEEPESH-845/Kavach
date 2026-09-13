@@ -4,7 +4,6 @@ import concurrent.futures
 
 import pytest
 from kavach import eventlog, ledger
-from kavach.governor import Policy
 from kavach.mcp import server
 
 
@@ -22,7 +21,6 @@ def conn(tmp_path, monkeypatch):
         payload={"id": "pay_1", "status": "captured", "amount": 10000},
         occurred_at=1000, received_at=1000
     )
-    server._policy = Policy()
     yield c
     c.close()
 

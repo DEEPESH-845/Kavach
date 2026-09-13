@@ -36,7 +36,7 @@ from typing import Any
 from mcp.server import MCPServer
 from mcp.types import ToolAnnotations
 
-from .. import db, governor, ledger, proof
+from .. import config, db, governor, ledger, proof
 from ..eventlog import append, connect, for_entity
 from ..gate import admission, envelope, mandate
 from ..intelligence import entailment
@@ -82,13 +82,18 @@ def _open() -> Iterator[db.Connection]:
 
 
 _client = Razorpay()
-_policy = governor.Policy()
 LOCK = threading.RLock()
 
-_model = None
-if risk.MODEL_PATH.exists():
-    _model = risk.load()
-    _policy = governor.Policy(risk_threshold=_model.threshold)
+_model = risk.load() if risk.MODEL_PATH.exists() else None
+_read_only = False
+
+
+def _policy_for(agent_id: str) -> governor.Policy:
+    """KAVACH_POLICY's limits, this agent's tier, the model's threshold -- and the server's
+    own --read-only flag, which refuses money movement whatever the file says."""
+    p = config.current().policy_for(agent_id, model_threshold=_model.threshold if _model
+                                    else None)
+    return governor.Policy(**{**p.__dict__, "allow_write": p.allow_write and not _read_only})
 
 # Absent, admission floors every cart at STEP_UP rather than admitting it (ADR-006).
 _entailment = entailment.load() if entailment.MODEL_PATH.exists() else None
@@ -187,7 +192,8 @@ def check_refund(payment_id: str, amount: float | str, reason: str,
     intent = governor.new_intent(agent_id, session_id, payment_id, parse_inr(amount),
                                  reason, _now())
     with _open() as conn:
-        d, truth = decisions.evaluate(conn, intent, now=_now(), policy=_policy, model=_model)
+        d, truth = decisions.evaluate(conn, intent, now=_now(), policy=_policy_for(agent_id),
+                                      model=_model)
     return {"would": d.action.value, **d.to_dict(), "truth": truth, "dry_run": True}
 
 
@@ -214,8 +220,8 @@ def create_refund(payment_id: str, amount: float | str, reason: str,
         with conn.transaction():
             intent = governor.new_intent(agent_id, session_id, payment_id,
                                          parse_inr(amount), reason, _now())
-            d, _truth = decisions.evaluate(conn, intent, now=_now(), policy=_policy,
-                                           model=_model)
+            d, _truth = decisions.evaluate(conn, intent, now=_now(),
+                                           policy=_policy_for(agent_id), model=_model)
             out = decisions.record(conn, intent, d, now=_now())
 
         if d.action == governor.Action.ALLOW:
@@ -412,20 +418,18 @@ def fetch_order(order_id: str) -> dict:
 
 TOOLSETS: tuple[str, ...] = tuple(dict.fromkeys(TOOLSET_OF.values()))
 _enabled: set[str] = set(TOOLS)
-_read_only = False
 
 
 def configure(*, toolsets: set[str] | None = None, read_only: bool = False) -> dict[str, Any]:
     """Apply razorpay-mcp-server's flags. Removing a tool from the server hides it from
     clients; read-only ALSO compiles a Policy the governor refuses writes under."""
-    global _enabled, _policy, _read_only
+    global _enabled, _read_only
     unknown = set(toolsets or ()) - set(TOOLSETS)
     if unknown:
         raise ValueError(f"unknown toolsets {sorted(unknown)}; known: {list(TOOLSETS)}")
     keep = {n for n, ts in TOOLSET_OF.items() if toolsets is None or ts in toolsets}
     if read_only:
         keep -= WRITE_TOOLS
-        _policy = governor.Policy(risk_threshold=_policy.risk_threshold, allow_write=False)
     _read_only = read_only
     for name in set(TOOLS) - keep:
         if name in _enabled:
