@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import time
 
-from . import db
+from . import auth, db
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 #: (version, name, SQL). Append only. SQL is dialect-neutral DDL (see db._pg_ddl).
 MIGRATIONS: list[tuple[int, str, str]] = [
     (1, "baseline", "SELECT 1"),
+    (2, "api_keys", auth.SCHEMA),
 ]
 
 
