@@ -332,6 +332,9 @@ export type Agent = {
 };
 
 export type Policy = {
+  source: string;
+  gate_costs: Record<string, number>;
+  agent_tiers: Record<string, string>;
   limits: Record<string, number | boolean>;
   threshold_source: string;
   authority_order: { rank: number; layer: string; kind: string; outcome: string; note: string }[];
