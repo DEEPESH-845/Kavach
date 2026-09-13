@@ -17,9 +17,10 @@ it may only raise the admission floor, and it can never authorise a cart (ADR-00
 
 from __future__ import annotations
 
-import sqlite3
 import time
 from dataclasses import dataclass
+
+from .. import db
 
 
 @dataclass
@@ -29,7 +30,7 @@ class VelocityRisk:
 
 
 def check_velocity(
-    conn: sqlite3.Connection,
+    conn: db.Connection,
     agent_id: str,
     now: int | None = None,
     window_seconds: int = 3600

@@ -18,6 +18,33 @@ export const API_BASE =
     ? 'http://127.0.0.1:8000'
     : '');
 
+/* The operator's key. Kept in localStorage rather than a cookie: the API is same-origin
+ * or an explicit CORS origin, and a bearer header cannot be sent by a cross-site form.
+ * Nothing here is a session -- the key is presented on every request and verified there. */
+const KEY_STORAGE = 'kavach.api_key';
+let memoryKey: string | null = null;
+
+export function getApiKey(): string {
+  if (memoryKey !== null) return memoryKey;
+  try { memoryKey = localStorage.getItem(KEY_STORAGE) ?? ''; } catch { memoryKey = ''; }
+  return memoryKey;
+}
+
+export function setApiKey(key: string): void {
+  memoryKey = key;
+  try {
+    if (key) localStorage.setItem(KEY_STORAGE, key);
+    else localStorage.removeItem(KEY_STORAGE);
+  } catch {
+    /* private mode or storage blocked: the key lives for this page load only */
+  }
+}
+
+function authHeader(): Record<string, string> {
+  const k = getApiKey();
+  return k ? { Authorization: `Bearer ${k}` } : {};
+}
+
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
@@ -47,6 +74,11 @@ export class ApiError extends Error {
         : `Nothing answered at ${where}. Run \`make run\` to seed, build and serve the `
           + 'whole product, then retry.';
     }
+    if (this.status === 401) return 'This deployment needs an API key. Connect one under Settings.';
+    if (this.status === 403) return 'The connected key does not hold the scope this action needs.';
+    if (this.status === 404 && this.code === 'demo_disabled') {
+      return 'This surface is only mounted on a demo deployment (KAVACH_DEMO=1).';
+    }
     if (this.status === 404) return 'Check the identifier, or return to the command centre.';
     if (this.status === 409) return 'Reload — this item has already moved on.';
     if (this.status === 422) return 'Correct the highlighted fields and submit again.';
@@ -60,7 +92,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   try {
     res = await fetch(`${API_BASE}/api${path}`, {
       ...init,
-      headers: { 'Content-Type': 'application/json', ...init.headers },
+      headers: { 'Content-Type': 'application/json', ...authHeader(), ...init.headers },
       cache: 'no-store',
     });
   } catch {
@@ -109,6 +141,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 const get = <T,>(path: string) => request<T>(path);
 const post = <T,>(path: string, payload: unknown) =>
   request<T>(path, { method: 'POST', body: JSON.stringify(payload) });
+const del = <T,>(path: string) => request<T>(path, { method: 'DELETE' });
 
 /* ── domain types ───────────────────────────────────────────────────────────── */
 
@@ -124,8 +157,19 @@ export type Health = {
   database: string;
   models: { duplicate_risk: boolean; entailment: boolean };
   integrity: { chain_intact: boolean; events: number; broken_at: number | null };
-  policy: Record<string, number | boolean>;
+  kill_switch: boolean;
   ui: boolean;
+  auth: { mode: 'required' | 'off'; scopes: string[] };
+  demo: { reset_enabled: boolean };
+};
+
+export type ApiKey = {
+  key_id: string;
+  name: string;
+  scope: 'readonly' | 'agent' | 'operator';
+  created_at: number;
+  revoked_at: number | null;
+  last_used_at: number | null;
 };
 
 export type DecisionPayload = {
@@ -288,6 +332,9 @@ export type Agent = {
 };
 
 export type Policy = {
+  source: string;
+  gate_costs: Record<string, number>;
+  agent_tiers: Record<string, string>;
   limits: Record<string, number | boolean>;
   threshold_source: string;
   authority_order: { rank: number; layer: string; kind: string; outcome: string; note: string }[];
@@ -407,7 +454,10 @@ export const api = {
     issuer?: { key_id: string; simulated: boolean };
   }>('/gate/inspect', mandate),
   gateAdmit: (body: {
-    mandate: Mandate; cart_id: string; merchant_id: string;
+    /** Demo form (the server signs it) — or `envelope`, the bytes a principal signed. */
+    mandate?: Mandate;
+    envelope?: { raw_b64: string; signature_b64: string; key_id: string };
+    cart_id: string; merchant_id: string;
     lines: { sku: string; description: string; category: string;
              unit_amount_minor: number; quantity: number; liquid: boolean }[];
     untrusted_context?: string; commit?: boolean;
@@ -428,6 +478,11 @@ export const api = {
   runScenario: (id: string) => post<ScenarioResult>(`/scenarios/${encodeURIComponent(id)}/run`, {}),
 
   evaluations: () => get<{ risk: Record<string, unknown> | null; gate: Record<string, unknown> | null; note: string }>('/evaluations'),
+
+  keys: () => get<{ items: ApiKey[]; scopes: string[]; mode: string }>('/keys'),
+  createKey: (body: { name: string; scope: ApiKey['scope'] }) =>
+    post<ApiKey & { key: string; note: string }>('/keys', body),
+  revokeKey: (id: string) => del<{ revoked: boolean; key_id: string }>(`/keys/${encodeURIComponent(id)}`),
 };
 
 /* ── the buyer journey ──────────────────────────────────────────────────────── */
@@ -468,6 +523,13 @@ export type StepUpView = {
   verdict: Verdict; reasons: string[]; purpose_risk: number | null;
   resolved_at: number | null; resolved_by: string | null;
   result: Record<string, unknown>;
+  notifications: StepUpDelivery[];
+};
+
+export type NotifyChannel = 'email' | 'sms' | 'whatsapp' | 'webhook';
+export type StepUpDelivery = {
+  id: number; channel: NotifyChannel; to: string; status: 'queued' | 'sent' | 'failed';
+  provider_id: string | null; error: string | null; created_at: number; updated_at: number;
 };
 
 export type StepUpCreated = {
@@ -570,6 +632,9 @@ export const journeyApi = {
     untrusted_context?: string;
   }) => post<StepUpCreated>('/stepup', body),
   stepUpView: (token: string) => get<StepUpView>(`/stepup/${encodeURIComponent(token)}`),
+  stepUpNotify: (token: string, body: { channel: NotifyChannel; to: string }) =>
+    post<{ id: number; channel: NotifyChannel; to: string; status: string }>(
+      `/stepup/${encodeURIComponent(token)}/notify`, body),
   stepUpResolve: (token: string, action: 'approve' | 'deny', resolver = 'principal') =>
     post<StepUpResolved>(`/stepup/${encodeURIComponent(token)}/resolve`, { action, resolver }),
   checkoutStart: (body: { cart_id: string; mandate_id: string }) =>

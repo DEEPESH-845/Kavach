@@ -55,3 +55,32 @@ def test_by_seq_materialises_an_evidence_chain(conn):
 def test_schema_is_created_on_connect():
     c = connect(":memory:")
     assert c.execute("SELECT count(*) FROM events").fetchone()[0] == 0
+
+
+def test_concurrent_appends_serialise_and_chain_holds(tmp_path):
+    import threading
+
+    from kavach import proof
+
+    path = str(tmp_path / "chain.db")
+    connect(path).close()
+    errors: list[BaseException] = []
+
+    def writer(n: int):
+        try:
+            c = connect(path)
+            for i in range(20):
+                append(c, source="t", external_id=f"{n}:{i}", entity_type="payment",
+                       entity_id=f"pay_{n}", event_type="x", payload={"i": i},
+                       occurred_at=1, received_at=1)
+        except BaseException as e:  # noqa: BLE001
+            errors.append(e)
+
+    ts = [threading.Thread(target=writer, args=(n,)) for n in range(5)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+    assert errors == []
+    status = proof.scan(connect(path))
+    assert status["ok"] and status["events"] == 100

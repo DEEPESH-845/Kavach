@@ -29,13 +29,14 @@ import binascii
 import os
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from typing import Any
 
 from mcp.server import MCPServer
 from mcp.types import ToolAnnotations
 
-from .. import governor, ledger, proof
+from .. import config, db, governor, ledger, proof
 from ..eventlog import append, connect, for_entity
 from ..gate import admission, envelope, mandate
 from ..intelligence import entailment
@@ -60,19 +61,39 @@ _READ = ToolAnnotations(read_only_hint=True, destructive_hint=False, idempotent_
 _WRITE = ToolAnnotations(read_only_hint=False, destructive_hint=True, idempotent_hint=False)
 
 _DB = os.environ.get("KAVACH_DB", "kavach.db")
-# same_thread=False because the HTTP dispatcher below calls these functions from a thread
-# pool. Every call is serialised under LOCK, so the connection is never used concurrently.
-_conn = connect(_DB, same_thread=False)
-ledger.init(_conn)
-envelope.init(_conn)
+
+
+@contextmanager
+def _open() -> Iterator[db.Connection]:
+    """One connection per tool call, closed when it returns.
+
+    Opening is microseconds on SQLite, and a connection that lives only for the call is
+    what lets `uvicorn --workers N` import this module in every worker. same_thread=False
+    because the HTTP dispatcher calls tools from a thread pool; each call still holds its
+    own connection, so nothing is ever shared between threads that run at once.
+    """
+    conn = connect(_DB, same_thread=False)
+    try:
+        ledger.init(conn)
+        envelope.init(conn)
+        yield conn
+    finally:
+        conn.close()
+
+
 _client = Razorpay()
-_policy = governor.Policy()
 LOCK = threading.RLock()
 
-_model = None
-if risk.MODEL_PATH.exists():
-    _model = risk.load()
-    _policy = governor.Policy(risk_threshold=_model.threshold)
+_model = risk.load() if risk.MODEL_PATH.exists() else None
+_read_only = False
+
+
+def _policy_for(agent_id: str) -> governor.Policy:
+    """KAVACH_POLICY's limits, this agent's tier, the model's threshold -- and the server's
+    own --read-only flag, which refuses money movement whatever the file says."""
+    p = config.current().policy_for(agent_id, model_threshold=_model.threshold if _model
+                                    else None)
+    return governor.Policy(**{**p.__dict__, "allow_write": p.allow_write and not _read_only})
 
 # Absent, admission floors every cart at STEP_UP rather than admitting it (ADR-006).
 _entailment = entailment.load() if entailment.MODEL_PATH.exists() else None
@@ -99,14 +120,15 @@ def _now() -> int:
     return int(time.time())
 
 
-def _ingest(entity_type: str, entity: dict, source: str = "api_response") -> None:
+def _ingest(conn: db.Connection, entity_type: str, entity: dict,
+            source: str = "api_response") -> None:
     """Every API response becomes an event. The truth plane derives from the log only, so a
     response that is never ingested is a response that never happened as far as we know."""
     eid = entity.get("id")
     if not eid:
         return
     parent_id = entity.get("payment_id") if entity_type == "refund" else None
-    append(_conn, source=source, external_id=f"{source}:{eid}:{entity.get('status')}",
+    append(conn, source=source, external_id=f"{source}:{eid}:{entity.get('status')}",
            entity_type=entity_type, entity_id=eid, parent_entity_id=parent_id,
            event_type=f"api.{entity_type}.{entity.get('status')}", payload=entity,
            occurred_at=int(entity.get("created_at") or _now()), received_at=_now(),
@@ -118,10 +140,11 @@ def _ingest(entity_type: str, entity: dict, source: str = "api_response") -> Non
 def fetch_payment(payment_id: str) -> dict:
     """Fetch a payment as a financial fact: rail state, obligation state, and evidence."""
     entity = _client.fetch_payment(payment_id)
-    _ingest("payment", entity)
-    fact = derive(for_entity(_conn, "payment", payment_id), now=_now())
-    return {**fact.to_agent(),
-            "open_refund_exposure": ledger.exposure(_conn, payment_id, _now()) / 100}
+    with _open() as conn:
+        _ingest(conn, "payment", entity)
+        fact = derive(for_entity(conn, "payment", payment_id), now=_now())
+        return {**fact.to_agent(),
+                "open_refund_exposure": ledger.exposure(conn, payment_id, _now()) / 100}
 
 
 @_in("refunds")
@@ -134,15 +157,17 @@ def fetch_refund(refund_id: str) -> dict:
     arrives from the gateway and the customer is credited days later.
     """
     entity = _client.fetch_refund(refund_id)
-    _ingest("refund", entity)
-    return derive(for_entity(_conn, "refund", refund_id), now=_now()).to_agent()
+    with _open() as conn:
+        _ingest(conn, "refund", entity)
+        return derive(for_entity(conn, "refund", refund_id), now=_now()).to_agent()
 
 
 @_in("refunds")
 @mcp.tool(annotations=_READ)
 def list_open_obligations(payment_id: str) -> dict:
     """Money already in flight against this payment that has not reached the customer."""
-    facts = ledger.open_against_payment(_conn, payment_id, _now())
+    with _open() as conn:
+        facts = ledger.open_against_payment(conn, payment_id, _now())
     return {"payment_id": payment_id, "open_count": len(facts),
             "total_open": sum(f.amount_minor for f in facts) / 100,
             "obligations": [f.to_agent() for f in facts]}
@@ -166,7 +191,9 @@ def check_refund(payment_id: str, amount: float | str, reason: str,
     """
     intent = governor.new_intent(agent_id, session_id, payment_id, parse_inr(amount),
                                  reason, _now())
-    d, truth = decisions.evaluate(_conn, intent, now=_now(), policy=_policy, model=_model)
+    with _open() as conn:
+        d, truth = decisions.evaluate(conn, intent, now=_now(), policy=_policy_for(agent_id),
+                                      model=_model)
     return {"would": d.action.value, **d.to_dict(), "truth": truth, "dry_run": True}
 
 
@@ -184,26 +211,23 @@ def create_refund(payment_id: str, amount: float | str, reason: str,
     how a duplicate is scored. It also means the decision is written into the hash-chained
     log as an event, not only into the mutable `intents.decision` column.
     """
-    if ledger.fact_for(_conn, "payment", payment_id, _now()) is None:
-        entity = _client.fetch_payment(payment_id)
-        _ingest("payment", entity)
+    with _open() as conn:
+        if ledger.fact_for(conn, "payment", payment_id, _now()) is None:
+            _ingest(conn, "payment", _client.fetch_payment(payment_id))
 
-    _conn.execute("BEGIN EXCLUSIVE")
-    try:
-        intent = governor.new_intent(agent_id, session_id, payment_id, parse_inr(amount),
-                                     reason, _now())
-        d, _truth = decisions.evaluate(_conn, intent, now=_now(), policy=_policy,
-                                       model=_model)
-        out = decisions.record(_conn, intent, d, now=_now())
-        _conn.commit()
-    except Exception:
-        _conn.rollback()
-        raise
+        # Evaluate and record under the write lock: two agents racing on one payment see
+        # each other's intent, which is the whole point of the exposure check.
+        with conn.transaction():
+            intent = governor.new_intent(agent_id, session_id, payment_id,
+                                         parse_inr(amount), reason, _now())
+            d, _truth = decisions.evaluate(conn, intent, now=_now(),
+                                           policy=_policy_for(agent_id), model=_model)
+            out = decisions.record(conn, intent, d, now=_now())
 
-    if d.action == governor.Action.ALLOW:
-        out = governor.execute_provider(_conn, _client, intent, d)
-        if out.get("refund_id"):
-            _ingest("refund", _client.fetch_refund(out["refund_id"]))
+        if d.action == governor.Action.ALLOW:
+            out = governor.execute_provider(conn, _client, intent, d)
+            if out.get("refund_id"):
+                _ingest(conn, "refund", _client.fetch_refund(out["refund_id"]))
 
     out["intent_id"] = intent.intent_id
     return out
@@ -213,9 +237,11 @@ def create_refund(payment_id: str, amount: float | str, reason: str,
 @mcp.tool(annotations=_READ)
 def approval_queue() -> dict:
     """Intents held for a human, with the reason each was held."""
-    rows = _conn.execute(
-        "SELECT intent_id, agent_id, target_id, amount_minor, reason_text, decision"
-        " FROM intents WHERE status='ESCALATE' ORDER BY created_at DESC LIMIT 50").fetchall()
+    with _open() as conn:
+        rows = conn.execute(
+            "SELECT intent_id, agent_id, target_id, amount_minor, reason_text, decision"
+            " FROM intents WHERE status='ESCALATE' ORDER BY created_at DESC LIMIT 50"
+        ).fetchall()
     return {"pending": [dict(r) for r in rows], "count": len(rows)}
 
 
@@ -223,11 +249,13 @@ def approval_queue() -> dict:
 @mcp.tool(annotations=_READ)
 def audit_trail(payment_id: str) -> dict:
     """Every intent against this payment and what happened to it. The record a dispute needs."""
+    with _open() as conn:
+        priors = ledger.prior_intents(conn, "payment", payment_id)
     return {"payment_id": payment_id,
             "intents": [{"intent_id": i.intent_id, "agent": i.agent_id, "session": i.session_id,
                          "amount": i.amount_minor / 100, "reason": i.reason_text,
                          "status": i.status, "refund_id": i.result_id, "at": i.created_at}
-                        for i in ledger.prior_intents(_conn, "payment", payment_id)]}
+                        for i in priors]}
 
 
 @_in("governance")
@@ -238,7 +266,8 @@ def verify_audit_trail() -> dict:
     Returns the verification result of the hash chain, proving whether
     financial events have been tampered with or deleted.
     """
-    valid, msg = proof.verify_event_chain(_conn)
+    with _open() as conn:
+        valid, msg = proof.verify_event_chain(conn)
     return {"valid": valid, "message": msg}
 
 
@@ -259,14 +288,14 @@ def verify_agent(envelope_b64: str, signature_b64: str, key_id: str,
         return {"valid": False, "failures": ["MALFORMED"],
                 "because": "envelope and signature must be base64"}
 
-    env, failures = envelope.verify(_conn, raw, sig, key_id=key_id, now=_now(),
-                                    expected_principal=expected_principal or None,
-                                    claim_nonce=False)
-    if env is None:
-        return {"valid": False, "failures": [f.value for f in failures],
-                "because": "this mandate cannot be relied on; every reason is listed"}
-
-    already = mandate.spent(_conn, env.mandate_id)
+    with _open() as conn:
+        env, failures = envelope.verify(conn, raw, sig, key_id=key_id, now=_now(),
+                                        expected_principal=expected_principal or None,
+                                        claim_nonce=False)
+        if env is None:
+            return {"valid": False, "failures": [f.value for f in failures],
+                    "because": "this mandate cannot be relied on; every reason is listed"}
+        already = mandate.spent(conn, env.mandate_id)
     return {"valid": True, "mandate_id": env.mandate_id, "principal": env.principal_id,
             "agent": env.agent_id, "purpose": env.purpose,
             "merchants": list(env.merchant_allowlist), "categories": list(env.categories),
@@ -308,10 +337,11 @@ def admit_cart(envelope_b64: str, signature_b64: str, key_id: str, merchant_id: 
             quantity=int(line.get("quantity", 1)), liquid=bool(line.get("liquid", False)))
             for line in lines))
 
-    result = admission.admit(_conn, raw, sig, cart, key_id=key_id, now=_now(),
-                             expected_principal=expected_principal or None,
-                             untrusted_context=untrusted_context,
-                             model=_entailment)
+    with _open() as conn:
+        result = admission.admit(conn, raw, sig, cart, key_id=key_id, now=_now(),
+                                 expected_principal=expected_principal or None,
+                                 untrusted_context=untrusted_context,
+                                 model=_entailment)
     return {**result.to_dict(), "cart_total": cart.total_minor / 100,
             "charged_to_mandate": result.verdict is admission.Verdict.ALLOW}
 
@@ -327,13 +357,14 @@ def _ingest_checkout(kind: str, entity: dict) -> None:
     if not eid:
         return
     status_ = entity.get("status")
-    append(_conn, source="api_response", external_id=f"{kind}:{eid}:{status_}",
-           entity_type="checkout", entity_id=eid, event_type=f"api.{kind}.{status_}",
-           payload={kind: {k: entity.get(k) for k in
-                           ("id", "amount", "currency", "status", "receipt", "reference_id",
-                            "short_url", "notes", "created_at")}},
-           occurred_at=int(entity.get("created_at") or _now()), received_at=_now(),
-           sig_verified=False)
+    with _open() as conn:
+        append(conn, source="api_response", external_id=f"{kind}:{eid}:{status_}",
+               entity_type="checkout", entity_id=eid, event_type=f"api.{kind}.{status_}",
+               payload={kind: {k: entity.get(k) for k in
+                               ("id", "amount", "currency", "status", "receipt",
+                                "reference_id", "short_url", "notes", "created_at")}},
+               occurred_at=int(entity.get("created_at") or _now()), received_at=_now(),
+               sig_verified=False)
 
 
 @_in("payment_links", write=True)
@@ -387,20 +418,18 @@ def fetch_order(order_id: str) -> dict:
 
 TOOLSETS: tuple[str, ...] = tuple(dict.fromkeys(TOOLSET_OF.values()))
 _enabled: set[str] = set(TOOLS)
-_read_only = False
 
 
 def configure(*, toolsets: set[str] | None = None, read_only: bool = False) -> dict[str, Any]:
     """Apply razorpay-mcp-server's flags. Removing a tool from the server hides it from
     clients; read-only ALSO compiles a Policy the governor refuses writes under."""
-    global _enabled, _policy, _read_only
+    global _enabled, _read_only
     unknown = set(toolsets or ()) - set(TOOLSETS)
     if unknown:
         raise ValueError(f"unknown toolsets {sorted(unknown)}; known: {list(TOOLSETS)}")
     keep = {n for n, ts in TOOLSET_OF.items() if toolsets is None or ts in toolsets}
     if read_only:
         keep -= WRITE_TOOLS
-        _policy = governor.Policy(risk_threshold=_policy.risk_threshold, allow_write=False)
     _read_only = read_only
     for name in set(TOOLS) - keep:
         if name in _enabled:

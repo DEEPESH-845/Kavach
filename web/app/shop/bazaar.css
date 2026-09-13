@@ -339,3 +339,8 @@ body:has(.bazaar) { overflow: auto; }
   .bazaar .bz-activity li, .bazaar .bz-verdict { animation: none; }
   .bazaar .bz-dot, .bazaar .bz-wait i { animation: none; }
 }
+
+/* send-the-link: the production channel beside the demo's QR */
+.bazaar .bz-send { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--seam2); }
+.bazaar .bz-send__row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; margin-top: 6px; }
+@media (max-width: 560px) { .bazaar .bz-send__row { grid-template-columns: 1fr; } }

@@ -18,12 +18,11 @@ Anything the model says can make the outcome MORE cautious and nothing else.
 from __future__ import annotations
 
 import os
-import sqlite3
 import uuid
 from dataclasses import dataclass, field
 from enum import StrEnum
 
-from . import ledger
+from . import db, ledger
 from .razorpay.client import Razorpay, RazorpayError
 from .truth import Confidence
 
@@ -34,7 +33,7 @@ class Action(StrEnum):
     DENY = "DENY"           # never executable, no human can wave it through here
 
 
-def _halted() -> bool:
+def halted() -> bool:
     """The kill switch, read from the environment at policy construction.
 
     Every caller builds its Policy the same way -- API, MCP server, seeder, lab -- so one
@@ -53,7 +52,7 @@ class Policy:
     risk_threshold: float = 0.5                 # from the model's frozen train threshold
     #: Operator halt. ESCALATE rather than DENY on purpose: halting the agents must not
     #: strand a legitimate refund, it must put a human in front of every one of them.
-    kill_switch: bool = field(default_factory=_halted)
+    kill_switch: bool = field(default_factory=halted)
 
 
 @dataclass
@@ -71,7 +70,7 @@ class Decision:
                 "risk_factors": self.risk_explain, "open_exposure": self.exposure_minor / 100}
 
 
-def decide(conn: sqlite3.Connection, *, intent: ledger.Intent, payment_amount_minor: int,
+def decide(conn: db.Connection, *, intent: ledger.Intent, payment_amount_minor: int,
            payment_captured: bool, now: int, policy: Policy,
            risk_score: float | None = None, risk_explain: list[str] | None = None) -> Decision:
     d = Decision(Action.ALLOW, risk_score=risk_score, risk_explain=risk_explain or [])
@@ -139,19 +138,19 @@ def _escalate(d: Decision, why: str) -> None:
     d.reasons.append(why)
 
 
-def _session_spend(conn: sqlite3.Connection, session_id: str) -> int:
+def _session_spend(conn: db.Connection, session_id: str) -> int:
     r = conn.execute("SELECT COALESCE(SUM(amount_minor),0) s FROM intents WHERE session_id=?"
                      " AND status IN ('APPROVED','EXECUTED')", (session_id,)).fetchone()
     return int(r["s"])
 
 
-def _day_spend(conn: sqlite3.Connection, now: int) -> int:
+def _day_spend(conn: db.Connection, now: int) -> int:
     r = conn.execute("SELECT COALESCE(SUM(amount_minor),0) s FROM intents WHERE created_at>?"
                      " AND status IN ('APPROVED','EXECUTED')", (now - 86400,)).fetchone()
     return int(r["s"])
 
 
-def reserve(conn: sqlite3.Connection, intent: ledger.Intent, decision: Decision) -> dict:
+def reserve(conn: db.Connection, intent: ledger.Intent, decision: Decision) -> dict:
     """Bounded execution reservation. Must be called inside a BEGIN EXCLUSIVE transaction."""
     if decision.action is not Action.ALLOW:
         ledger.record(conn, intent, decision.to_dict())
@@ -163,7 +162,7 @@ def reserve(conn: sqlite3.Connection, intent: ledger.Intent, decision: Decision)
     return {"executed": False, "reserved": True, **decision.to_dict()}
 
 
-def execute_provider(conn: sqlite3.Connection, client: Razorpay, intent: ledger.Intent,
+def execute_provider(conn: db.Connection, client: Razorpay, intent: ledger.Intent,
                      decision: Decision) -> dict:
     """The external provider call, separated so the DB lock can be released first."""
     try:

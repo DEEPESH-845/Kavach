@@ -9,11 +9,10 @@ worth much.
 
 from __future__ import annotations
 
-import sqlite3
 import time
 from typing import Any
 
-from .. import ledger
+from .. import db, ledger
 from ..eventlog import Event, for_entity
 from ..truth import Confidence, derive
 
@@ -31,7 +30,7 @@ def _event(e: Event, *, payload: bool = False) -> dict[str, Any]:
     return out
 
 
-def _entity_ids(conn: sqlite3.Connection, entity_type: str, limit: int,
+def _entity_ids(conn: db.Connection, entity_type: str, limit: int,
                 offset: int) -> tuple[list[str], int]:
     total = conn.execute(
         "SELECT COUNT(DISTINCT entity_id) FROM events WHERE entity_type = ?",
@@ -43,7 +42,7 @@ def _entity_ids(conn: sqlite3.Connection, entity_type: str, limit: int,
     return [r["entity_id"] for r in rows], int(total)
 
 
-def _summary(conn: sqlite3.Connection, entity_type: str, entity_id: str,
+def _summary(conn: db.Connection, entity_type: str, entity_id: str,
              now: int) -> dict[str, Any] | None:
     fact = ledger.fact_for(conn, entity_type, entity_id, now)
     if fact is None:
@@ -64,7 +63,7 @@ def _summary(conn: sqlite3.Connection, entity_type: str, entity_id: str,
     return out
 
 
-def listing(conn: sqlite3.Connection, entity_type: str, *, limit: int = 50,
+def listing(conn: db.Connection, entity_type: str, *, limit: int = 50,
             offset: int = 0, now: int | None = None) -> dict[str, Any]:
     if now is None:
         now = int(time.time())
@@ -74,7 +73,7 @@ def listing(conn: sqlite3.Connection, entity_type: str, *, limit: int = 50,
             "note": _STALE_NOTE}
 
 
-def detail(conn: sqlite3.Connection, entity_type: str, entity_id: str,
+def detail(conn: db.Connection, entity_type: str, entity_id: str,
            now: int | None = None) -> dict[str, Any] | None:
     """One entity: its derived fact, the events it came from, and what it is linked to."""
     if now is None:
@@ -106,7 +105,7 @@ def detail(conn: sqlite3.Connection, entity_type: str, entity_id: str,
             "related": related, "note": _STALE_NOTE}
 
 
-def obligations(conn: sqlite3.Connection, now: int | None = None) -> dict[str, Any]:
+def obligations(conn: db.Connection, now: int | None = None) -> dict[str, Any]:
     if now is None:
         now = int(time.time())
     facts = ledger.open_obligations(conn, now)
@@ -127,7 +126,7 @@ def obligations(conn: sqlite3.Connection, now: int | None = None) -> dict[str, A
     }
 
 
-def truth_trace(conn: sqlite3.Connection, entity_type: str, entity_id: str,
+def truth_trace(conn: db.Connection, entity_type: str, entity_id: str,
                 now: int | None = None) -> dict[str, Any] | None:
     """The derivation, step by step: which event moved the state, and what it changed to.
 

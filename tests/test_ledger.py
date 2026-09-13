@@ -61,3 +61,14 @@ def test_intents_are_recoverable_across_sessions(conn):
 def test_unknown_payment_has_no_exposure(conn):
     assert exposure(conn, "pay_UNSEEN", now=T) == 0
     assert open_against_payment(conn, "pay_UNSEEN", now=T) == []
+
+
+def test_an_approved_reservation_counts_as_exposure(conn, refund_event):
+    """APPROVED means reserved-not-yet-executed. A second intent evaluated while the first
+    awaits the provider must see that money as committed, or both pass the invariant."""
+    from kavach import ledger
+    ledger.record(conn, ledger.Intent("i1", "a", "s", "create_refund", "payment", "pay_X",
+                                      300_000, "first", 10, "APPROVED"))
+    assert ledger.exposure(conn, "pay_X", now=20) == 300_000
+    ledger.settle(conn, "i1", "FAILED")
+    assert ledger.exposure(conn, "pay_X", now=20) == 0

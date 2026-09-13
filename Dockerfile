@@ -30,7 +30,7 @@ WORKDIR /app
 # The package first, so a change to the UI does not reinstall scikit-learn.
 COPY pyproject.toml README.md LICENSE ./
 COPY pkg ./pkg
-RUN pip install .
+RUN pip install ".[postgres,sentry,otel]"
 
 COPY apps ./apps
 COPY evals ./evals
@@ -46,9 +46,13 @@ COPY --from=web /app/web/out ./web/out
 
 # The ledger lives on a mounted disk; without one it lives for the life of the container
 # and the entrypoint re-seeds it on start. Both cases are documented in documents/11-deploy.md.
+#
+# KAVACH_DEMO defaults OFF here: the image's default is a production deployment, which
+# means API keys are required and the reset/lab/storefront surfaces are absent. compose,
+# render.yaml, fly.toml and the Railway variables set KAVACH_DEMO=1 explicitly for a demo.
 ENV KAVACH_DB=/data/kavach.db \
     KAVACH_MODE=replay \
-    KAVACH_DEMO=1 \
+    KAVACH_DEMO=0 \
     PORT=8000
 # No `VOLUME ["/data"]`: Railway rejects a Dockerfile that declares one ("use Railway
 # Volumes"). Every other target mounts /data explicitly anyway -- compose names the volume,

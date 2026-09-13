@@ -27,6 +27,29 @@ jobs:
       # that purpose cannot be enforced by rules is wrong and the build should say so.
       - run: python apps/gate_benchmark.py
 
+  postgres:
+    # The same suite, with every fixture that opens a store pointed at Postgres. The
+    # dialect shim in kavach/db.py is only as good as this job.
+    runs-on: ubuntu-latest
+    services:
+      pg:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: kavach
+          POSTGRES_DB: kavach
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev,postgres]"
+      - run: pytest tests/ -q
+        env:
+          KAVACH_TEST_PG: postgresql://postgres:kavach@localhost:5432/kavach
+
   ui:
     runs-on: ubuntu-latest
     steps:

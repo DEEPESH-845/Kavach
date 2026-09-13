@@ -18,15 +18,14 @@ and its ages are what the story says they are.
 
 from __future__ import annotations
 
-import sqlite3
 import time
 from typing import Any
 
-from .. import governor, ledger
+from .. import db, governor, ledger, migrations, webhook
 from ..eventlog import append, connect
 from ..gate import envelope
 from ..intelligence import model as risk_model
-from . import checkout, decisions, stepup
+from . import checkout, decisions, notify, stepup
 from . import gate as gate_service
 
 HOUR = 3_600
@@ -94,20 +93,26 @@ def _policy(model) -> governor.Policy:
     return governor.Policy(risk_threshold=model.threshold) if model else governor.Policy()
 
 
-def init_all(conn: sqlite3.Connection) -> None:
+def init_all(conn: db.Connection) -> None:
     ledger.init(conn)
     envelope.init(conn)
     stepup.init(conn)
     checkout.init(conn)
-    gate_service.register_demo_issuer(conn)
+    notify.init(conn)
+    webhook.init(conn)
+    migrations.apply(conn)
+    gate_service.register_demo_issuer(conn, force=True)
 
 
-def clear(conn: sqlite3.Connection) -> None:
+def clear(conn: db.Connection) -> None:
     """Everything the demo produces, in one place, so a reset cannot half-happen."""
     for table in ("intents", "events", "gate_nonces", "gate_revocations", "stepups",
-                  "checkouts"):
+                  "stepup_notifications", "checkouts", "webhook_rejections"):
         conn.execute(f"DELETE FROM {table}")
-    conn.execute("DELETE FROM sqlite_sequence WHERE name='events'")
+    if conn.dialect == "sqlite":
+        conn.execute("DELETE FROM sqlite_sequence WHERE name='events'")
+    else:
+        conn.execute("ALTER SEQUENCE events_seq_seq RESTART WITH 1")
 
 
 def seed(db_path: str, *, reset: bool = True, now: int | None = None) -> dict[str, int]:
@@ -118,7 +123,7 @@ def seed(db_path: str, *, reset: bool = True, now: int | None = None) -> dict[st
         conn.close()
 
 
-def seed_conn(conn: sqlite3.Connection, *, reset: bool = True,
+def seed_conn(conn: db.Connection, *, reset: bool = True,
               now: int | None = None) -> dict[str, int]:
     now = int(time.time()) if now is None else now
     init_all(conn)

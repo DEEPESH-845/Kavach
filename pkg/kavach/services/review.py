@@ -22,11 +22,10 @@ governor.py is explicit that no human waves those through here.
 
 from __future__ import annotations
 
-import sqlite3
 import time
 from typing import Any
 
-from .. import ledger
+from .. import db, ledger
 from ..eventlog import append
 from .decisions import APPROVED, DENIED, ESCALATED
 
@@ -42,7 +41,7 @@ class ReviewError(Exception):
         self.code, self.message = code, message
 
 
-def act(conn: sqlite3.Connection, intent_id: str, *, action: str, reviewer: str,
+def act(conn: db.Connection, intent_id: str, *, action: str, reviewer: str,
         note: str = "", now: int | None = None) -> dict[str, Any]:
     """Approve or reject one escalated intent. Idempotent on (intent, action).
 
@@ -72,8 +71,7 @@ def act(conn: sqlite3.Connection, intent_id: str, *, action: str, reviewer: str,
             f"intent is {status}, not {ESCALATED}; only escalated intents await review")
 
     target = APPROVED if action == APPROVE else DENIED
-    conn.execute("SAVEPOINT review")
-    try:
+    with conn.transaction():
         seq, is_new = append(
             conn, source="review", external_id=f"review:{intent_id}:{action}",
             entity_type="intent", entity_id=intent_id,
@@ -85,14 +83,11 @@ def act(conn: sqlite3.Connection, intent_id: str, *, action: str, reviewer: str,
             occurred_at=now, received_at=now, sig_verified=False)
         if is_new:
             ledger.settle(conn, intent_id, target)
-        conn.execute("RELEASE SAVEPOINT review")
-    except Exception:
-        conn.execute("ROLLBACK TO SAVEPOINT review")
-        raise
 
     return {
         "intent_id": intent_id,
         "action": action,
+        "reviewer": reviewer,
         "applied": is_new,
         "status": target,
         "audit_event_seq": seq,

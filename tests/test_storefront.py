@@ -70,7 +70,7 @@ def test_every_advertised_verdict_is_the_verdict_the_gate_returns(conn, mandate,
     if not entailment.MODEL_PATH.exists():
         pytest.skip("entailment model not trained here; run `make gate-bench`")
     model = entailment.load()
-    gate_service.register_demo_issuer(conn)
+    gate_service.register_demo_issuer(conn, force=True)
     p = storefront.plan(mandate, mode)
     out = gate_service.admit(
         conn, envelope_body={**mandate, "nonce": f"nonce_{mode}"}, cart_id=f"cart_{mode}",

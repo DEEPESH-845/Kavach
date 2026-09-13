@@ -9,10 +9,10 @@ metric that cannot go down is a decoration.
 from __future__ import annotations
 
 import json
-import sqlite3
 import time
 from typing import Any
 
+from .. import db
 from ..ledger import open_obligations
 from ..proof import verify_event_chain
 from .decisions import DENIED, ESCALATED, EXECUTED, REVIEW_STATUSES, UNRESOLVED_STATUSES
@@ -20,12 +20,12 @@ from .decisions import DENIED, ESCALATED, EXECUTED, REVIEW_STATUSES, UNRESOLVED_
 _DAY = 86_400
 
 
-def _scalar(conn: sqlite3.Connection, sql: str, args: tuple = ()) -> int:
+def _scalar(conn: db.Connection, sql: str, args: tuple = ()) -> int:
     row = conn.execute(sql, args).fetchone()
     return int(row[0] or 0)
 
 
-def overview(conn: sqlite3.Connection, now: int | None = None) -> dict[str, Any]:
+def overview(conn: db.Connection, now: int | None = None) -> dict[str, Any]:
     if now is None:
         now = int(time.time())
 
@@ -101,7 +101,7 @@ def overview(conn: sqlite3.Connection, now: int | None = None) -> dict[str, Any]
     }
 
 
-def stream(conn: sqlite3.Connection, limit: int = 40,
+def stream(conn: db.Connection, limit: int = 40,
            before: int | None = None) -> dict[str, Any]:
     """The decision stream, newest first, cursored on `created_at`.
 
@@ -126,7 +126,7 @@ def stream(conn: sqlite3.Connection, limit: int = 40,
     }
 
 
-def _stream_row(r: sqlite3.Row) -> dict[str, Any]:
+def _stream_row(r: db.Row) -> dict[str, Any]:
     try:
         decision = json.loads(r["decision"]) if r["decision"] else {}
     except json.JSONDecodeError:

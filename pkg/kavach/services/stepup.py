@@ -20,11 +20,12 @@ token; the phone fetches the view. Mandate and cart never travel in the QR.
 
 from __future__ import annotations
 
+import base64
 import json
 import secrets
-import sqlite3
 from typing import Any
 
+from .. import db
 from ..eventlog import append
 from ..gate import admission, envelope, mandate
 from ..intelligence.model import Model
@@ -59,11 +60,11 @@ class StepUpError(Exception):
         self.code, self.message = code, message
 
 
-def init(conn: sqlite3.Connection) -> None:
+def init(conn: db.Connection) -> None:
     conn.executescript(SCHEMA)
 
 
-def create(conn: sqlite3.Connection, *, mandate_body: dict[str, Any], cart: dict[str, Any],
+def create(conn: db.Connection, *, mandate_body: dict[str, Any], cart: dict[str, Any],
            admission_result: dict[str, Any], now: int) -> dict[str, Any]:
     """Open a re-consent request. Only a STEP_UP (or HOLD) verdict may ask for one."""
     verdict = admission_result.get("verdict")
@@ -79,21 +80,21 @@ def create(conn: sqlite3.Connection, *, mandate_body: dict[str, Any], cart: dict
     return {"token": token, "expires_at": now + TTL, "status": PENDING}
 
 
-def _row(conn: sqlite3.Connection, token: str) -> sqlite3.Row:
+def _row(conn: db.Connection, token: str) -> db.Row:
     row = conn.execute("SELECT * FROM stepups WHERE token=?", (token,)).fetchone()
     if row is None:
         raise StepUpError("not_found", "this approval link is not one Kavach issued")
     return row
 
 
-def _expire_if_due(conn: sqlite3.Connection, row: sqlite3.Row, now: int) -> str:
+def _expire_if_due(conn: db.Connection, row: db.Row, now: int) -> str:
     if row["status"] == PENDING and now > row["expires_at"]:
         conn.execute("UPDATE stepups SET status=? WHERE token=?", (EXPIRED, row["token"]))
         return EXPIRED
     return row["status"]
 
 
-def view(conn: sqlite3.Connection, token: str, now: int) -> dict[str, Any]:
+def view(conn: db.Connection, token: str, now: int) -> dict[str, Any]:
     """What the principal's phone shows. Deliberately narrow: amount, items, who is asking,
     why it stopped. The envelope stays on the server."""
     row = _row(conn, token)
@@ -108,6 +109,7 @@ def view(conn: sqlite3.Connection, token: str, now: int) -> dict[str, Any]:
         "expires_at": row["expires_at"],
         "seconds_left": max(0, row["expires_at"] - now) if status == PENDING else 0,
         "agent_id": m["agent_id"],
+        "principal_id": m["principal_id"],
         "mandate_id": m["mandate_id"],
         "purpose": m["purpose"],
         "merchant_id": cart["merchant_id"],
@@ -126,7 +128,7 @@ def view(conn: sqlite3.Connection, token: str, now: int) -> dict[str, Any]:
     }
 
 
-def resolve(conn: sqlite3.Connection, token: str, *, action: str, now: int,
+def resolve(conn: db.Connection, token: str, *, action: str, now: int,
             resolver: str = "principal", model: Model | None = None) -> dict[str, Any]:
     """Approve or deny. Idempotent on (token, action); the opposite action is a conflict."""
     if action not in (APPROVE, DENY):
@@ -150,8 +152,7 @@ def resolve(conn: sqlite3.Connection, token: str, *, action: str, now: int,
     cart = json.loads(row["cart_json"])
     result: dict[str, Any]
 
-    conn.execute("SAVEPOINT stepup_resolve")
-    try:
+    with conn.transaction():
         if action == DENY:
             seq, _ = append(conn, source="stepup", external_id=f"stepup:{token}:deny",
                             entity_type="mandate", entity_id=m["mandate_id"],
@@ -168,21 +169,22 @@ def resolve(conn: sqlite3.Connection, token: str, *, action: str, now: int,
         else:
             # Re-run the real admission at THIS moment. Nothing is trusted from the moment
             # the token was minted: revocation, expiry and the cap are all re-read.
-            gate_service.register_demo_issuer(conn)
+            signed = _signed(m)
+            if signed is None:
+                gate_service.register_demo_issuer(conn)
             rerun = gate_service.admit(
-                conn, envelope_body=m, cart_id=cart["cart_id"],
+                conn, envelope_body=None if signed else m, signed=signed,
+                cart_id=cart["cart_id"],
                 merchant_id=cart["merchant_id"], lines=cart["lines"], now=now,
                 expected_principal=m["principal_id"],
                 untrusted_context=cart.get("untrusted_context", ""), model=model,
                 charge=False)
             if rerun["verdict"] == admission.Verdict.DENY.value:
-                conn.execute("RELEASE SAVEPOINT stepup_resolve")
                 raise StepUpError("re_admission_refused",
                                   "approval cannot reach past the gate: " +
                                   "; ".join(rerun["reasons"]))
             env = _envelope(m)
             if not envelope.claim_nonce_for_env(conn, env, now):
-                conn.execute("RELEASE SAVEPOINT stepup_resolve")
                 raise StepUpError("re_admission_refused",
                                   "this mandate's nonce was already spent")
             built = gate_service.build_cart(cart["cart_id"], cart["merchant_id"],
@@ -206,13 +208,17 @@ def resolve(conn: sqlite3.Connection, token: str, *, action: str, now: int,
         conn.execute("UPDATE stepups SET status=?, resolved_at=?, resolved_by=?, result_json=? "
                      "WHERE token=?", (new_status, now, resolver,
                                        json.dumps(result, sort_keys=True), token))
-        conn.execute("RELEASE SAVEPOINT stepup_resolve")
-    except StepUpError:
-        raise
-    except Exception:
-        conn.execute("ROLLBACK TO SAVEPOINT stepup_resolve")
-        raise
     return {"token": token, "status": new_status, "applied": True, **result}
+
+
+def _signed(m: dict[str, Any]) -> gate_service.Signed | None:
+    """A caller-signed envelope rides inside mandate_json under `_signed`, so approval can
+    re-verify the exact bytes the principal signed rather than a re-serialisation."""
+    s = m.get("_signed")
+    if not s:
+        return None
+    return (base64.b64decode(s["raw_b64"]), base64.b64decode(s["signature_b64"]),
+            str(s["key_id"]))
 
 
 def _envelope(m: dict[str, Any]) -> envelope.Envelope:
@@ -227,7 +233,7 @@ def _envelope(m: dict[str, Any]) -> envelope.Envelope:
         nonce=str(m["nonce"]), issued_at=int(m["issued_at"]))
 
 
-def pending(conn: sqlite3.Connection, now: int, limit: int = 20) -> list[dict[str, Any]]:
+def pending(conn: db.Connection, now: int, limit: int = 20) -> list[dict[str, Any]]:
     rows = conn.execute("SELECT token FROM stepups WHERE status=? ORDER BY created_at DESC "
                         "LIMIT ?", (PENDING, limit)).fetchall()
     return [view(conn, r["token"], now) for r in rows]

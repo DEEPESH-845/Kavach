@@ -15,6 +15,7 @@ import { count } from '@/lib/format';
 import {
   Async, Badge, Card, KV, PageHead, Section, Skeleton,
 } from '@/components/console/ui';
+import { ConnectCard } from '@/components/console/Connect';
 
 const COMMANDS: [string, string][] = [
   ['make run', 'seed the ledger, build the UI, and serve everything on one port'],
@@ -23,9 +24,14 @@ const COMMANDS: [string, string][] = [
   ['make bench', 'train the duplicate-risk estimator and write evals/risk_report.json'],
   ['make gate-bench', 'train the entailment estimator and write evals/gate_report.json'],
   ['make test', 'the full Python suite'],
-  ['python apps/reconciler.py', 'settle intents that have no observed provider result'],
-  ['python apps/webhook_server.py', 'receive Razorpay webhooks with HMAC verification'],
+  ['python apps/webhook_server.py', 'receive Razorpay webhooks with HMAC verification, standalone'],
   ['python apps/mcp_server.py', 'the MCP tool surface an agent connects to'],
+  ['python -m kavach keys create --name ops --scope operator', 'mint an API key; printed once'],
+  ['python -m kavach issuers add --key-id … --public-key …', 'trust a principal’s signing key'],
+  ['python -m kavach principal keygen', 'a keypair for a principal; sign mandates with `principal sign`'],
+  ['python -m kavach reconcile --once', 'settle or execute intents left APPROVED, against the provider'],
+  ['python -m kavach backup DEST', 'a consistent copy of a SQLite ledger while the API keeps serving'],
+  ['python -m kavach migrate', 'create or upgrade the schema; safe to repeat'],
 ];
 
 export default function SettingsPage() {
@@ -37,6 +43,12 @@ export default function SettingsPage() {
         title="Settings"
         sub="What this installation is running, and how to change it. Nothing here can be edited from the browser — see below for why that is deliberate."
       />
+
+      <Section title="Connect" note="the key this browser sends; manage everyone's under Access">
+        <div id="connect">
+          <ConnectCard required={health.data?.auth.mode === 'required'} onChange={health.reload} />
+        </div>
+      </Section>
 
       <Async state={health} skeleton={<Skeleton rows={5} />}>
         {(h) => (
@@ -54,6 +66,15 @@ export default function SettingsPage() {
                   ['Chain', <Badge tone={h.integrity.chain_intact ? 'info' : 'deny'} key="c">
                     {h.integrity.chain_intact ? 'INTACT' : `BROKEN AT ${h.integrity.broken_at}`}
                   </Badge>],
+                  ['Authentication', <span key="a" style={{ display: 'flex', gap: 9, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <Badge tone={h.auth.mode === 'required' ? 'info' : 'warn'}>{h.auth.mode === 'required' ? 'API KEYS REQUIRED' : 'OFF'}</Badge>
+                    <span style={{ color: 'var(--fog)' }}>
+                      {h.auth.mode === 'required'
+                        ? 'every /api request carries a scoped key'
+                        : 'a demo deployment (KAVACH_DEMO=1); set KAVACH_AUTH=required to insist on keys'}
+                    </span>
+                  </span>],
+                  ['Demo surfaces', h.demo.reset_enabled ? 'mounted — storefront, lab, reset' : 'absent — a production deployment'],
                   ['Built UI served by the API', h.ui ? 'yes' : 'no — running against the dev server'],
                 ]} />
               </Card>
@@ -101,9 +122,11 @@ export default function SettingsPage() {
               <span style={{ color: 'var(--bone)', fontSize: 13.5 }}>Policy limits</span>
             </div>
             <p style={{ margin: 0, fontSize: 13 }}>
-              Caps and thresholds are compiled into <code className="mono">governor.Policy</code>.
+              Caps, thresholds, the gate’s economics and per-agent tiers come from the TOML
+              file <code className="mono">KAVACH_POLICY</code> names (see{' '}
+              <code className="mono">kavach.example.toml</code>), or the compiled defaults.
               A limit an operator can raise from the screen where it is failing them is not a
-              limit — changing one is a code change with a review and a deploy, which is the
+              limit — changing one is an edit with a diff, a review and a deploy, which is the
               audit trail a financial control needs. The backend has no endpoint that would
               accept the edit.
             </p>
