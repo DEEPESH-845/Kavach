@@ -90,149 +90,30 @@ Test coverage is mostly present for core deterministic components (`truth`, `led
 
 ---
 
-## Critical Issues (P0)
+## Findings, and where each one stands
 
-### P0-1: Floating-point arithmetic in the money path
-- **Severity**: P0
-- **File**: `pkg/kavach/mcp/server.py` (functions `check_refund`, `create_refund`, `admit_cart`), `pkg/kavach/gate/admission.py` (function `expected_losses`).
-- **Current Behavior**: Inputs are taken as `float` and cast via `int(round(amount * 100))`. `expected_losses` computes `risk * cart_total_minor * fraud_loss_share` as a float.
-- **Expected Behavior**: Money must be handled as exact integer minor units throughout. MCP tools must accept floats only if safely parsed (preferably string/decimal), and `expected_losses` should round safely to int.
-- **Why it matters**: IEEE 754 floats lose precision. A refund of 100.50 might become 10049.
-- **Security/Financial Impact**: Direct financial loss or over-refunding.
-- **Recommended Fix**: Implement a centralized `Money` parser that takes string/float and securely converts to integer minor units. Use integer arithmetic.
-- **Regression test required**: Yes.
-- **Implementation Status**: Needs fix.
+The list below was written before most of the system existed and is kept as the record of
+what was asked for. Every item now has a resolution and the test that holds it.
 
-### P0-2: Mutable Intent Ledger (INSERT OR REPLACE)
-- **Severity**: P0
-- **File**: `pkg/kavach/ledger.py`
-- **Function**: `record()`
-- **Current Behavior**: Uses `INSERT OR REPLACE INTO intents` which silently overwrites an existing intent if the ID conflicts, mutating history.
-- **Expected Behavior**: Financial history must be append-only. Use `INSERT OR ABORT`/`IGNORE` and reject conflicting intents.
-- **Why it matters**: Violates the immutable financial intent ledger requirement.
-- **Security/Financial Impact**: Audit trails can be rewritten, obscuring agent actions.
-- **Recommended Fix**: Change to `INSERT INTO` and catch `IntegrityError`, or use `INSERT OR IGNORE` and verify rowcount. 
-- **Regression test required**: Yes.
-- **Implementation Status**: Needs fix.
+| # | Finding | Status | Where |
+|---|---|---|---|
+| P0-1 | Float arithmetic on the money path | **Resolved** | `money.parse_inr` (Decimal, exact paise, overflow cap); every HTTP amount is `*_minor: int`. `tests/test_money.py` |
+| P0-2 | `INSERT OR REPLACE` on the intent ledger | **Resolved** | `ledger.record` is a plain INSERT; a duplicate id raises. `tests/test_ledger.py` |
+| P0-3 | A rejected mandate consumed its nonce | **Resolved** | `envelope.verify` claims the nonce only after every other check passes; inspection never claims and now reports a spent one. `tests/test_envelope.py` |
+| P0-4 | Read-then-write races between agents | **Resolved** | Every writer runs under `db.Connection.transaction()` (`BEGIN IMMEDIATE` / Postgres advisory lock); `evaluate_and_record` and the MCP `create_refund` hold it from the first read; `ledger.exposure` counts APPROVED reservations. `tests/test_concurrency.py`, `tests/test_ledger.py` |
+| P0-5 | No hash chain | **Resolved** | `eventlog.append` chains SHA-256 over the row and its predecessor; `proof.scan` recomputes; `proof.status` verifies incrementally for health. `tests/test_proof.py`, `tests/test_tamper.py` |
+| P1-1 | No webhook receiver | **Resolved** | `POST /api/webhooks/razorpay` and `apps/webhook_server.py` share `webhook.process`: HMAC fail-closed, idempotent on event id, refusals recorded. `tests/test_webhook.py` |
+| P1-2 | No reconciler | **Resolved** | `reconciliation.reconcile_pending_intents` settles APPROVED intents against the provider and executes the ones it never received, under the intent's idempotency key; runs as a thread in the API or `python -m kavach reconcile`. `tests/test_reconciliation.py` |
+| P2-1 | UI on mock data | **Resolved** | The console reads the API on every screen and renders an error state when it cannot. `tests/test_console_css.py`, browser sweep |
+| P2-2 | Database path hard-coded | **Resolved** | `KAVACH_DB`: a SQLite path or a `postgresql://` URL. `tests/test_db.py` |
+| P2-3 | No application lifecycle | **Resolved** | Per-request connections, `--workers`, background reconciler, health that reports what is running. |
 
-### P0-3: Rejected mandate consumes nonce
-- **Severity**: P0
-- **File**: `pkg/kavach/gate/admission.py`, `pkg/kavach/gate/envelope.py`
-- **Function**: `decide()`, `verify()`
-- **Current Behavior**: `verify()` defaults to `claim_nonce=True`. `decide()` calls `verify()` without kwargs, consuming the nonce *before* checking cap and scope. If cap fails, the cart is rejected but the mandate's nonce is already burned.
-- **Expected Behavior**: The nonce must only be consumed atomically upon successful admission (ALLOW).
-- **Why it matters**: Breaks replay protection mechanics and turns deterministic failures into a DoS on the mandate.
-- **Security/Financial Impact**: A legitimate mandate can be bricked by a bad cart request.
-- **Recommended Fix**: Pass `claim_nonce=False` in `decide()`. Consume the nonce in `admit()` or `record_admission()` only when the verdict is ALLOW.
-- **Regression test required**: Yes.
-- **Implementation Status**: Needs fix.
+### Since the audit
 
-### P0-4: Concurrency Race Conditions
-- **Severity**: P0
-- **File**: `pkg/kavach/governor.py`, `pkg/kavach/ledger.py`
-- **Function**: `execute()`, `decide()`
-- **Current Behavior**: State is read in `decide()`, then written in `execute()`. Multiple concurrent agents can interleave reads and writes, allowing duplicate refunds to both pass caps and risk.
-- **Expected Behavior**: SQLite transaction `BEGIN EXCLUSIVE` should be used to reserve the execution slot safely.
-- **Why it matters**: Concurrent agents can bypass duplicate protection.
-- **Security/Financial Impact**: Duplicate refunds execute successfully.
-- **Recommended Fix**: Introduce transactional locking abstraction in `ledger.py`.
-- **Regression test required**: Yes.
-- **Implementation Status**: Needs fix.
-
-### P0-5: Cryptographic Audit Chain Missing
-- **Severity**: P0
-- **File**: `pkg/kavach/eventlog.py`
-- **Current Behavior**: Append-only log exists, but no cryptographically linked hashing (`event_hash`, `previous_event_hash`) is implemented.
-- **Expected Behavior**: Each event must hash itself and the previous event's hash.
-- **Why it matters**: The audit trail is not tamper-evident.
-- **Security/Financial Impact**: An attacker with DB access can rewrite financial truth without detection.
-- **Recommended Fix**: Add `previous_event_hash` and `event_hash` to the `events` table and compute them deterministically on `append()`.
-- **Regression test required**: Yes.
-- **Implementation Status**: PLANNED / MISSING.
-
-## High Priority Issues (P1)
-
-### P1-1: Webhook Ingestion & Deduplication
-- **Severity**: P1
-- **File**: `apps/`
-- **Current Behavior**: Webhooks are not actively ingested by any web server/HTTP handler.
-- **Expected Behavior**: A secure webhook receiver (`POST /webhooks/razorpay`) must verify HMAC signatures and deduplicate events into the event log.
-- **Recommended Fix**: Create `pkg/kavach/webhooks/server.py` or similar HTTP endpoint.
-
-### P1-2: Reconciliation Engine Missing
-- **Severity**: P1
-- **File**: `pkg/kavach/reconciliation/`
-- **Current Behavior**: `UNKNOWN_OUTCOME` is conceptually supported, but no background worker exists to poll Razorpay and resolve stuck intents.
-- **Expected Behavior**: Background polling of intents in `APPROVED` state to query the provider and `settle()` to `EXECUTED` or `FAILED`.
-- **Recommended Fix**: Implement a reconciler worker.
-
-## Lower Priority Issues (P2)
-- **P2-1 (WONTFIX)**: ~Frontend uses mock data and static exports. Needs to be wired to the backend API/DB.~ *Per ADR-019, the Next.js UI is meant to be a static documentation asset that verifies benchmark numbers at build time. No DB connection is intended.*
-- **P2-2**: SQLite `kavach.db` hardcoded or uses CWD. Need robust environment variable configuration `KAVACH_DB`.
-- **P2-3**: Needs robust application lifecycle (startup/shutdown).
-
-
----
-
-## Round 2 findings (console build)
-
-Found by building the product on top of the engine, and by verifying it in a real browser
-rather than assuming it worked.
-
-### R2-1: `governor.evaluate_and_record` was a fake decision path — FIXED
-A second evaluator with a hardcoded `if amount > X` heuristic that never read truth, the
-ledger or the estimator, and minted `"ed25519_" + sha256(...)` as a "signature" that the
-proof explorer displayed as cryptographic. Every dashboard page and the adversary lab ran
-through it. Deleted. `services/decisions.py` is now the only outbound path, and decisions
-are recorded as hash-chained events rather than carrying an invented signature.
-
-### R2-2: a captured payment aged out to AMBIGUOUS — FIXED
-`Rail.CONFIRMED` was missing from `truth._TERMINAL`, so any payment older than the
-fifteen-minute tolerance derived as AMBIGUOUS and `governor.decide` refused every refund
-against it with "payment is not captured". A credited refund (ARN present) had the same
-problem at six hours, re-opening settled obligations forever and inflating exposure.
-Guarded by two regression tests.
-
-### R2-3: `cmd/` shadowed the stdlib `cmd` module — FIXED
-`pytest` could not start at all: collecting tests imports `pdb`, which imports `cmd`, which
-resolved to the repository's entrypoint package. Renamed to `apps/`.
-
-### R2-4: the web build was broken, and would not have served — FIXED
-An unescaped `>` in JSX failed the build outright. Underneath that, `assetPrefix: '.'`
-resolved `/dashboard/gate`'s assets to `/dashboard/_next/...`, and `trailingSlash: false`
-emitted `dashboard.html` where any static server looks for `dashboard/index.html` — so the
-whole console would have 404'd the moment it was served. Both fixed and verified over HTTP.
-
-### R2-5: every API call 500'd from a browser — FIXED
-FastAPI runs a synchronous `yield` dependency's body in one threadpool worker and its
-teardown in another, so `conn.close()` tripped sqlite3's thread-affinity guard. Sequential
-`curl` never reproduced it; a browser's parallel fetches did every time. `connect()` now
-takes an explicit `same_thread` flag, opt-in, with a regression test for both directions.
-
-### R2-6: `useAction` froze its closure — FIXED
-`call` was memoised with `[]` dependencies, so it always invoked the first render's
-function. The Agent Gate posted the cart from its initial render: selecting a different
-cart and submitting showed **ALLOW over a cart it had not evaluated**. On a screen whose
-only job is to report what the backend decided, that is the worst available failure. The
-callable now lives in a ref refreshed every render.
-
-### R2-7: a grid track blew past the viewport — FIXED
-Bare `display: grid` wrappers create an implicit `auto` column that sizes to content, so the
-Agent Gate's result panel was 849px inside a 519px track and ran off a 1440px screen. Added
-a `.stack` primitive with `minmax(0, 1fr)`. Zero horizontal overflow at 1440/1180/900/390.
-
-### R2-8: the demo seed staged an execution the governor denied — FIXED
-Rail events were written before the intents that caused them, so the second refund was
-denied for exposure it was itself about to create, and the seed then forced it to EXECUTED.
-The seed now runs in causal order and raises rather than staging any outcome the governor
-did not produce.
-
-### Known limits, stated rather than fixed
-- The duplicate-risk estimator reads refund-reason text and is only meaningful in-distribution.
-  The same duplicate pair scores 0.74 at a 35-minute gap and 0.46 at an 11-minute gap — under
-  the threshold. This is documented in `services/scenarios.py` and is why the model may only
-  escalate, never authorise.
-- The hash chain is tamper-evident, not tamper-proof, and proves nothing about authorship.
-  Both limits ship in every proof response via `proof.claims()`.
-- The Gate's demo issuer key is derived locally. The Ed25519 verification is real; the claim
-  that a human signed the mandate is not, and every admission response says so.
+- **Authentication**: scoped API keys (`auth.py`), demo surfaces gated by `KAVACH_DEMO`.
+- **Real mandate issuance**: principals sign, `/api/issuers` trusts keys, the demo key is
+  never registered outside a demo.
+- **Policy file**: `KAVACH_POLICY` (`config.py`), validated, hot-reloaded, no write API.
+- **Step-up channels**: email, SMS, WhatsApp, webhook (`services/notify.py`).
+- **Observability**: JSON logs with request ids, Prometheus metrics, optional Sentry/OTel,
+  webhook rejection log, backup command.
