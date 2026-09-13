@@ -550,7 +550,7 @@ credentials, the models and whether the hash chain is intact.
 | **Evidence in** | `apps/webhook_server.py`, or your gateway calling the same handler | HMAC-verified webhooks become append-only events. Nothing unverified is ever trusted as evidence |
 | **Agents in** | `kavach-mcp-server` over stdio | Razorpay-compatible tool names, so an agent's config changes by one line. The tools return facts, and they can refuse |
 | **Decisions in** | `POST /api/governor/evaluate`, `POST /api/gate/admit` | For anything that is not an MCP client — your own agent framework, a checkout service, a queue consumer |
-| **Settlement back** | `apps/reconciler.py` | Finds intents left `APPROVED` because a provider call timed out, and settles them against the provider's own state |
+| **Settlement back** | the reconciler (a thread in the API, or `python -m kavach reconcile`) | Finds intents left `APPROVED` — a provider call that timed out, or a human approval nobody executed — settles the ones the provider has, and executes the rest under the intent's idempotency key |
 
 ### Configuration is environment, not code
 

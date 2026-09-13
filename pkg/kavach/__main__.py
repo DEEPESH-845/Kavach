@@ -6,6 +6,8 @@
     python -m kavach issuers add --key-id X --public-key B64 | list | remove X
     python -m kavach principal keygen                 # an Ed25519 keypair for a principal
     python -m kavach principal sign --private-key B64 --key-id X mandate.json
+    python -m kavach reconcile [--once] [--interval 60] [--tolerance 60]
+    python -m kavach backup DEST                      # SQLite: VACUUM INTO a consistent copy
 
 `--db` is a SQLite path or a postgresql:// URL and defaults to $KAVACH_DB.
 """
@@ -23,7 +25,7 @@ import time
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
-from . import auth, migrations
+from . import auth, ledger, migrations
 from .eventlog import connect
 from .gate import envelope
 
@@ -31,6 +33,7 @@ from .gate import envelope
 def _conn(path: str):
     conn = connect(path)
     applied = migrations.apply(conn)
+    ledger.init(conn)
     envelope.init(conn)
     return conn, applied
 
@@ -43,6 +46,15 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("migrate", help="create or upgrade the schema; safe to repeat")
+
+    rc = sub.add_parser("reconcile", help="settle APPROVED intents against the provider")
+    rc.add_argument("--once", action="store_true", help="one pass, then exit")
+    rc.add_argument("--interval", type=int, default=60)
+    rc.add_argument("--tolerance", type=int, default=60,
+                    help="seconds an intent must have been APPROVED before it is looked at")
+
+    bk = sub.add_parser("backup", help="copy the ledger to DEST (SQLite); Postgres: pg_dump")
+    bk.add_argument("dest")
 
     keys = sub.add_parser("keys", help="API keys").add_subparsers(dest="op", required=True)
     c = keys.add_parser("create", help="mint a key; the plaintext is printed once")
@@ -98,12 +110,47 @@ def _principal(a: argparse.Namespace) -> int:
     return 0
 
 
+def _backup(db: str, dest: str) -> int:
+    if db.startswith(("postgres://", "postgresql://")):
+        print("KAVACH_DB is Postgres; back it up with the database's own tools, e.g.\n"
+              f"  pg_dump --format=custom --file={dest} '{db}'", file=sys.stderr)
+        return 2
+    if os.path.exists(dest):
+        print(f"{dest} exists; refusing to overwrite a backup", file=sys.stderr)
+        return 1
+    import sqlite3
+    src = sqlite3.connect(db)
+    try:
+        # VACUUM INTO writes a consistent, compacted copy while readers and the WAL carry on.
+        src.execute("VACUUM INTO ?", (dest,))
+    finally:
+        src.close()
+    print(json.dumps({"backup": dest, "bytes": os.path.getsize(dest)}))
+    return 0
+
+
+def _reconcile(conn, a: argparse.Namespace) -> int:
+    from .razorpay.client import Razorpay
+    from .reconciliation import reconcile_pending_intents
+    client = Razorpay()
+    while True:
+        settled = reconcile_pending_intents(conn, client, a.tolerance)
+        print(json.dumps({"settled": settled, "at": int(time.time())}), flush=True)
+        if a.once:
+            return 0
+        time.sleep(a.interval)
+
+
 def main(argv: list[str] | None = None) -> int:
     a = build_parser().parse_args(argv)
     if a.cmd == "principal":
         return _principal(a)
+    if a.cmd == "backup":
+        return _backup(a.db, a.dest)
     conn, applied = _conn(a.db)
     try:
+        if a.cmd == "reconcile":
+            return _reconcile(conn, a)
         if a.cmd == "migrate":
             print(json.dumps({"applied": applied, "db": a.db}))
         elif a.cmd == "keys" and a.op == "create":

@@ -132,3 +132,37 @@ def test_metrics_can_be_locked_with_its_own_key(env, monkeypatch):
     assert client.get("/api/metrics").status_code == 401
     assert client.get("/api/metrics", headers=_h("scrape-me")).status_code == 200
     assert client.get("/api/metrics?key=scrape-me").status_code == 200
+
+
+def test_metrics_are_prometheus_exposition_with_route_labels(env):
+    client, keys = env
+    client.get("/api/overview", headers=_h(keys["readonly"]))
+    body = client.get("/api/metrics").text
+    assert "# TYPE kavach_http_request_seconds histogram" in body
+    assert 'kavach_http_requests_total{method="GET",route="/api/overview",status="200"}' in body
+    assert "kavach_chain_intact 1.0" in body and "kavach_events_total" in body
+
+
+def test_webhook_rejections_are_recorded_and_readable_by_operators(env):
+    client, keys = env
+    client.post("/api/webhooks/razorpay", content=b'{"x":1}',
+                headers={"X-Razorpay-Signature": "deadbeef", "X-Razorpay-Event-Id": "evt_1"})
+    assert client.get("/api/webhooks/rejections", headers=_h(keys["agent"])).status_code == 403
+    r = client.get("/api/webhooks/rejections", headers=_h(keys["operator"]))
+    assert r.status_code == 200 and r.json()["configured"] is False
+    items = r.json()["items"]
+    assert items and items[0]["reason"].startswith("No RAZORPAY_WEBHOOK_SECRET")
+    assert items[0]["signature_present"] == 1 and items[0]["event_id"] == "evt_1"
+    assert "x" not in json_dump(items[0])
+
+
+def json_dump(d):
+    import json
+    return json.dumps(d)
+
+
+def test_health_reports_reconciler_and_observability(env):
+    client, _ = env
+    h = client.get("/api/health").json()
+    assert h["reconciler"]["enabled"] is False
+    assert h["observability"]["log_format"] in ("text", "json")

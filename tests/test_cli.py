@@ -73,3 +73,21 @@ def test_migrate_is_idempotent(tmp_path):
     first = json.loads(_run("migrate", db=db).stdout)
     assert first["applied"]
     assert json.loads(_run("migrate", db=db).stdout)["applied"] == []
+
+
+def test_backup_copies_a_sqlite_ledger(tmp_path):
+    db = str(tmp_path / "live.db")
+    _run("keys", "create", "--name", "a", "--scope", "readonly", db=db)
+    dest = tmp_path / "copy.db"
+    out = _run("backup", str(dest), db=db)
+    assert out.returncode == 0, out.stderr
+    from kavach.eventlog import connect
+    assert connect(str(dest)).execute("SELECT COUNT(*) c FROM api_keys").fetchone()["c"] == 1
+    assert _run("backup", str(dest), db=db).returncode == 1   # refuses to overwrite
+
+
+def test_reconcile_once_runs_without_a_provider(tmp_path):
+    db = str(tmp_path / "r.db")
+    out = _run("reconcile", "--once", db=db)
+    assert out.returncode == 0, out.stderr
+    assert json.loads(out.stdout)["settled"] == 0

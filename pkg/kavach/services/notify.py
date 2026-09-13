@@ -30,7 +30,7 @@ from collections.abc import Callable
 from email.message import EmailMessage
 from typing import Any
 
-from .. import db
+from .. import db, observability
 
 log = logging.getLogger(__name__)
 
@@ -219,8 +219,9 @@ def _record(conn: db.Connection, token: str, channel: str, to: str, now: int) ->
     return int(row["id"])
 
 
-def _finish(conn: db.Connection, nid: int, status: str, *, provider_id: str | None,
-            error: str | None, now: int) -> None:
+def _finish(conn: db.Connection, nid: int, status: str, *, channel: str,
+            provider_id: str | None, error: str | None, now: int) -> None:
+    observability.stepups_sent.labels(channel=channel, status=status).inc()
     conn.execute("UPDATE stepup_notifications SET status=?, provider_id=?, error=?, "
                  "updated_at=? WHERE id=?", (status, provider_id, error, now, nid))
 
@@ -253,15 +254,16 @@ def dispatch(conn: db.Connection, *, token: str, channel: str, to: str,
         try:
             try:
                 pid = TRANSPORTS[channel](to, msg, payload)
-                _finish(c, nid, SENT, provider_id=pid, error=None, now=int(time.time()))
+                _finish(c, nid, SENT, channel=channel, provider_id=pid, error=None,
+                        now=int(time.time()))
             except NotifyError as e:
                 log.warning("step-up %s via %s failed: %s", token[:6], channel, e.message)
-                _finish(c, nid, FAILED, provider_id=None, error=f"{e.code}: {e.message}",
-                        now=int(time.time()))
+                _finish(c, nid, FAILED, channel=channel, provider_id=None,
+                        error=f"{e.code}: {e.message}", now=int(time.time()))
             except Exception as e:  # noqa: BLE001 - a transport bug must not go unrecorded
                 log.exception("step-up %s via %s crashed", token[:6], channel)
-                _finish(c, nid, FAILED, provider_id=None, error=f"internal: {e}",
-                        now=int(time.time()))
+                _finish(c, nid, FAILED, channel=channel, provider_id=None,
+                        error=f"internal: {e}", now=int(time.time()))
         finally:
             c.close()
 
