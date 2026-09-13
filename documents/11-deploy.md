@@ -28,7 +28,8 @@ beating its baselines fails the build.
 | `RAZORPAY_KEY_SECRET` | for payments | unset | Verifies the Checkout handler signature server-side; never reaches the browser. |
 | `KAVACH_MODE` | for payments | `replay` | `live` reaches the Razorpay API. `replay` never leaves the machine; checkout reports itself unavailable. |
 | `RAZORPAY_WEBHOOK_SECRET` | no | unset | Verifies `X-Razorpay-Signature`. Unset ⇒ every webhook is refused (fail-closed) and polled payments stay `DERIVED_PROBABLE`. |
-| `KAVACH_DB` | no | `/data/kavach.db` (image) | The event log. Mount a disk at its directory to persist. |
+| `KAVACH_DB` | no | `/data/kavach.db` (image) | The event log: a SQLite path (mount a disk at its directory to persist) or a `postgresql://` URL. The image includes the driver; elsewhere `pip install 'kavach[postgres]'`. |
+| `KAVACH_WORKERS` | no | `1` | uvicorn worker processes. Every request opens its own connection, so more than one is safe on either store. |
 | `KAVACH_DEMO` | no | `1` (image) | Enables `POST /api/demo/reset` and the **Reset demo** button. Set `0` outside a demo. |
 | `KAVACH_SEED_ON_START` | no | unset | `1` re-seeds on every start. |
 | `KAVACH_KILL_SWITCH` | no | unset | Suspends autonomous money movement (every refund intent goes to a human). |
@@ -40,7 +41,13 @@ beating its baselines fails the build.
 
 ## Persistence, honestly
 
-SQLite in WAL mode is the one writer. On a **mounted disk** (`/data`) the ledger, the
+**Postgres.** Set `KAVACH_DB=postgresql://user:pass@host:5432/kavach`. Every table is
+created on first start, the schema is versioned in `schema_migrations`, and writers
+serialise on one advisory lock so the hash chain has exactly one head. This is the
+configuration for more than one node or more than one worker; nothing else changes. Back it
+up with `pg_dump` like any other database.
+
+**SQLite.** In WAL mode it is the one writer. On a **mounted disk** (`/data`) the ledger, the
 step-up tokens and the checkouts survive restarts and deploys. On **ephemeral storage** the
 container starts from the seed every time it starts — the demo still works, but a judge's
 earlier session is gone. Say which you have:

@@ -583,7 +583,7 @@ Whatever stops a merchant deploying this defence, it is not its cost.
 ### Scaling shape
 
 - **The API is stateless.** A decision is a pure function of `(events, now, policy)` — the same property that lets a decision be replayed to the same verdict months later lets you run as many API processes as you like behind a load balancer.
-- **The event log is the one writer.** SQLite in WAL mode holds the rates above on a single node. Every write goes through one `eventlog.append()` and every read through `eventlog.connect()`, so moving to Postgres is a connection factory rather than a refactor — and that adapter is the one piece not yet written, which is exactly where the single-node ceiling sits.
+- **The event log is the one writer.** SQLite in WAL mode holds the rates above on a single node; `KAVACH_DB=postgresql://…` runs the same schema on Postgres for more than one node or worker, with every writer serialised on one advisory lock so the hash chain has one head. Same code path either way — `kavach/db.py` is the whole difference.
 - **Models are files, loaded once per process** (`data/*.pkl`). A new process is warm in milliseconds and no decision waits on a provider.
 - **Degradation raises the floor.** A missing model does not open the gate; it moves the decision to STEP-UP or human approval (ADR-006). There is no path on which an unavailable component becomes a silent ALLOW.
 
@@ -638,10 +638,11 @@ Stated plainly, because a system about verifiable truth cannot be vague about it
    envelope is a field-for-field Ed25519 stand-in, the mapping is documented, and the
    adapter boundary is where the real rail lands. Everything above that boundary — caps,
    scope, revocation, replay — is the code that runs either way.
-2. **One writer, deliberately.** The event log is append-only behind a single `append()`, on
-   SQLite in WAL mode, which sustains the measured rates on one node. The Postgres adapter
-   behind `eventlog.connect()` is not written yet; until it is, that is the ceiling, and
-   this is where it is stated rather than discovered.
+2. **One writer, deliberately.** The event log is append-only behind a single `append()`,
+   and every writer takes one lock — `BEGIN IMMEDIATE` on SQLite, an advisory lock on
+   Postgres — so the hash chain has exactly one head. Write throughput is therefore bounded
+   by one serialised writer per store; that is the ceiling, stated here rather than
+   discovered.
 3. **The duplicate base rate (12%) is a stated assumption, not a measurement.** No public
    figure exists. A sensitivity sweep ships in `evals/risk_report.json`, and a week of
    shadow deployment replaces the assumption with your own number.
