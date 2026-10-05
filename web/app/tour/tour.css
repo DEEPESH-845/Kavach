@@ -9,7 +9,9 @@
 body:has(.tour) { overflow: auto; }
 .console.tour { min-height: 100dvh; }
 
-.tour .tr-wrap { width: min(100% - clamp(20px, 4vw, 44px), 1440px); margin-inline: auto; }
+/* the same gutter as the top bar (and the Shop and Duel), so the content edge lines up
+   with the wordmark above it on every page that shares that bar */
+.tour .tr-wrap { width: min(100% - clamp(28px, 6vw, 56px), 1440px); margin-inline: auto; }
 .tour .tr-grid { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 18px; padding: 16px 0 96px; align-items: start; }
 @media (max-width: 960px) { .tour .tr-grid { grid-template-columns: 1fr; } }
 
@@ -26,11 +28,12 @@ body:has(.tour) { overflow: auto; }
   transition: background var(--t-fast), color var(--t-fast), border-color var(--t-fast);
 }
 .tour .tr-step:hover { background: var(--hover); color: var(--bone); }
+.tour .tr-step:active { background: var(--hover-hard); }
 .tour .tr-step[aria-current='step'] { background: var(--raise); border-color: var(--seam2); color: var(--bone); }
 .tour .tr-step[data-done] .tr-t { color: var(--jade); }
 .tour .tr-t { font-family: var(--mono); font-size: 11px; color: var(--fog2); }
 .tour .tr-progress { height: 3px; background: var(--raise); border-radius: 2px; overflow: hidden; margin: 4px 10px 10px; }
-.tour .tr-progress i { display: block; height: 100%; background: var(--bone); transition: width var(--t-norm); }
+.tour .tr-progress i { display: block; height: 100%; background: var(--bone); transition: width 420ms cubic-bezier(.77, 0, .175, 1); }
 
 /* the narration */
 .tour .tr-narr {
@@ -54,6 +57,36 @@ body:has(.tour) { overflow: auto; }
 }
 .tour .tr-bar .tr-pos { font-family: var(--mono); font-size: 11.5px; color: var(--fog2); }
 .tour .tr-bar .tr-spacer { flex: 1; }
+
+/* the intro: the pitch on the left, the ten-step path it promises on the right. On one
+   column the path drops below the call to action, where it reads as the agenda. */
+.tour .tr-intro {
+  display: grid; grid-template-columns: minmax(0, 680px) minmax(240px, 300px);
+  gap: clamp(28px, 8vw, 140px); align-items: center;
+  min-height: calc(100dvh - 120px); padding: clamp(30px, 8vh, 80px) 0;
+}
+@media (max-width: 960px) { .tour .tr-intro { grid-template-columns: 1fr; min-height: 0; } }
+.tour .tr-intro .tr-problem { padding: 0; }
+.tour .tr-problem .tr-eyebrow {
+  margin: 0; font-family: var(--mono); font-size: 11px; letter-spacing: .2em;
+  text-transform: uppercase; color: var(--fog2);
+}
+.tour .tr-path {
+  list-style: none; margin: 0; padding: 0 0 0 18px; display: grid; gap: 2px;
+  border-left: 1px solid var(--seam); font-size: 13px; color: var(--fog);
+}
+.tour .tr-path li {
+  display: grid; grid-template-columns: 44px 1fr; gap: 8px; align-items: baseline; padding: 5px 0; position: relative;
+  animation: tr-path 420ms cubic-bezier(.23, 1, .32, 1) both; animation-delay: calc(240ms + var(--i) * 40ms);
+}
+.tour .tr-path li::before {
+  content: ''; position: absolute; left: -21.5px; top: 50%; width: 6px; height: 6px; margin-top: -3px;
+  border-radius: 50%; background: var(--void); border: 1px solid var(--seam2);
+}
+.tour .tr-path li:last-child { color: var(--bone); }
+.tour .tr-path li:last-child::before { background: var(--bone); border-color: var(--bone); }
+@keyframes tr-path { from { opacity: 0; transform: translateX(-6px); } }
+@media (prefers-reduced-motion: reduce) { .tour .tr-path li { animation: none; } }
 
 /* the problem screen */
 .tour .tr-problem { display: grid; gap: 18px; padding: 10px 0 20px; }

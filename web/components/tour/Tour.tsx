@@ -107,9 +107,9 @@ export function Tour() {
 
   if (!started) {
     return (
-      <div className="tr-wrap">
-        <div className="tr-problem" style={{ padding: 'clamp(30px, 8vh, 80px) 0' }}>
-          <p className="fn-eyebrow mono" style={{ margin: 0, fontSize: 11, letterSpacing: '.2em', textTransform: 'uppercase', color: 'var(--fog2)' }}>Five minutes · ten steps · nothing to configure</p>
+      <div className="tr-wrap tr-intro">
+        <div className="tr-problem">
+          <p className="tr-eyebrow">Five minutes · ten steps · nothing to configure</p>
           <h1>What happens when an AI agent is allowed to buy things on your behalf?</h1>
           <p>You give an agent a budget. It goes shopping. It overspends — honestly, not maliciously — and Kavach stops it and tells you exactly why. Then you approve a borderline case from your phone, make a real payment in test mode, look at the evidence behind every decision, and finally try to tamper with that evidence and watch it get caught. No setup, no sign-up, no real money.</p>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -123,9 +123,18 @@ export function Tour() {
                 driven.current = null;
                 go(0);
               }}><Play size={15} /> {resetting ? 'Resetting the ledger…' : 'Start the five-minute demo'}</button>
-            <a className="btn" href="/shop">Skip to the Shop</a>
+            <a className="btn" href="/shop" style={{ padding: '14px 18px', fontSize: 14 }}>Skip to the Shop</a>
           </div>
         </div>
+        {/* The path, before it is walked. Five minutes is a promise; the ten timestamps
+            are what makes it checkable, and they become the rail once the tour starts. */}
+        <ol className="tr-path" aria-label="What the tour covers">
+          {STEPS.map((s, n) => (
+            <li key={s.id} style={{ '--i': n } as React.CSSProperties}>
+              <span className="tr-t">{s.t}</span>{s.title}
+            </li>
+          ))}
+        </ol>
       </div>
     );
   }
