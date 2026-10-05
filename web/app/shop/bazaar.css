@@ -85,9 +85,6 @@ body:has(.bazaar) { overflow: auto; }
      the mandate should never be four screens below the scenario that filled the cart */
   .bazaar .bz-col--agent { order: 1; }
   .bazaar .bz-col:not(.bz-col--side):not(.bz-col--agent) { order: 2; }
-  .bazaar .bz-products { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-  .bazaar .bz-product { padding: 8px; }
-  .bazaar .bz-pblurb { display: none; }
 }
 
 /* ── focus ring for the tour ────────────────────────────────────────────── */
@@ -139,11 +136,11 @@ body:has(.bazaar) { overflow: auto; }
   display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
   padding: 9px 10px; border-radius: 8px; border: 1px solid var(--seam); background: var(--raise);
   color: var(--fog); cursor: pointer; font: inherit; font-size: 13px;
-  transition: border-color var(--t-fast), background var(--t-fast), transform var(--t-fast);
+  transition: border-color var(--t-fast), background var(--t-fast), transform var(--t-press);
 }
 .bazaar .bz-scen button:hover { border-color: var(--seam2); background: var(--raise-hover); color: var(--bone); }
 .bazaar .bz-scen button[aria-checked='true'] { border-color: var(--bone); color: var(--bone); }
-.bazaar .bz-scen button:active { transform: translateY(1px); }
+.bazaar .bz-scen button:active { transform: scale(.985); }
 .bazaar .bz-scen i {
   width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--jade);
 }
@@ -209,6 +206,24 @@ body:has(.bazaar) { overflow: auto; }
 }
 .bazaar .bz-review b { color: var(--amber); font-weight: 500; font-family: var(--mono); font-size: 10px; letter-spacing: .1em; }
 
+/* Two products a row on a phone. These lived in the layout block above, BEFORE the base
+   product rules, so at equal specificity the base `auto-fill, minmax(178px)` won on source
+   order: a 390px screen got one product per row, each tile a third of the screen tall,
+   and the store ran fourteen screens long. Declared after the base, they hold. */
+@media (max-width: 760px) {
+  .bazaar .bz-products { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .bazaar .bz-product { padding: 8px; }
+  .bazaar .bz-pblurb { display: none; }
+  .bazaar .bz-pcat { top: 13px; left: 13px; }
+}
+
+/* Lift only where there is a pointer to lift toward. On touch the hover state sticks
+   after a tap, leaving the last product touched floating above its neighbours. */
+@media (hover: none) {
+  .bazaar .bz-product:hover { transform: none; box-shadow: none; }
+}
+.bazaar .bz-product:active { transform: scale(.99); }
+
 /* ── agent rail & cart ────────────────────────────────────────────────── */
 .bazaar .bz-agent-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 .bazaar .bz-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--fog2); flex: none; }
@@ -243,6 +258,7 @@ body:has(.bazaar) { overflow: auto; }
 .bazaar .bz-qty { display: inline-flex; align-items: center; border: 1px solid var(--seam2); border-radius: 6px; overflow: hidden; }
 .bazaar .bz-qty button { width: 24px; height: 24px; border: 0; background: var(--raise); color: var(--bone); cursor: pointer; font: inherit; }
 .bazaar .bz-qty button:hover { background: var(--raise-hover); }
+.bazaar .bz-qty button:active { background: var(--hover-hard); }
 .bazaar .bz-qty span { min-width: 24px; text-align: center; font-family: var(--mono); font-size: 12px; }
 .bazaar .bz-total { display: flex; justify-content: space-between; align-items: baseline; padding-top: 8px; }
 .bazaar .bz-total b { color: var(--bone); font-family: var(--mono); font-size: 18px; font-weight: 500; }
