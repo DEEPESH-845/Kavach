@@ -28,7 +28,7 @@ export function Tamper({ onRestore, compact }: { onRestore?: () => void; compact
         <span className="stat__label" style={{ margin: 0 }}><Wrench size={13} /> Tamper with this evidence</span>
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
           {!compact ? (
-            <input className="input mono" style={{ width: 110 }} placeholder="seq (optional)" inputMode="numeric"
+            <input className="input mono" style={{ width: 136 }} placeholder="seq (optional)" inputMode="numeric"
               value={seq} onChange={(e) => setSeq(e.target.value.replace(/[^\d]/g, ''))} aria-label="Event seq to edit" />
           ) : null}
           {r ? (
@@ -53,8 +53,10 @@ export function Tamper({ onRestore, compact }: { onRestore?: () => void; compact
             <div className="card"><div className="stat"><span className="stat__label">live ledger</span><span className={`stat__value stat__value--${r.live.untouched && r.live.status.ok ? 'steel' : 'oxide'}`} style={{ fontSize: 15 }}>{r.live.untouched && r.live.status.ok ? 'UNTOUCHED' : 'CHANGED'}</span><span className="stat__note">re-verified after the demo</span></div></div>
           </div>
           <div className="chain" role="list" aria-label="Verification of the tampered copy">
-            {r.rows.map((row) => (
-              <div className="link" key={row.seq} role="listitem" style={row.is_target ? { background: 'var(--oxide-wash)' } : row.halted ? { opacity: .55 } : undefined}>
+            {r.rows.map((row, i) => (
+              <div className="link link--swept" key={row.seq} role="listitem"
+                data-target={row.is_target || undefined} data-halted={row.halted || undefined}
+                style={{ '--i': i } as React.CSSProperties}>
                 <div className="link__seq">
                   {row.seq}
                   <div style={{ marginTop: 4 }}><Badge tone={row.verified ? 'info' : 'deny'} bare>{row.verified ? <><Check size={10} /> ok</> : row.halted ? 'halted' : <><X size={10} /> break</>}</Badge></div>

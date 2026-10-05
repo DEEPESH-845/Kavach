@@ -162,10 +162,18 @@ const RUNG_CLASS = {
 } as const;
 
 export function Ladder({ rungs, spine = true }: { rungs: Rung[]; spine?: boolean }) {
+  /* A ladder that actually ran resolves top to bottom, one rung after the next, and stops
+     resolving where the decision stopped: everything after a FAIL arrives already
+     SKIPPED. That is the fail-fast order the governor really uses, shown rather than
+     described. Keyed by the outcome so a different result replays it and a re-render of
+     the same one does not; an idle ladder (nothing ran) never animates. */
+  const ran = rungs.some((r) => r.state !== 'SKIPPED');
   return (
-    <div className={`ladder${spine ? ' ladder--spine' : ''}`}>
-      {rungs.map((r) => (
-        <div key={r.key} className={`rung rung--${RUNG_CLASS[r.state]}`}>
+    <div key={rungs.map((r) => r.state).join()} data-ran={ran || undefined}
+      className={`ladder${spine ? ' ladder--spine' : ''}`}>
+      {rungs.map((r, i) => (
+        <div key={r.key} className={`rung rung--${RUNG_CLASS[r.state]}`}
+          style={{ '--i': i } as React.CSSProperties}>
           <span className="rung__icon" aria-hidden>{RUNG_ICON[r.state]}</span>
           <div>
             <div className="rung__label">{r.label}</div>
@@ -330,7 +338,7 @@ export function Copyable({ value, label }: { value: string; label?: string }) {
         navigator.clipboard?.writeText(value).then(() => setDone(true)).catch(() => {});
       }}
     >
-      {done ? <Check size={12} /> : <Copy size={12} />}
+      {done ? <Check size={12} className="pop" /> : <Copy size={12} />}
       {label ?? value}
     </button>
   );

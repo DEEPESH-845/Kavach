@@ -78,6 +78,15 @@
   --t-fast: 130ms cubic-bezier(0.2, 0, 0, 1);
   --t-norm: 260ms cubic-bezier(0.2, 0, 0, 1);
   --e-reveal: cubic-bezier(0.16, 0.84, 0.28, 1);
+  /* A press is the one motion repeated hundreds of times a day, so it is the fastest
+     thing here and the only one with no settle: it goes down when the finger does. */
+  --t-press: 110ms cubic-bezier(0.23, 1, 0.32, 1);
+  /* An object entering from off-screen under a finger (the drawer). Fast out of the
+     gate, long gentle settle -- the curve iOS sheets use. */
+  --e-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  /* The ring a focused field wears, beyond its border. Steel, because focus is a fact
+     about where input will go, not a judgement. */
+  --ring: 0 0 0 3px var(--steel-wash);
 
   --sidebar: 250px;
   --topbar: 56px;
@@ -236,8 +245,12 @@ body:has(.console) { overflow: hidden; }
   font-weight: 450;
   transition: background var(--t-fast), color var(--t-fast);
   position: relative;
+  -webkit-tap-highlight-color: transparent;
 }
-.console .navlink:hover { background: var(--hover); color: var(--bone); }
+.console .navlink:active { background: var(--hover-hard); }
+@media (hover: hover) and (pointer: fine) {
+  .console .navlink:hover { background: var(--hover); color: var(--bone); }
+}
 .console .navlink[aria-current='page'] { background: var(--hover-hard); color: var(--bone); }
 .console .navlink[aria-current='page']::before {
   content: '';
@@ -249,8 +262,14 @@ body:has(.console) { overflow: hidden; }
   height: 15px;
   background: var(--steel);
   border-radius: 0 2px 2px 0;
+  /* The pseudo-element only exists on the current route, so this plays exactly once per
+     navigation: the marker grows out of the row you just chose, which is the answer to
+     "where am I now" given at the moment the question is asked. */
+  animation: mark 240ms cubic-bezier(0.23, 1, 0.32, 1) both;
 }
-.console .navlink svg { flex: 0 0 auto; opacity: 0.75; }
+@keyframes mark { from { scale: 1 0.2; opacity: 0; } }
+.console .navlink svg { flex: 0 0 auto; opacity: 0.75; transition: opacity var(--t-fast), color var(--t-fast); }
+.console .navlink:hover svg { opacity: 1; }
 .console .navlink[aria-current='page'] svg { opacity: 1; color: var(--steel); }
 
 .console .navlink__count {
@@ -300,6 +319,11 @@ body:has(.console) { overflow: hidden; }
   color: var(--fog);
   padding: 6px;
   cursor: pointer;
+  min-width: 34px;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  transition: transform var(--t-press), background var(--t-fast);
 }
 
 /* ── mode banner ──────────────────────────────────────────────────────────── */
@@ -371,6 +395,28 @@ body:has(.console) { overflow: hidden; }
   padding: 16px 18px;
 }
 .console .card--flush { padding: 0; overflow: hidden; }
+
+/* A card that is a link has to look like one before it is pressed. These were plain
+   cards with an href: nothing on hover, nothing on focus but the outline, so "Waiting on
+   a human — 3" read as a number to look at rather than a queue to open. The border lifts
+   and an arrow slides in from where the destination is. */
+.console a.card {
+  position: relative; color: inherit;
+  transition: border-color var(--t-fast), background var(--t-fast), transform var(--t-press);
+}
+.console a.card::after {
+  content: '→'; position: absolute; top: 14px; right: 16px;
+  font: 400 13px/1 var(--mono); color: var(--fog2);
+  opacity: 0; translate: -4px 0;
+  transition: opacity var(--t-fast), translate var(--t-norm), color var(--t-fast);
+}
+.console a.card:active { transform: scale(0.99); }
+.console a.card:focus-visible::after { opacity: 1; translate: 0 0; }
+@media (hover: hover) and (pointer: fine) {
+  .console a.card:hover { border-color: var(--seam2); background: var(--raise); }
+  .console a.card:hover::after { opacity: 1; translate: 0 0; color: var(--bone); }
+}
+@media (hover: none) { .console a.card::after { opacity: 1; translate: 0 0; } }
 .console .card--pad { padding: 18px 20px; }
 
 .console .grid { display: grid; gap: 12px; }
@@ -582,6 +628,18 @@ body:has(.console) { overflow: hidden; }
 }
 .console .ladder--spine .rung:last-child::before { display: none; }
 
+.console .ladder[data-ran] .rung__icon,
+.console .ladder[data-ran] .rung__state {
+  animation: rungIn 240ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  animation-delay: calc(var(--i, 0) * 45ms);
+}
+@keyframes rungIn { from { opacity: 0; scale: 0.7; } }
+
+/* The copy button's tick: the value went somewhere, so the mark arrives rather than
+   swapping in -- a swap at 12px is easy to miss entirely. */
+.console .pop { animation: pop 200ms cubic-bezier(0.23, 1, 0.32, 1) both; }
+@keyframes pop { from { opacity: 0; scale: 0.6; } }
+
 /* ── flow diagram ─────────────────────────────────────────────────────────── */
 
 .console .flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
@@ -629,6 +687,14 @@ body:has(.console) { overflow: hidden; }
 .console .link__hash { font: 400 10.5px/1.5 var(--mono); color: var(--fog2); overflow-wrap: anywhere; margin-top: 2px; }
 .console .link__hash b { color: var(--steel); font-weight: 400; }
 
+/* The tamper result is a verification WALK, so it is drawn as one: rows resolve in seq
+   order, the edited row lands in oxide, and every row after it arrives already halted.
+   The reader watches the break propagate instead of being told that it does. */
+.console .link--swept { animation: sweep 300ms cubic-bezier(0.23, 1, 0.32, 1) both; animation-delay: calc(var(--i, 0) * 70ms); }
+.console .link--swept[data-target] { background: var(--oxide-wash); box-shadow: inset 2px 0 0 var(--oxide); }
+.console .link--swept[data-halted] { opacity: 0.55; }
+@keyframes sweep { from { opacity: 0; transform: translateX(-4px); } }
+
 /* ── code ─────────────────────────────────────────────────────────────────── */
 
 .console .code {
@@ -659,9 +725,24 @@ body:has(.console) { overflow: hidden; }
   font: 500 12.5px/1.35 var(--sans);
   cursor: pointer;
   text-decoration: none;
-  transition: background var(--t-fast), border-color var(--t-fast), opacity var(--t-fast);
+  transition: background var(--t-fast), border-color var(--t-fast), opacity var(--t-fast),
+    color var(--t-fast), transform var(--t-press);
   white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
 }
+/* The interface heard you. Scale rather than the landing page's 1px drop: a console
+   button is small, and 1px on a 28px control reads as jitter, where 3% reads as a key
+   going down. Disabled controls do not move -- a press that moves and then does nothing
+   is a lie about what happened. */
+.console .btn:active:not(:disabled),
+.console .chip:active,
+.console .burger:active { transform: scale(0.97); }
+.console .btn svg { flex: 0 0 auto; }
+/* A pending action is told apart from a dead one: same dimming as disabled, but the
+   cursor says wait and the label (which every caller already swaps to "…ing") carries
+   the rest. */
+.console .btn[aria-busy='true'] { cursor: progress; }
 /* kavach.css defines a GLOBAL `.btn` whose ::before fills the button with bone on hover and
    relies on the label being wrapped in a <span> that it then turns black. Console buttons
    have no such span, so that overlay painted bone text onto a bone fill — 1:1 contrast,
@@ -681,6 +762,7 @@ body:has(.console) { overflow: hidden; }
 .console .btn--ghost { background: none; border-color: transparent; color: var(--fog); }
 .console .btn--ghost:hover:not(:disabled) { background: var(--hover-hard); color: var(--bone); }
 .console .btn--sm { padding: 4px 9px; font-size: 11.5px; }
+.console .btn--sm:active:not(:disabled) { transform: scale(0.96); }
 
 .console .field { display: grid; gap: 5px; }
 .console .field__label {
@@ -701,8 +783,15 @@ body:has(.console) { overflow: hidden; }
   border-radius: 7px;
   color: var(--bone);
   font: 400 13px/1.45 var(--sans);
-  transition: border-color var(--t-fast);
+  transition: border-color var(--t-fast), box-shadow var(--t-fast), background var(--t-fast);
 }
+.console .input::placeholder,
+.console .textarea::placeholder { color: var(--fog2); opacity: 0.8; transition: opacity var(--t-fast); }
+.console .input:focus::placeholder,
+.console .textarea:focus::placeholder { opacity: 0.45; }
+.console .input:disabled,
+.console .select:disabled,
+.console .textarea:disabled { opacity: 0.5; cursor: not-allowed; }
 .console .input.mono,
 .console .textarea.mono { font-family: var(--mono); font-size: 12px; }
 .console .input:hover,
@@ -710,7 +799,9 @@ body:has(.console) { overflow: hidden; }
 .console .textarea:hover { border-color: var(--seam2); }
 .console .input:focus,
 .console .select:focus,
-.console .textarea:focus { outline: none; border-color: var(--steel); }
+.console .textarea:focus { outline: none; border-color: var(--steel); box-shadow: var(--ring); }
+.console :is(.input, .select, .textarea)[aria-invalid='true'] { border-color: var(--oxide); }
+.console :is(.input, .select, .textarea)[aria-invalid='true']:focus { box-shadow: 0 0 0 3px var(--oxide-wash); }
 .console .textarea { resize: vertical; min-height: 68px; }
 
 .console .chipbar { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -723,9 +814,12 @@ body:has(.console) { overflow: hidden; }
   color: var(--fog);
   font: 500 11.5px/1.5 var(--sans);
   cursor: pointer;
-  transition: all var(--t-fast);
+  transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast), transform var(--t-press);
+  -webkit-tap-highlight-color: transparent;
 }
-.console .chip:hover { border-color: var(--fog2); color: var(--bone); }
+@media (hover: hover) and (pointer: fine) {
+  .console .chip:hover { border-color: var(--fog2); color: var(--bone); }
+}
 .console .chip[aria-pressed='true'] { background: var(--bone); color: var(--void); border-color: var(--bone); }
 
 /* ── states ───────────────────────────────────────────────────────────────── */
@@ -782,10 +876,11 @@ body:has(.console) { overflow: hidden; }
     inset: 0 auto 0 0;
     z-index: 60;
     transform: translateX(-100%);
-    transition: transform var(--t-norm);
+    /* leaving is quicker than arriving: the operator has already decided where to go */
+    transition: transform 220ms var(--e-drawer);
     box-shadow: 0 0 60px var(--drop);
   }
-  .console .sidebar[data-open='true'] { transform: none; }
+  .console .sidebar[data-open='true'] { transform: none; transition-duration: 340ms; }
 
   .console .scrim {
     position: fixed;
@@ -820,12 +915,17 @@ body:has(.console) { overflow: hidden; }
 
 @media (prefers-reduced-motion: reduce) {
   .console *,
-.console *::before,
-.console *::after {
+  .console *::before,
+  .console *::after {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
   }
+  /* Reduced motion is not no feedback. Movement goes; a press still answers, as a
+     change of shade rather than of size. */
+  .console .btn:active:not(:disabled),
+  .console .chip:active,
+  .console .burger:active { transform: none; filter: brightness(0.92); }
 }
 
 /* The route change, and nothing else. Rows, cells and cards appear at once: a staggered
