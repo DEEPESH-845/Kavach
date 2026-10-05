@@ -39,12 +39,23 @@ body:has(.duel) { overflow: auto; }
   display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1fr); gap: 10px;
   align-items: stretch; transition: opacity var(--t-norm);
 }
-/* A step that has not played yet is dimmed, not greyed into illegibility: at .28 the
-   metadata measured 1.35:1, which is text nobody can read pretending to be a preview.
-   .62 keeps the "not yet" reading and stays above AA on this ground. */
-.duel .dl-step:not([data-on]) { opacity: .62; }
-.duel .dl-step[data-on] { opacity: 1; animation: dl-in 420ms var(--e-reveal) both; }
-@keyframes dl-in { from { transform: translateY(8px); opacity: .28; } to { transform: none; opacity: 1; } }
+/* A step that has not played yet shows its QUESTION and withholds both answers. Showing
+   the outcomes dimmed gave the whole duel away before Run was pressed, and the one thing
+   this page exists to show -- the gap opening -- had already happened in a preview.
+   The action stays legible (.62 clears AA on this ground); each outcome is an empty slot
+   of the size it will fill, so nothing reflows when it lands. */
+.duel .dl-step:not([data-on]) .dl-act { opacity: .62; }
+.duel .dl-act { transition: opacity var(--t-norm); }
+.duel .dl-step:not([data-on]) .dl-out { border-style: dashed; border-color: var(--seam); background: transparent; }
+.duel .dl-step:not([data-on]) .dl-out > * { visibility: hidden; }
+
+/* When a step plays, the two systems answer the same request in turn: the bare rail
+   first, because it does not check anything, and Kavach a beat later, because it does.
+   The delay is the argument, not an ornament -- and it is short enough to read as one
+   event with two halves rather than two events. */
+.duel .dl-step[data-on] .dl-out { animation: dl-land 360ms cubic-bezier(.23, 1, .32, 1) both; }
+.duel .dl-step[data-on] .dl-out + .dl-out { animation-delay: 180ms; }
+@keyframes dl-land { from { opacity: 0; transform: translateY(6px); } }
 .duel .dl-act { padding: 12px 14px; border-radius: 10px; background: var(--slab); border: 1px solid var(--seam); min-width: 0; }
 .duel .dl-act .n { font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em; color: var(--fog2); }
 .duel .dl-act h3 { margin: 4px 0 4px; font-size: 14px; color: var(--bone); font-weight: 500; line-height: 1.3; }
@@ -58,7 +69,7 @@ body:has(.duel) { overflow: auto; }
 .duel .dl-out .v b { font-weight: 500; }
 .duel .dl-out[data-k='exec'] .v b { color: var(--oxide); }
 .duel .dl-out[data-k='refused'] .v b, .duel .dl-out[data-k='ok'] .v b { color: var(--jade); }
-.duel .dl-out .why { font-size: 12px; color: var(--fog); line-height: 1.45; }
+.duel .dl-out .dl-why { font-size: 12px; color: var(--fog); line-height: 1.45; }
 .duel .dl-out .by { font-family: var(--mono); font-size: 11px; color: var(--steel); }
 .duel .dl-out .run { font-family: var(--mono); font-size: 11px; color: var(--fog2); }
 @media (max-width: 860px) {
@@ -72,6 +83,6 @@ body:has(.duel) { overflow: auto; }
 .duel .dl-foot { margin-top: 18px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; font-size: 12.5px; color: var(--fog2); }
 
 @media (prefers-reduced-motion: reduce) {
-  .duel .dl-step { transition: none; }
-  .duel .dl-step[data-on] { animation: none; }
+  .duel .dl-act { transition: none; }
+  .duel .dl-step[data-on] .dl-out { animation: none; }
 }

@@ -168,7 +168,7 @@ function Step({ s, on }: { s: DuelStep; on: boolean }) {
       </div>
       <div className="dl-out" data-k="exec" data-lane="without Kavach">
         <div className="v"><b>EXECUTED</b> <span style={{ color: 'var(--fog2)' }}>{money(s.ungoverned.amount_minor)}</span></div>
-        <div className="why">{s.ungoverned.note}.</div>
+        <div className="dl-why">{s.ungoverned.note}.</div>
         {s.attack ? <div className="run" style={{ color: 'var(--oxide)' }}>{money(s.amount_minor)} of unauthorised money moved</div> : <div className="run">legitimate; would have moved anyway</div>}
       </div>
       <div className="dl-out" data-k={allowed ? 'ok' : 'refused'} data-lane="with Kavach">
@@ -177,7 +177,7 @@ function Step({ s, on }: { s: DuelStep; on: boolean }) {
           {typeof k.duplicate_risk === 'number' ? <span className="run">dup {k.duplicate_risk.toFixed(2)}</span> : null}
         </div>
         {k.refused_by ? <div className="by">refused by {k.refused_by}</div> : null}
-        <div className="why">{k.reasons[0]}</div>
+        <div className="dl-why">{k.reasons[0]}</div>
       </div>
     </div>
   );
