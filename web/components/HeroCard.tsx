@@ -118,7 +118,12 @@ export function HeroCard() {
       // lifts a face square to the camera off black without becoming a highlight
       panel(0xb9cddc, 0.36, 13, 0, 1, 9);
       const pmrem = new THREE.PMREMGenerator(renderer);
-      const env = pmrem.fromScene(envScene, 0.22);
+      /* The blur that was actually rendered, asked for honestly. This read 0.22 on the
+         default 256px cube, which wants 108 taps; three caps the kernel at 20 and warned
+         on every load, so what shipped was a clipped, near-flat kernel with a 0.068 rad
+         standard deviation. 0.068 on a 128px cube is that same width as a true Gaussian
+         in 17 taps: identical highlights, no warning, a quarter of the pixels. */
+      const env = pmrem.fromScene(envScene, 0.068, 0.1, 100, { size: 128 });
       envScene.traverse((o) => {
         const m = o as import('three').Mesh;
         m.geometry?.dispose?.();

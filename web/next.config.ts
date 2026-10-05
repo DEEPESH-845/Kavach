@@ -22,6 +22,10 @@ const nextConfig: NextConfig = {
   // directory to its index.html, but nothing resolves /dashboard to dashboard.html. With
   // this false the whole console 404s the moment it is served rather than opened.
   trailingSlash: true,
+  // The repo root has its own package-lock.json (the Railway CLI, for infra-as-code), so
+  // Turbopack saw two lockfiles, guessed the REPO root as the workspace, and warned on
+  // every start. This app is self-contained: its root is this directory.
+  turbopack: { root: __dirname },
 };
 
 export default nextConfig;
